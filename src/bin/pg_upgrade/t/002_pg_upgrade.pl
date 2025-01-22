@@ -15,8 +15,10 @@ use PostgreSQL::Test::Utils;
 use PostgreSQL::Test::AdjustUpgrade;
 use Test::More;
 
-PostgreSQL::Test::TdeCluster::skip_if_tde_mode_smgr
-	 'pg_restore fail to restore _pg_tde schema on cluster which already has it';
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => "Running with TDE doesn't support special server starts yet";
+}
 
 # Can be changed to test the other modes.
 my $mode = $ENV{PG_TEST_PG_UPGRADE_MODE} || '--copy';
