@@ -19,6 +19,7 @@
 extern bool AllowInheritGlobalProviders;
 extern bool EncryptXLog;
 extern bool EnforceEncryption;
+extern char *KeyringFileLocation;
 
 extern void TdeGucInit(void);
 

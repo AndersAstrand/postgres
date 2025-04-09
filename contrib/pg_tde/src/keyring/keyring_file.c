@@ -16,6 +16,7 @@
 #include "catalog/tde_keyring.h"
 #include "common/file_perm.h"
 #include "keyring/keyring_api.h"
+#include "pg_tde_guc.h"
 #include "storage/fd.h"
 #include "utils/wait_event.h"
 
@@ -104,6 +105,7 @@ set_key_by_name(GenericKeyring *keyring, KeyInfo *key)
 	FileKeyring *file_keyring = (FileKeyring *) keyring;
 	KeyInfo    *existing_key;
 	KeyringReturnCodes return_code = KEYRING_CODE_SUCCESS;
+	char		canonicalized_path[MAXPGPATH];
 
 	Assert(key != NULL);
 	/* See if the key with same name already exists */
@@ -113,6 +115,20 @@ set_key_by_name(GenericKeyring *keyring, KeyInfo *key)
 		ereport(ERROR,
 				(errmsg("Key with name %s already exists in keyring", key->name)));
 	}
+
+#ifndef FRONTEND
+	strcpy(canonicalized_path, file_keyring->file_name);
+	canonicalize_path(canonicalized_path);
+
+	if (KeyringFileLocation != NULL
+		&& !path_is_prefix_of_path(KeyringFileLocation, canonicalized_path))
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("File path \"%s\" is not an allowed keyring file location.", file_keyring->file_name),
+				 errdetail("File path is prevented by the pg_tde.keyring_file_location configuration setting.")));
+	}
+#endif
 
 	fd = BasicOpenFile(file_keyring->file_name, O_CREAT | O_RDWR | PG_BINARY);
 	if (fd < 0)

@@ -19,6 +19,7 @@
 bool		AllowInheritGlobalProviders = true;
 bool		EncryptXLog = false;
 bool		EnforceEncryption = false;
+char	   *KeyringFileLocation = NULL;
 
 void
 TdeGucInit(void)
@@ -59,6 +60,20 @@ TdeGucInit(void)
 							 NULL	/* show_hook */
 		);
 
+	DefineCustomStringVariable("pg_tde.keyring_file_location",	/* name */
+							   "Only allow keyring files under this path.",	/* short_desc */
+							   NULL,	/* long_desc */
+							   &KeyringFileLocation,	/* value address */
+							   NULL, /* boot value */
+							   PGC_SUSET, /* context */
+							   0, /* flags */
+							   NULL, //CheckKeyringFileLocation,	/* check_hook */
+							   NULL,	/* assign_hook */
+							   NULL	/* show_hook */
+		);
+
 }
 
 #endif
+
+pg_tde keyring
