@@ -43,11 +43,11 @@
  * JSON parser state
  */
 
-typedef enum JsonKeringSemState
+typedef enum JsonKeyringSemState
 {
 	JK_EXPECT_TOP_FIELD,
 	JK_EXPECT_EXTERN_VAL,
-} JsonKeringSemState;
+} JsonKeyringSemState;
 
 #define KEYRING_REMOTE_FIELD_TYPE "remote"
 #define KEYRING_FILE_FIELD_TYPE "file"
@@ -56,7 +56,7 @@ typedef enum JsonKeyringField
 {
 	JK_FIELD_UNKNOWN,
 
-	JK_KRING_TYPE,
+	JK_KEYRING_TYPE,
 
 	JK_FIELD_TYPE,
 	JK_REMOTE_URL,
@@ -80,7 +80,7 @@ typedef enum JsonKeyringField
 
 static const char *JK_FIELD_NAMES[JK_FIELDS_TOTAL] = {
 	[JK_FIELD_UNKNOWN] = "unknownField",
-	[JK_KRING_TYPE] = "type",
+	[JK_KEYRING_TYPE] = "type",
 	[JK_FIELD_TYPE] = "type",
 	[JK_REMOTE_URL] = "url",
 	[JK_FIELD_PATH] = "path",
@@ -118,7 +118,7 @@ typedef struct JsonKeyringState
 	 * fields because of the external values
 	 */
 	JsonKeyringField field[MAX_JSON_DEPTH];
-	JsonKeringSemState state;
+	JsonKeyringSemState state;
 	int			level;
 
 	/*
@@ -126,20 +126,20 @@ typedef struct JsonKeyringState
 	 * direct value for the caller. Although we need them for the values
 	 * extraction or state tracking.
 	 */
-	char	   *kring_type;
+	char	   *keyring_type;
 	char	   *field_type;
 	char	   *extern_url;
 	char	   *extern_path;
 } JsonKeyringState;
 
-static JsonParseErrorType json_kring_scalar(void *state, char *token, JsonTokenType tokentype);
-static JsonParseErrorType json_kring_object_field_start(void *state, char *fname, bool isnull);
-static JsonParseErrorType json_kring_object_start(void *state);
-static JsonParseErrorType json_kring_object_end(void *state);
+static JsonParseErrorType json_keyring_scalar(void *state, char *token, JsonTokenType tokentype);
+static JsonParseErrorType json_keyring_object_field_start(void *state, char *fname, bool isnull);
+static JsonParseErrorType json_keyring_object_start(void *state);
+static JsonParseErrorType json_keyring_object_end(void *state);
 
-static JsonParseErrorType json_kring_assign_scalar(JsonKeyringState *parse, JsonKeyringField field, char *value);
-static char *get_remote_kring_value(const char *url, const char *field_name);
-static char *get_file_kring_value(const char *path, const char *field_name);
+static JsonParseErrorType json_keyring_assign_scalar(JsonKeyringState *parse, JsonKeyringField field, char *value);
+static char *get_remote_keyring_value(const char *url, const char *field_name);
+static char *get_file_keyring_value(const char *path, const char *field_name);
 
 
 /*
@@ -174,15 +174,15 @@ ParseKeyringJSONOptions(ProviderType provider_type, void *out_opts, char *in_buf
 	 * parser reaches the appropriate state. See comments on the functions.
 	 */
 	sem.semstate = &parse;
-	sem.object_start = json_kring_object_start;
-	sem.object_end = json_kring_object_end;
+	sem.object_start = json_keyring_object_start;
+	sem.object_end = json_keyring_object_end;
 	sem.array_start = NULL;
 	sem.array_end = NULL;
-	sem.object_field_start = json_kring_object_field_start;
+	sem.object_field_start = json_keyring_object_field_start;
 	sem.object_field_end = NULL;
 	sem.array_element_start = NULL;
 	sem.array_element_end = NULL;
-	sem.scalar = json_kring_scalar;
+	sem.scalar = json_keyring_scalar;
 
 	/* Run the parser */
 	jerr = pg_parse_json(jlex, &sem);
@@ -215,7 +215,7 @@ ParseKeyringJSONOptions(ProviderType provider_type, void *out_opts, char *in_buf
  * "external field object" e.g. ({"type" : "remote", "url" : "http://localhost:8888/hello"})
  */
 static JsonParseErrorType
-json_kring_object_start(void *state)
+json_keyring_object_start(void *state)
 {
 	JsonKeyringState *parse = state;
 
@@ -247,7 +247,7 @@ json_kring_object_start(void *state)
  * appropriate (parent) field.
  */
 static JsonParseErrorType
-json_kring_object_end(void *state)
+json_keyring_object_end(void *state)
 {
 	JsonKeyringState *parse = state;
 
@@ -269,16 +269,16 @@ json_kring_object_end(void *state)
 			char	   *value = NULL;
 
 			if (strcmp(parse->field_type, KEYRING_REMOTE_FIELD_TYPE) == 0)
-				value = get_remote_kring_value(parse->extern_url, JK_FIELD_NAMES[parent_field]);
+				value = get_remote_keyring_value(parse->extern_url, JK_FIELD_NAMES[parent_field]);
 			if (strcmp(parse->field_type, KEYRING_FILE_FIELD_TYPE) == 0)
-				value = get_file_kring_value(parse->extern_path, JK_FIELD_NAMES[parent_field]);
+				value = get_file_keyring_value(parse->extern_path, JK_FIELD_NAMES[parent_field]);
 
 			if (value == NULL)
 			{
 				return JSON_INCOMPLETE;
 			}
 
-			ret = json_kring_assign_scalar(parse, parent_field, value);
+			ret = json_keyring_assign_scalar(parse, parent_field, value);
 
 			if (ret != JSON_SUCCESS)
 			{
@@ -302,7 +302,7 @@ json_kring_object_end(void *state)
  * we know what is it and where to assign it.
  */
 static JsonParseErrorType
-json_kring_object_field_start(void *state, char *fname, bool isnull)
+json_keyring_object_field_start(void *state, char *fname, bool isnull)
 {
 	JsonKeyringState *parse = state;
 	JsonKeyringField *field;
@@ -320,9 +320,9 @@ json_kring_object_field_start(void *state, char *fname, bool isnull)
 			 * is common for all keyrings. The rest of the fields depend on
 			 * the keyring type.
 			 */
-			if (strcmp(fname, JK_FIELD_NAMES[JK_KRING_TYPE]) == 0)
+			if (strcmp(fname, JK_FIELD_NAMES[JK_KEYRING_TYPE]) == 0)
 			{
-				*field = JK_KRING_TYPE;
+				*field = JK_KEYRING_TYPE;
 				break;
 			}
 			switch (parse->provider_type)
@@ -396,18 +396,18 @@ json_kring_object_field_start(void *state, char *fname, bool isnull)
  * Invoked at the start of each scalar in the JSON document.
  *
  * We have only the string value of the field. And rely on the state set by
- * `json_kring_object_field_start` for defining what the field is.
+ * `json_keyring_object_field_start` for defining what the field is.
  */
 static JsonParseErrorType
-json_kring_scalar(void *state, char *token, JsonTokenType tokentype)
+json_keyring_scalar(void *state, char *token, JsonTokenType tokentype)
 {
 	JsonKeyringState *parse = state;
 
-	return json_kring_assign_scalar(parse, parse->field[parse->level], token);
+	return json_keyring_assign_scalar(parse, parse->field[parse->level], token);
 }
 
 static JsonParseErrorType
-json_kring_assign_scalar(JsonKeyringState *parse, JsonKeyringField field, char *value)
+json_keyring_assign_scalar(JsonKeyringState *parse, JsonKeyringField field, char *value)
 {
 	VaultV2Keyring *vault = parse->provider_opts;
 	FileKeyring *file = parse->provider_opts;
@@ -415,8 +415,8 @@ json_kring_assign_scalar(JsonKeyringState *parse, JsonKeyringField field, char *
 
 	switch (field)
 	{
-		case JK_KRING_TYPE:
-			parse->kring_type = value;
+		case JK_KEYRING_TYPE:
+			parse->keyring_type = value;
 			break;
 
 		case JK_FIELD_TYPE:
@@ -467,7 +467,7 @@ json_kring_assign_scalar(JsonKeyringState *parse, JsonKeyringField field, char *
 }
 
 static char *
-get_remote_kring_value(const char *url, const char *field_name)
+get_remote_keyring_value(const char *url, const char *field_name)
 {
 	long		httpCode;
 	CurlString	outStr;
@@ -495,7 +495,7 @@ get_remote_kring_value(const char *url, const char *field_name)
 }
 
 static char *
-get_file_kring_value(const char *path, const char *field_name)
+get_file_keyring_value(const char *path, const char *field_name)
 {
 	int			fd = -1;
 	char	   *val;

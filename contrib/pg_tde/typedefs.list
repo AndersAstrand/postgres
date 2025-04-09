@@ -18,7 +18,7 @@ IndexDeleteCounts
 IndexFetchHeapData
 IndexFetchHeapData
 InternalKey
-JsonKeringSemState
+JsonKeyringSemState
 JsonKeyringField
 JsonKeyringState
 JsonVaultRespField
