@@ -148,3 +148,15 @@ KeyringGenerateNewKeyAndStore(GenericKeyring *keyring, const char *key_name, uns
 
 	return key;
 }
+
+void
+KeyringValidate(GenericKeyring *keyring)
+{
+	RegisteredKeyProviderType *kp = find_key_provider_type(keyring->type);
+
+	if (kp == NULL)
+	ereport(ERROR,
+		errmsg("Key provider of type %d not registered", keyring->type));
+
+	return kp->routine->keyring_validate(keyring);
+}
