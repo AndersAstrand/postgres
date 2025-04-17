@@ -12,18 +12,14 @@ PGTDE::setup_files_dir(basename($0));
 my $node = PostgreSQL::Test::Cluster->new('main');
 $node->init;
 $node->append_conf('postgresql.conf', "shared_preload_libraries = 'pg_tde'");
-
-my $rt_value = $node->start;
-ok($rt_value == 1, "Start Server");
+$node->start;
 
 PGTDE::psql($node, 'postgres', 'CREATE EXTENSION IF NOT EXISTS pg_tde;');
 
 PGTDE::psql($node, 'postgres', 'CREATE TABLE test_enc(id SERIAL,k INTEGER,PRIMARY KEY (id)) USING tde_heap;');
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'postgres', "SELECT pg_tde_add_database_key_provider_file('file-vault','/tmp/pg_tde_test_keyring.per');");
 PGTDE::psql($node, 'postgres', "SELECT pg_tde_add_database_key_provider_file('file-2','/tmp/pg_tde_test_keyring_2.per');");
@@ -45,9 +41,7 @@ PGTDE::psql($node, 'postgres', "SELECT pg_tde_set_key_using_database_key_provide
 PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc ORDER BY id ASC;');
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_key_info();");
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_server_key_info();");
@@ -58,9 +52,7 @@ PGTDE::psql($node, 'postgres', "SELECT pg_tde_set_key_using_database_key_provide
 PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc ORDER BY id ASC;');
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_key_info();");
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_server_key_info();");
@@ -71,9 +63,7 @@ PGTDE::psql($node, 'postgres', "SELECT pg_tde_set_key_using_global_key_provider(
 PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc ORDER BY id ASC;');
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_key_info();");
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_server_key_info();");
@@ -87,9 +77,7 @@ PGTDE::psql($node, 'postgres', "SELECT pg_tde_set_key_using_global_key_provider(
 PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc ORDER BY id ASC;');
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_key_info();");
 PGTDE::psql($node, 'postgres', "SELECT key_provider_id, key_provider_name, key_name FROM pg_tde_server_key_info();");
@@ -99,9 +87,7 @@ PGTDE::psql($node, 'postgres', 'ALTER SYSTEM SET pg_tde.inherit_global_providers
 
 # Things still work after a restart
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 # But now can't be changed to another global provider
 PGTDE::psql($node, 'postgres', "SELECT pg_tde_set_key_using_global_key_provider('rotated-keyX2', 'file-2', false);");
@@ -117,13 +103,11 @@ PGTDE::psql($node, 'postgres', 'DROP TABLE test_enc;');
 PGTDE::psql($node, 'postgres', 'ALTER SYSTEM RESET pg_tde.inherit_global_providers;');
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'postgres', 'DROP EXTENSION pg_tde CASCADE;');
 
-$node->stop();
+$node->stop;
 
 # Compare the expected and out file
 my $compare = PGTDE->compare_results();

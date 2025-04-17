@@ -12,9 +12,7 @@ PGTDE::setup_files_dir(basename($0));
 my $node = PostgreSQL::Test::Cluster->new('main');
 $node->init;
 $node->append_conf('postgresql.conf', "shared_preload_libraries = 'pg_tde'");
-
-my $rt_value = $node->start;
-ok($rt_value == 1, "Start Server");
+$node->start;
 
 PGTDE::psql($node, 'postgres', "SET allow_in_place_tablespaces = true; CREATE TABLESPACE test_tblspace LOCATION '';");
 PGTDE::psql($node, 'postgres', 'CREATE DATABASE tbc TABLESPACE = test_tblspace;');
@@ -43,9 +41,7 @@ PGTDE::psql($node, 'tbc', 'SELECT * FROM country_table;');
 PGTDE::psql($node, 'tbc', "SELECT pg_tde_set_key_using_database_key_provider('new-k', 'file-vault');");
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 PGTDE::psql($node, 'tbc', 'SELECT * FROM country_table;');
 
@@ -54,7 +50,7 @@ PGTDE::psql($node, 'tbc', 'DROP EXTENSION pg_tde CASCADE;');
 PGTDE::psql($node, 'postgres', 'DROP DATABASE tbc;');
 PGTDE::psql($node, 'postgres', 'DROP TABLESPACE test_tblspace;');
 
-$node->stop();
+$node->stop;
 
 # Compare the expected and out file
 my $compare = PGTDE->compare_results();

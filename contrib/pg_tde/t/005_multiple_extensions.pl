@@ -16,18 +16,16 @@ if (index(lc($PG_VERSION_STRING), lc("Percona Distribution")) == -1)
     plan skip_all => "pg_tde test case only for PPG server package install with extensions.";
 }
 
+open my $conf2, '>>', "/tmp/datafile-location";
+print $conf2 "/tmp/keyring_data_file\n";
+close $conf2;
+
 my $node = PostgreSQL::Test::Cluster->new('main');
 $node->init;
 $node->append_conf('postgresql.conf', "shared_preload_libraries = 'pg_tde, pg_stat_monitor, pgaudit, set_user, pg_repack'");
 $node->append_conf('postgresql.conf', "pg_stat_monitor.pgsm_bucket_time = 360000");
 $node->append_conf('postgresql.conf', "pg_stat_monitor.pgsm_normalized_query = 'yes'");
-
-open my $conf2, '>>', "/tmp/datafile-location";
-print $conf2 "/tmp/keyring_data_file\n";
-close $conf2;
-
-my $rt_value = $node->start;
-ok($rt_value == 1, "Start Server");
+$node->start;
 
 # Create PGSM extension
 my ($cmdret, $stdout, $stderr) = $node->psql('postgres', 'CREATE EXTENSION IF NOT EXISTS pg_stat_monitor;', extra_params => ['-a']);
@@ -75,8 +73,8 @@ PGTDE::append_to_debug_file($stdout);
 ok($cmdret == 0, "CREATE postgis_tiger_geocoder EXTENSION");
 PGTDE::append_to_debug_file($stdout);
 
-$rt_value = $node->psql('postgres', "SELECT pg_tde_add_database_key_provider_file('file-provider', json_object( 'type' VALUE 'file', 'path' VALUE '/tmp/datafile-location' ));", extra_params => ['-a']);
-$rt_value = $node->psql('postgres', "SELECT pg_tde_set_key_using_database_key_provider('test-db-key','file-provider');", extra_params => ['-a']);
+$node->psql('postgres', "SELECT pg_tde_add_database_key_provider_file('file-provider', json_object( 'type' VALUE 'file', 'path' VALUE '/tmp/datafile-location' ));", extra_params => ['-a']);
+$node->psql('postgres', "SELECT pg_tde_set_key_using_database_key_provider('test-db-key','file-provider');", extra_params => ['-a']);
 
 $stdout = $node->safe_psql('postgres', 'CREATE TABLE test_enc1(id SERIAL,k INTEGER,PRIMARY KEY (id)) USING tde_heap;', extra_params => ['-a']);
 PGTDE::append_to_result_file($stdout);
@@ -88,9 +86,7 @@ $stdout = $node->safe_psql('postgres', 'SELECT * FROM test_enc1 ORDER BY id ASC;
 PGTDE::append_to_result_file($stdout);
 
 PGTDE::append_to_result_file("-- server restart");
-$node->stop();
-$rt_value = $node->start();
-ok($rt_value == 1, "Restart Server");
+$node->restart;
 
 $stdout = $node->safe_psql('postgres', 'SELECT * FROM test_enc1 ORDER BY id ASC;', extra_params => ['-a']);
 PGTDE::append_to_result_file($stdout);
@@ -132,7 +128,7 @@ $stdout = $node->safe_psql('postgres', 'DROP EXTENSION pg_stat_monitor;', extra_
 ok($cmdret == 0, "DROP PGTDE EXTENSION");
 PGTDE::append_to_debug_file($stdout);
 
-$node->stop();
+$node->stop;
 
 # Compare the expected and out file
 my $compare = PGTDE->compare_results();
