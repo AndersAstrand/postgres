@@ -1,79 +1,66 @@
 #!/usr/bin/perl
 
 use strict;
-use warnings;
-use File::Basename;
+use warnings FATAL => 'all';
+use PostgreSQL::Test::Cluster;
+use PostgreSQL::Test::Utils;
 use Test::More;
-use lib 't';
-use pgtde;
-
-PGTDE::setup_files_dir(basename($0));
 
 my $node = PostgreSQL::Test::Cluster->new('main');
 $node->init;
 $node->append_conf('postgresql.conf', "shared_preload_libraries = 'pg_tde'");
 $node->start;
 
-PGTDE::psql($node, 'postgres', 'CREATE EXTENSION IF NOT EXISTS pg_tde;');
-
-PGTDE::psql($node, 'postgres',
-	'SELECT extname, extversion FROM pg_extension WHERE extname = \'pg_tde\';'
+$node->safe_psql('postgres', q{CREATE EXTENSION IF NOT EXISTS pg_tde});
+$node->safe_psql(
+	'postgres', q{
+		SELECT pg_tde_add_database_key_provider_file(
+			provider_name => 'file-vault',
+			file_path => '/tmp/pg_tde_test_keyring.per'
+		)
+	}
+);
+$node->safe_psql(
+	'postgres', q{
+		SELECT pg_tde_set_key_using_database_key_provider(
+			key_name => 'test-db-key',
+			provider_name => 'file-vault'
+		)
+	}
+);
+$node->safe_psql(
+	'postgres', q{
+		CREATE TABLE test_enc(
+			id SERIAL,
+			k VARCHAR(32),
+			PRIMARY KEY (id)
+		) USING tde_heap
+	}
+);
+$node->safe_psql(
+	'postgres', q{
+		INSERT INTO test_enc (k) VALUES ('foobar'), ('barfoo')
+	}
 );
 
-PGTDE::psql($node, 'postgres',
-	'CREATE TABLE test_enc(id SERIAL,k INTEGER,PRIMARY KEY (id)) USING tde_heap;'
-);
-
-PGTDE::append_to_result_file("-- server restart");
 $node->restart;
 
-PGTDE::psql($node, 'postgres',
-	"SELECT pg_tde_add_database_key_provider_file('file-vault','/tmp/pg_tde_test_keyring.per');"
-);
+is( $node->safe_psql(
+		'postgres', q{
+			SELECT k FROM test_enc ORDER BY id ASC
+		}
+	),
+	"foobar\nbarfoo",
+	'table can be read after server restart');
 
-PGTDE::psql($node, 'postgres',
-	"SELECT pg_tde_set_key_using_database_key_provider('test-db-key','file-vault');"
-);
+my $relation_file = $node->data_dir . '/'
+  . $node->safe_psql('postgres', q{SELECT pg_relation_filepath('test_enc')});
 
-PGTDE::psql($node, 'postgres',
-	'CREATE TABLE test_enc(id SERIAL,k VARCHAR(32),PRIMARY KEY (id)) USING tde_heap;'
-);
+my $relation_file_contents = slurp_file($relation_file);
 
-PGTDE::psql($node, 'postgres',
-	'INSERT INTO test_enc (k) VALUES (\'foobar\'),(\'barfoo\');');
-
-PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc ORDER BY id ASC;');
-
-PGTDE::append_to_result_file("-- server restart");
-$node->restart;
-
-PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc ORDER BY id ASC;');
-
-# Verify that we can't see the data in the file
-my $tablefile = $node->safe_psql('postgres', 'SHOW data_directory;');
-$tablefile .= '/';
-$tablefile .=
-  $node->safe_psql('postgres', 'SELECT pg_relation_filepath(\'test_enc\');');
-
-my $strings = 'TABLEFILE FOUND: ';
-$strings .= `(ls  $tablefile >/dev/null && echo yes) || echo no`;
-PGTDE::append_to_result_file($strings);
-
-$strings = 'CONTAINS FOO (should be empty): ';
-$strings .= `strings $tablefile | grep foo`;
-PGTDE::append_to_result_file($strings);
-
-PGTDE::psql($node, 'postgres', 'DROP TABLE test_enc;');
-
-PGTDE::psql($node, 'postgres', 'DROP EXTENSION pg_tde;');
+unlike($relation_file_contents, qr/foo/,
+	'table file does not contain plaintext data');
 
 $node->stop;
-
-# Compare the expected and out file
-my $compare = PGTDE->compare_results();
-
-is($compare, 0,
-	"Compare Files: $PGTDE::expected_filename_with_path and $PGTDE::out_filename_with_path files."
-);
 
 done_testing();
