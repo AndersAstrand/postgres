@@ -275,6 +275,9 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 	 */
 	readsz = pg_pread(fd, buf, count, offset);
 
+	if (readsz < 0)
+		return readsz;
+
 	if (!keys)
 	{
 		/* cache is empty, try to read keys from disk */
@@ -302,7 +305,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 #endif
 
 	XLogSegNoOffsetToRecPtr(segno, offset, segSize, data_start);
-	XLogSegNoOffsetToRecPtr(segno, offset + count, segSize, data_end);
+	XLogSegNoOffsetToRecPtr(segno, offset + readsz, segSize, data_end);
 
 	/*
 	 * TODO: this is higly ineffective. We should get rid of linked list and
@@ -339,7 +342,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 				/* We have reached the end of the segment */
 				if (dec_end == 0)
 				{
-					dec_end = offset + count;
+					dec_end = offset + readsz;
 				}
 
 				dec_sz = dec_end - dec_off;
