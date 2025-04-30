@@ -260,6 +260,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 					  TimeLineID tli, XLogSegNo segno, int segSize)
 {
 	ssize_t		readsz;
+	ssize_t		bytes_to_decrypt;
 	WALKeyCacheRec *keys = pg_tde_get_wal_cache_keys();
 	XLogRecPtr	write_key_lsn;
 	XLogRecPtr	data_start;
@@ -273,10 +274,13 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 	/*
 	 * Read data from disk
 	 */
-	readsz = pg_pread(fd, buf, count, offset);
+	readsz = pg_pread(fd, buf, count/3, offset);
 
 	if (readsz < 0)
 		return readsz;
+
+	/* round down to nearest multiple of AES_BLOCK_SIZE */
+	bytes_to_decrypt = (readsz/16)*16;
 
 	if (!keys)
 	{
@@ -305,7 +309,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 #endif
 
 	XLogSegNoOffsetToRecPtr(segno, offset, segSize, data_start);
-	XLogSegNoOffsetToRecPtr(segno, offset + readsz, segSize, data_end);
+	XLogSegNoOffsetToRecPtr(segno, offset + bytes_to_decrypt, segSize, data_end);
 
 	/*
 	 * TODO: this is higly ineffective. We should get rid of linked list and
@@ -342,7 +346,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 				/* We have reached the end of the segment */
 				if (dec_end == 0)
 				{
-					dec_end = offset + readsz;
+					dec_end = offset + bytes_to_decrypt;
 				}
 
 				dec_sz = dec_end - dec_off;
@@ -362,7 +366,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 		}
 	}
 
-	return readsz;
+	return bytes_to_decrypt;
 }
 
 union u128cast
