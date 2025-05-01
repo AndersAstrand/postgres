@@ -31,8 +31,8 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           working-directory: contrib/pg_tde
-          gcov_ignore: "*/libkmip/*"
-          gcov_include: "*.c,*.h"
+          gcov_ignore: "contrib/pg_tde/src/libkmip/"
+          gcov_include: "contrib/pg_tde/"
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
 
