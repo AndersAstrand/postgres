@@ -232,6 +232,19 @@ json_kring_object_start(void *state)
 			parse->state = JK_EXPECT_TOP_FIELD;
 			break;
 		case JK_EXPECT_TOP_FIELD:
+			/* Reset left-overs from previous external field */
+			parse->field_type = NULL;
+			if (parse->extern_path)
+			{
+				pfree(parse->extern_path);
+				parse->extern_path = NULL;
+			}
+			if (parse->extern_url)
+			{
+				pfree(parse->extern_url);
+				parse->extern_url = NULL;
+			}
+
 			parse->state = JK_EXPECT_EXTERN_VAL;
 			break;
 		case JK_EXPECT_EXTERN_VAL:
@@ -275,11 +288,33 @@ json_kring_object_end(void *state)
 			JsonParseErrorType ret;
 			char	   *value = NULL;
 
-			if (strcmp(parse->field_type, KEYRING_REMOTE_FIELD_TYPE) == 0)
-				value = get_remote_kring_value(parse->extern_url, JK_FIELD_NAMES[parse->top_level_field]);
-			if (strcmp(parse->field_type, KEYRING_FILE_FIELD_TYPE) == 0)
-				value = get_file_kring_value(parse->extern_path, JK_FIELD_NAMES[parse->top_level_field]);
+			if (!parse->field_type)
+				ereport(ERROR,
+						errmsg("external value must contain \"type\" in field \"%s\"", JK_FIELD_NAMES[parse->top_level_field]));
 
+			if (strcmp(parse->field_type, KEYRING_REMOTE_FIELD_TYPE) == 0)
+			{
+				if (!parse->extern_url)
+					ereport(ERROR,
+							errmsg("external remote value must contain \"url\" in field \"%s\"", JK_FIELD_NAMES[parse->top_level_field]));
+
+				value = get_remote_kring_value(parse->extern_url, JK_FIELD_NAMES[parse->top_level_field]);
+				pfree(parse->extern_url);
+				parse->extern_url = NULL;
+			}
+			if (strcmp(parse->field_type, KEYRING_FILE_FIELD_TYPE) == 0)
+			{
+				if (!parse->extern_path)
+					ereport(ERROR,
+							errmsg("external file value must contain \"path\" in field \"%s\"", JK_FIELD_NAMES[parse->top_level_field]));
+
+				value = get_file_kring_value(parse->extern_path, JK_FIELD_NAMES[parse->top_level_field]);
+				pfree(parse->extern_path);
+				parse->extern_path = NULL;
+			}
+
+			pfree(parse->field_type);
+			parse->field_type = NULL;
 			if (value == NULL)
 			{
 				return JSON_INCOMPLETE;
