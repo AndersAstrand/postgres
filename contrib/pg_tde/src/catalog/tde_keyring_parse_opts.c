@@ -208,9 +208,13 @@ json_kring_array_start(void *state)
 			break;
 		case JK_EXPECT_TOP_FIELD:
 		case JK_EXPECT_EXTERN_VAL:
+			ereport(ERROR,
+					errmsg("unexpected array in field \"%s\"", JK_FIELD_NAMES[parse->top_level_field]));
+			break;
 	}
 
-	return JSON_SUCCESS;
+	/* Never reached */
+	return JSON_SEM_ACTION_FAILED;
 }
 
 /*
@@ -315,6 +319,7 @@ json_kring_object_end(void *state)
 
 			pfree(parse->field_type);
 			parse->field_type = NULL;
+
 			if (value == NULL)
 			{
 				return JSON_INCOMPLETE;
