@@ -435,6 +435,7 @@ json_kring_scalar(void *state, char *token, JsonTokenType tokentype)
 {
 	JsonKeyringState *parse = state;
 	JsonKeyringField *field;
+	char	   *value;
 
 	switch (parse->state)
 	{
@@ -450,7 +451,28 @@ json_kring_scalar(void *state, char *token, JsonTokenType tokentype)
 			break;
 	}
 
-	return json_kring_assign_scalar(parse, *field, token);
+	switch (tokentype)
+	{
+		case JSON_TOKEN_STRING:
+		case JSON_TOKEN_NUMBER:
+			value = token;
+			break;
+		case JSON_TOKEN_TRUE:
+		case JSON_TOKEN_FALSE:
+			ereport(ERROR,
+					errmsg("unexpected boolean in field \"%s\"", JK_FIELD_NAMES[parse->top_level_field]));
+			break;
+		case JSON_TOKEN_NULL:
+			value = NULL;
+			pfree(token);
+			break;
+		default:
+			ereport(ERROR,
+					errmsg("invalid token type"));
+			break;
+	}
+
+	return json_kring_assign_scalar(parse, *field, value);
 }
 
 static JsonParseErrorType
