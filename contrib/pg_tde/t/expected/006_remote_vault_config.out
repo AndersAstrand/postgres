@@ -29,4 +29,28 @@ SELECT * FROM test_enc2 ORDER BY id;
 (2 rows)
 
 DROP TABLE test_enc2;
+SELECT pg_tde_add_database_key_provider_vault_v2('vault-provider-2', '{"type": "remote", "url": "http://localhost:8889/token"}'::json, '"http://127.0.0.1:8200"'::json, '"secret"'::json, NULL)
+ pg_tde_add_database_key_provider_vault_v2 
+-------------------------------------------
+                                         2
+(1 row)
+
+SELECT pg_tde_set_key_using_database_key_provider('db-key', 'vault-provider-2');
+ pg_tde_set_key_using_database_key_provider 
+--------------------------------------------
+ 
+(1 row)
+
+SELECT pg_tde_change_database_key_provider_vault_v2('vault-provider-2', '{"type": "remote", "url": "http://localhost:8899/token"}'::json, '"http://127.0.0.1:8200"'::json, '"secret"'::json, NULL)
+ pg_tde_change_database_key_provider_vault_v2 
+----------------------------------------------
+                                            2
+(1 row)
+
+SELECT pg_tde_verify_key()
+ pg_tde_verify_key 
+-------------------
+ 
+(1 row)
+
 DROP EXTENSION pg_tde;

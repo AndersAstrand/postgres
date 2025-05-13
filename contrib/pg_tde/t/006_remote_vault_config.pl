@@ -4,9 +4,14 @@ use strict;
 use warnings;
 use Env;
 use File::Basename;
+use HTTP::Request;
+use JSON;
+use LWP::UserAgent;
 use Test::More;
 use lib 't';
 use pgtde;
+
+our $token = create_vault_token();
 
 {
 
@@ -46,7 +51,7 @@ use pgtde;
 	sub resp_token
 	{
 		my $cgi = shift;
-		print $cgi->header, "$ENV{'ROOT_TOKEN'}\r\n";
+		print $cgi->header, "$token\r\n";
 	}
 
 	sub resp_url
@@ -90,11 +95,29 @@ PGTDE::psql($node, 'postgres', 'SELECT * FROM test_enc2 ORDER BY id;');
 
 PGTDE::psql($node, 'postgres', 'DROP TABLE test_enc2;');
 
+# Token can be rotated
+PGTDE::psql($node, 'postgres',
+	q{SELECT pg_tde_add_database_key_provider_vault_v2('vault-provider-2', '{"type": "remote", "url": "http://localhost:8889/token"}'::json, '"http://127.0.0.1:8200"'::json, '"secret"'::json, NULL)}
+);
+PGTDE::psql($node, 'postgres',
+	"SELECT pg_tde_set_key_using_database_key_provider('db-key', 'vault-provider-2');"
+);
+my $new_token = create_vault_token();
+revoke_vault_token($token);
+$token = $new_token;
+my $pid2 = MyWebServer->new(8899)->background();
+PGTDE::psql($node, 'postgres',
+	q{SELECT pg_tde_change_database_key_provider_vault_v2('vault-provider-2', '{"type": "remote", "url": "http://localhost:8899/token"}'::json, '"http://127.0.0.1:8200"'::json, '"secret"'::json, NULL)}
+);
+$node->restart; # Restart to ensure principal key is not cached.
+PGTDE::psql($node, 'postgres', 'SELECT pg_tde_verify_key()');
+
 PGTDE::psql($node, 'postgres', 'DROP EXTENSION pg_tde;');
 
 $node->stop;
 
 kill('TERM', $pid);
+kill('TERM', $pid2);
 
 # Compare the expected and out file
 my $compare = PGTDE->compare_results();
@@ -104,3 +127,36 @@ is($compare, 0,
 );
 
 done_testing();
+
+sub create_vault_token
+{
+	my $request = HTTP::Request->new(
+		'POST',
+		'http://127.0.0.1:8200/v1/auth/token/create',
+		[
+			'X-Vault-Token' => $ENV{'ROOT_TOKEN'},
+			'Content-Type' => 'application/json',
+		],
+		encode_json({'policies' => ['root']}),
+	);
+
+	my $result = LWP::UserAgent->new->request($request);
+
+	decode_json($result->decoded_content)->{'auth'}->{'client_token'};
+};
+
+sub revoke_vault_token
+{
+	my ($revoke_token) = @_;
+
+	my $request = HTTP::Request->new(
+		'PUT',
+		'http://127.0.0.1:8200/v1/auth/token/revoke-self',
+		[
+			'X-Vault-Token' => $revoke_token,
+			'Content-Type' => 'application/json',
+		],
+	);
+
+	LWP::UserAgent->new->request($request);
+}

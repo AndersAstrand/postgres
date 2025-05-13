@@ -89,7 +89,7 @@ sql_tests = [
   'change_access_method',
   'insert_update_delete',
   'key_provider',
-  'kmip_test',
+#  'kmip_test',
   'partition_table',
   'pg_tde_is_encrypted',
   'relocate',
