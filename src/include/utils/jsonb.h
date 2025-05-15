@@ -256,7 +256,7 @@ struct JsonbValue
 
 	union
 	{
-		Numeric numeric;
+		Numeric    *numeric;
 		bool		boolean;
 		struct
 		{

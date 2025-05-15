@@ -150,9 +150,9 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	GISTENTRY  *n = (GISTENTRY *) PG_GETARG_POINTER(1);
 	float	   *result = (float *) PG_GETARG_POINTER(2);
 
-	Numeric		us,
-				os,
-				ds;
+	Numeric    *us,
+			   *os,
+			   *ds;
 
 	GBT_VARKEY *org = (GBT_VARKEY *) DatumGetPointer(o->key);
 	GBT_VARKEY *newe = (GBT_VARKEY *) DatumGetPointer(n->key);
@@ -188,7 +188,7 @@ gbt_numeric_penalty(PG_FUNCTION_ARGS)
 	}
 	else
 	{
-		Numeric		nul = int64_to_numeric(0);
+		Numeric    *nul = int64_to_numeric(0);
 
 		*result = 0.0;
 

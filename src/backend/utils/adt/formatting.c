@@ -6343,9 +6343,9 @@ numeric_to_number(PG_FUNCTION_ARGS)
 
 	if (IS_MULTI(&Num))
 	{
-		Numeric		x;
-		Numeric		a = int64_to_numeric(10);
-		Numeric		b = int64_to_numeric(-Num.multi);
+		Numeric    *x;
+		Numeric    *a = int64_to_numeric(10);
+		Numeric    *b = int64_to_numeric(-Num.multi);
 
 		x = DatumGetNumeric(DirectFunctionCall2(numeric_power,
 												NumericGetDatum(a),
@@ -6366,7 +6366,7 @@ numeric_to_number(PG_FUNCTION_ARGS)
 Datum
 numeric_to_char(PG_FUNCTION_ARGS)
 {
-	Numeric		value = PG_GETARG_NUMERIC(0);
+	Numeric    *value = PG_GETARG_NUMERIC(0);
 	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	FormatNode *format;
@@ -6432,13 +6432,13 @@ numeric_to_char(PG_FUNCTION_ARGS)
 	else
 	{
 		int			numstr_pre_len;
-		Numeric		val = value;
-		Numeric		x;
+		Numeric    *val = value;
+		Numeric    *x;
 
 		if (IS_MULTI(&Num))
 		{
-			Numeric		a = int64_to_numeric(10);
-			Numeric		b = int64_to_numeric(Num.multi);
+			Numeric    *a = int64_to_numeric(10);
+			Numeric    *b = int64_to_numeric(Num.multi);
 
 			x = DatumGetNumeric(DirectFunctionCall2(numeric_power,
 													NumericGetDatum(a),

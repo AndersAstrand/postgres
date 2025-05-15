@@ -2062,7 +2062,7 @@ jsonb_numeric(PG_FUNCTION_ARGS)
 {
 	Jsonb	   *in = PG_GETARG_JSONB_P(0);
 	JsonbValue	v;
-	Numeric		retValue;
+	Numeric    *retValue;
 
 	if (!JsonbExtractScalar(&in->root, &v))
 		cannotCastJsonbValue(v.type, "numeric");

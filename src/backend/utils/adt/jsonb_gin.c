@@ -692,7 +692,7 @@ extract_jsp_bool_expr(JsonPathGinContext *cxt, JsonPathGinPath path,
 					case jpiNumeric:
 						scalar.type = jbvNumeric;
 						scalar.val.numeric =
-							(Numeric) scalar_item->content.value.data;
+							(Numeric *) scalar_item->content.value.data;
 						break;
 					case jpiString:
 						scalar.type = jbvString;

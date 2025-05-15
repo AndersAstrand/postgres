@@ -529,7 +529,7 @@ fillJsonbValue(JsonbContainer *container, int index,
 	else if (JBE_ISNUMERIC(entry))
 	{
 		result->type = jbvNumeric;
-		result->val.numeric = (Numeric) (base_addr + INTALIGN(offset));
+		result->val.numeric = (Numeric *) (base_addr + INTALIGN(offset));
 	}
 	else if (JBE_ISBOOL_TRUE(entry))
 	{

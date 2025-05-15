@@ -5700,7 +5700,7 @@ timestamp_part_common(PG_FUNCTION_ARGS, bool retnumeric)
 				/* (timestamp - epoch) / 1000000 */
 				if (retnumeric)
 				{
-					Numeric		result;
+					Numeric    *result;
 
 					if (timestamp < (PG_INT64_MAX + epoch))
 						result = int64_div_fast_to_numeric(timestamp - epoch, 6);
@@ -5971,7 +5971,7 @@ timestamptz_part_common(PG_FUNCTION_ARGS, bool retnumeric)
 				/* (timestamp - epoch) / 1000000 */
 				if (retnumeric)
 				{
-					Numeric		result;
+					Numeric    *result;
 
 					if (timestamp < (PG_INT64_MAX + epoch))
 						result = int64_div_fast_to_numeric(timestamp - epoch, 6);
@@ -6238,7 +6238,7 @@ interval_part_common(PG_FUNCTION_ARGS, bool retnumeric)
 	{
 		if (retnumeric)
 		{
-			Numeric		result;
+			Numeric    *result;
 			int64		secs_from_day_month;
 			int64		val;
 

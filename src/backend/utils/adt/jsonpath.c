@@ -1214,12 +1214,12 @@ jspGetBool(JsonPathItem *v)
 	return (bool) *v->content.value.data;
 }
 
-Numeric
+Numeric *
 jspGetNumeric(JsonPathItem *v)
 {
 	Assert(v->type == jpiNumeric);
 
-	return (Numeric) v->content.value.data;
+	return (Numeric *) v->content.value.data;
 }
 
 char *

@@ -626,7 +626,7 @@ pg_size_pretty(PG_FUNCTION_ARGS)
 }
 
 static char *
-numeric_to_cstring(Numeric n)
+numeric_to_cstring(Numeric *n)
 {
 	Datum		d = NumericGetDatum(n);
 
@@ -634,7 +634,7 @@ numeric_to_cstring(Numeric n)
 }
 
 static bool
-numeric_is_less(Numeric a, Numeric b)
+numeric_is_less(Numeric *a, Numeric *b)
 {
 	Datum		da = NumericGetDatum(a);
 	Datum		db = NumericGetDatum(b);
@@ -642,8 +642,8 @@ numeric_is_less(Numeric a, Numeric b)
 	return DatumGetBool(DirectFunctionCall2(numeric_lt, da, db));
 }
 
-static Numeric
-numeric_absolute(Numeric n)
+static Numeric *
+numeric_absolute(Numeric *n)
 {
 	Datum		d = NumericGetDatum(n);
 	Datum		result;
@@ -652,8 +652,8 @@ numeric_absolute(Numeric n)
 	return DatumGetNumeric(result);
 }
 
-static Numeric
-numeric_half_rounded(Numeric n)
+static Numeric *
+numeric_half_rounded(Numeric *n)
 {
 	Datum		d = NumericGetDatum(n);
 	Datum		zero;
@@ -674,8 +674,8 @@ numeric_half_rounded(Numeric n)
 	return DatumGetNumeric(result);
 }
 
-static Numeric
-numeric_truncated_divide(Numeric n, int64 divisor)
+static Numeric *
+numeric_truncated_divide(Numeric *n, int64 divisor)
 {
 	Datum		d = NumericGetDatum(n);
 	Datum		divisor_numeric;
@@ -689,7 +689,7 @@ numeric_truncated_divide(Numeric n, int64 divisor)
 Datum
 pg_size_pretty_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		size = PG_GETARG_NUMERIC(0);
+	Numeric    *size = PG_GETARG_NUMERIC(0);
 	char	   *result = NULL;
 	const struct size_pretty_unit *unit;
 
@@ -735,7 +735,7 @@ pg_size_bytes(PG_FUNCTION_ARGS)
 			   *strptr,
 			   *endptr;
 	char		saved_char;
-	Numeric		num;
+	Numeric    *num;
 	int64		result;
 	bool		have_digits = false;
 
@@ -863,7 +863,7 @@ pg_size_bytes(PG_FUNCTION_ARGS)
 
 		if (multiplier > 1)
 		{
-			Numeric		mul_num;
+			Numeric    *mul_num;
 
 			mul_num = int64_to_numeric(multiplier);
 

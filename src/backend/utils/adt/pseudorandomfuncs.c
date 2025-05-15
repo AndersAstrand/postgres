@@ -173,9 +173,9 @@ int8random(PG_FUNCTION_ARGS)
 Datum
 numeric_random(PG_FUNCTION_ARGS)
 {
-	Numeric		rmin = PG_GETARG_NUMERIC(0);
-	Numeric		rmax = PG_GETARG_NUMERIC(1);
-	Numeric		result;
+	Numeric    *rmin = PG_GETARG_NUMERIC(0);
+	Numeric    *rmax = PG_GETARG_NUMERIC(1);
+	Numeric    *result;
 
 	initialize_prng();
 

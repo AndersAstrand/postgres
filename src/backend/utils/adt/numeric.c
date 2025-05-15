@@ -153,7 +153,7 @@ union NumericChoice
 	struct NumericShort n_short;	/* Short form (2-byte header) */
 };
 
-struct NumericData
+struct Numeric
 {
 	int32		vl_len_;		/* varlena header (do not touch directly!) */
 	union NumericChoice choice; /* choice of format */
@@ -261,8 +261,7 @@ struct NumericData
 
 /* ----------
  * NumericVar is the format we use for arithmetic.  The digit-array part
- * is the same as the NumericData storage format, but the header is more
- * complex.
+ * is the same as the Numeric storage format, but the header is more complex.
  *
  * The value represented by a NumericVar is determined by the sign, weight,
  * ndigits, and digits[] array.  If it is a "special" value (NaN or Inf)
@@ -476,7 +475,7 @@ static const int round_powers[4] = {0, 1000, 100, 10};
  */
 
 #ifdef NUMERIC_DEBUG
-static void dump_numeric(const char *str, Numeric num);
+static void dump_numeric(const char *str, Numeric *num);
 static void dump_var(const char *str, NumericVar *var);
 #else
 #define dump_numeric(s,n)
@@ -514,8 +513,8 @@ static bool set_var_from_non_decimal_integer_str(const char *str,
 												 int base, NumericVar *dest,
 												 const char **endptr,
 												 Node *escontext);
-static void set_var_from_num(Numeric num, NumericVar *dest);
-static void init_var_from_num(Numeric num, NumericVar *dest);
+static void set_var_from_num(Numeric *num, NumericVar *dest);
+static void init_var_from_num(Numeric *num, NumericVar *dest);
 static void set_var_from_var(const NumericVar *value, NumericVar *dest);
 static char *get_str_from_var(const NumericVar *var);
 static char *get_str_from_var_sci(const NumericVar *var, int rscale);
@@ -523,12 +522,12 @@ static char *get_str_from_var_sci(const NumericVar *var, int rscale);
 static void numericvar_serialize(StringInfo buf, const NumericVar *var);
 static void numericvar_deserialize(StringInfo buf, NumericVar *var);
 
-static Numeric duplicate_numeric(Numeric num);
-static Numeric make_result(const NumericVar *var);
-static Numeric make_result_opt_error(const NumericVar *var, bool *have_error);
+static Numeric *duplicate_numeric(Numeric *num);
+static Numeric *make_result(const NumericVar *var);
+static Numeric *make_result_opt_error(const NumericVar *var, bool *have_error);
 
 static bool apply_typmod(NumericVar *var, int32 typmod, Node *escontext);
-static bool apply_typmod_special(Numeric num, int32 typmod, Node *escontext);
+static bool apply_typmod_special(Numeric *num, int32 typmod, Node *escontext);
 
 static bool numericvar_to_int32(const NumericVar *var, int32 *result);
 static bool numericvar_to_int64(const NumericVar *var, int64 *result);
@@ -548,7 +547,7 @@ static int	numeric_cmp_abbrev(Datum x, Datum y, SortSupport ssup);
 static Datum numeric_abbrev_convert_var(const NumericVar *var,
 										NumericSortSupport *nss);
 
-static int	cmp_numerics(Numeric num1, Numeric num2);
+static int	cmp_numerics(Numeric *num1, Numeric *num2);
 static int	cmp_var(const NumericVar *var1, const NumericVar *var2);
 static int	cmp_var_common(const NumericDigit *var1digits, int var1ndigits,
 						   int var1weight, int var1sign,
@@ -607,7 +606,7 @@ static void sub_abs(const NumericVar *var1, const NumericVar *var2,
 static void round_var(NumericVar *var, int rscale);
 static void trunc_var(NumericVar *var, int rscale);
 static void strip_var(NumericVar *var);
-static void compute_bucket(Numeric operand, Numeric bound1, Numeric bound2,
+static void compute_bucket(Numeric *operand, Numeric *bound1, Numeric *bound2,
 						   const NumericVar *count_var,
 						   NumericVar *result_var);
 
@@ -642,7 +641,7 @@ numeric_in(PG_FUNCTION_ARGS)
 #endif
 	int32		typmod = PG_GETARG_INT32(2);
 	Node	   *escontext = fcinfo->context;
-	Numeric		res;
+	Numeric    *res;
 	const char *cp;
 	const char *numstart;
 	int			sign;
@@ -815,7 +814,7 @@ invalid_syntax:
 Datum
 numeric_out(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	NumericVar	x;
 	char	   *str;
 
@@ -848,7 +847,7 @@ numeric_out(PG_FUNCTION_ARGS)
  *	Is Numeric value a NaN?
  */
 bool
-numeric_is_nan(Numeric num)
+numeric_is_nan(Numeric *num)
 {
 	return NUMERIC_IS_NAN(num);
 }
@@ -859,7 +858,7 @@ numeric_is_nan(Numeric num)
  *	Is Numeric value an infinity?
  */
 bool
-numeric_is_inf(Numeric num)
+numeric_is_inf(Numeric *num)
 {
 	return NUMERIC_IS_INF(num);
 }
@@ -870,7 +869,7 @@ numeric_is_inf(Numeric num)
  *	Is Numeric value integral?
  */
 static bool
-numeric_is_integral(Numeric num)
+numeric_is_integral(Numeric *num)
 {
 	NumericVar	arg;
 
@@ -989,7 +988,7 @@ numeric_maximum_size(int32 typmod)
  *	Output function for numeric data type in scientific notation.
  */
 char *
-numeric_out_sci(Numeric num, int scale)
+numeric_out_sci(Numeric *num, int scale)
 {
 	NumericVar	x;
 	char	   *str;
@@ -1023,7 +1022,7 @@ numeric_out_sci(Numeric num, int scale)
  *	compare equal.
  */
 char *
-numeric_normalize(Numeric num)
+numeric_normalize(Numeric *num)
 {
 	NumericVar	x;
 	char	   *str;
@@ -1084,7 +1083,7 @@ numeric_recv(PG_FUNCTION_ARGS)
 #endif
 	int32		typmod = PG_GETARG_INT32(2);
 	NumericVar	value;
-	Numeric		res;
+	Numeric    *res;
 	int			len,
 				i;
 
@@ -1162,7 +1161,7 @@ numeric_recv(PG_FUNCTION_ARGS)
 Datum
 numeric_send(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	NumericVar	x;
 	StringInfoData buf;
 	int			i;
@@ -1245,9 +1244,9 @@ numeric_support(PG_FUNCTION_ARGS)
 Datum
 numeric		(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	int32		typmod = PG_GETARG_INT32(1);
-	Numeric		new;
+	Numeric    *new;
 	int			precision;
 	int			scale;
 	int			ddigits;
@@ -1392,8 +1391,8 @@ numerictypmodout(PG_FUNCTION_ARGS)
 Datum
 numeric_abs(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 
 	/*
 	 * Do it the easy way directly on the packed format
@@ -1419,8 +1418,8 @@ numeric_abs(PG_FUNCTION_ARGS)
 Datum
 numeric_uminus(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 
 	/*
 	 * Do it the easy way directly on the packed format
@@ -1461,7 +1460,7 @@ numeric_uminus(PG_FUNCTION_ARGS)
 Datum
 numeric_uplus(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 
 	PG_RETURN_NUMERIC(duplicate_numeric(num));
 }
@@ -1475,7 +1474,7 @@ numeric_uplus(PG_FUNCTION_ARGS)
  * taken care of the NaN case, but we can handle infinities here.
  */
 static int
-numeric_sign_internal(Numeric num)
+numeric_sign_internal(Numeric *num)
 {
 	if (NUMERIC_IS_SPECIAL(num))
 	{
@@ -1509,7 +1508,7 @@ numeric_sign_internal(Numeric num)
 Datum
 numeric_sign(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 
 	/*
 	 * Handle NaN (infinities can be handled normally)
@@ -1542,9 +1541,9 @@ numeric_sign(PG_FUNCTION_ARGS)
 Datum
 numeric_round(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	int32		scale = PG_GETARG_INT32(1);
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	arg;
 
 	/*
@@ -1596,9 +1595,9 @@ numeric_round(PG_FUNCTION_ARGS)
 Datum
 numeric_trunc(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	int32		scale = PG_GETARG_INT32(1);
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	arg;
 
 	/*
@@ -1646,8 +1645,8 @@ numeric_trunc(PG_FUNCTION_ARGS)
 Datum
 numeric_ceil(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 	NumericVar	result;
 
 	/*
@@ -1674,8 +1673,8 @@ numeric_ceil(PG_FUNCTION_ARGS)
 Datum
 numeric_floor(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 	NumericVar	result;
 
 	/*
@@ -1714,8 +1713,8 @@ generate_series_step_numeric(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		Numeric		start_num = PG_GETARG_NUMERIC(0);
-		Numeric		stop_num = PG_GETARG_NUMERIC(1);
+		Numeric    *start_num = PG_GETARG_NUMERIC(0);
+		Numeric    *stop_num = PG_GETARG_NUMERIC(1);
 		NumericVar	steploc = const_one;
 
 		/* Reject NaN and infinities in start and stop values */
@@ -1745,7 +1744,7 @@ generate_series_step_numeric(PG_FUNCTION_ARGS)
 		/* see if we were given an explicit step size */
 		if (PG_NARGS() == 3)
 		{
-			Numeric		step_num = PG_GETARG_NUMERIC(2);
+			Numeric    *step_num = PG_GETARG_NUMERIC(2);
 
 			if (NUMERIC_IS_SPECIAL(step_num))
 			{
@@ -1811,7 +1810,7 @@ generate_series_step_numeric(PG_FUNCTION_ARGS)
 		(fctx->step.sign == NUMERIC_NEG &&
 		 cmp_var(&fctx->current, &fctx->stop) >= 0))
 	{
-		Numeric		result = make_result(&fctx->current);
+		Numeric    *result = make_result(&fctx->current);
 
 		/* switch to memory context appropriate for iteration calculation */
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -1877,8 +1876,8 @@ generate_series_numeric_support(PG_FUNCTION_ARGS)
 					 IsA(arg2, Const) &&
 					 (arg3 == NULL || IsA(arg3, Const)))
 			{
-				Numeric		start_num;
-				Numeric		stop_num;
+				Numeric    *start_num;
+				Numeric    *stop_num;
 				NumericVar	step = const_one;
 
 				/*
@@ -1894,7 +1893,7 @@ generate_series_numeric_support(PG_FUNCTION_ARGS)
 
 				if (arg3)
 				{
-					Numeric		step_num;
+					Numeric    *step_num;
 
 					step_num = DatumGetNumeric(((Const *) arg3)->constvalue);
 
@@ -1965,9 +1964,9 @@ generate_series_numeric_support(PG_FUNCTION_ARGS)
 Datum
 width_bucket_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		operand = PG_GETARG_NUMERIC(0);
-	Numeric		bound1 = PG_GETARG_NUMERIC(1);
-	Numeric		bound2 = PG_GETARG_NUMERIC(2);
+	Numeric    *operand = PG_GETARG_NUMERIC(0);
+	Numeric    *bound1 = PG_GETARG_NUMERIC(1);
+	Numeric    *bound2 = PG_GETARG_NUMERIC(2);
 	int32		count = PG_GETARG_INT32(3);
 	NumericVar	count_var;
 	NumericVar	result_var;
@@ -2051,7 +2050,7 @@ width_bucket_numeric(PG_FUNCTION_ARGS)
  * multiply by count before dividing, to avoid unnecessary roundoff error.
  */
 static void
-compute_bucket(Numeric operand, Numeric bound1, Numeric bound2,
+compute_bucket(Numeric *operand, Numeric *bound1, Numeric *bound2,
 			   const NumericVar *count_var, NumericVar *result_var)
 {
 	NumericVar	bound1_var;
@@ -2171,7 +2170,7 @@ numeric_abbrev_convert(Datum original_datum, SortSupport ssup)
 {
 	NumericSortSupport *nss = ssup->ssup_extra;
 	void	   *original_varatt = PG_DETOAST_DATUM_PACKED(original_datum);
-	Numeric		value;
+	Numeric    *value;
 	Datum		result;
 
 	nss->input_count += 1;
@@ -2190,10 +2189,10 @@ numeric_abbrev_convert(Datum original_datum, SortSupport ssup)
 		SET_VARSIZE(buf, VARHDRSZ + sz);
 		memcpy(VARDATA(buf), VARDATA_SHORT(original_varatt), sz);
 
-		value = (Numeric) buf;
+		value = (Numeric *) buf;
 	}
 	else
-		value = (Numeric) original_varatt;
+		value = (Numeric *) original_varatt;
 
 	if (NUMERIC_IS_SPECIAL(value))
 	{
@@ -2298,8 +2297,8 @@ numeric_abbrev_abort(int memtupcount, SortSupport ssup)
 static int
 numeric_fast_cmp(Datum x, Datum y, SortSupport ssup)
 {
-	Numeric		nx = DatumGetNumeric(x);
-	Numeric		ny = DatumGetNumeric(y);
+	Numeric    *nx = DatumGetNumeric(x);
+	Numeric    *ny = DatumGetNumeric(y);
 	int			result;
 
 	result = cmp_numerics(nx, ny);
@@ -2516,8 +2515,8 @@ numeric_abbrev_convert_var(const NumericVar *var, NumericSortSupport *nss)
 Datum
 numeric_cmp(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	int			result;
 
 	result = cmp_numerics(num1, num2);
@@ -2532,8 +2531,8 @@ numeric_cmp(PG_FUNCTION_ARGS)
 Datum
 numeric_eq(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	bool		result;
 
 	result = cmp_numerics(num1, num2) == 0;
@@ -2547,8 +2546,8 @@ numeric_eq(PG_FUNCTION_ARGS)
 Datum
 numeric_ne(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	bool		result;
 
 	result = cmp_numerics(num1, num2) != 0;
@@ -2562,8 +2561,8 @@ numeric_ne(PG_FUNCTION_ARGS)
 Datum
 numeric_gt(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	bool		result;
 
 	result = cmp_numerics(num1, num2) > 0;
@@ -2577,8 +2576,8 @@ numeric_gt(PG_FUNCTION_ARGS)
 Datum
 numeric_ge(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	bool		result;
 
 	result = cmp_numerics(num1, num2) >= 0;
@@ -2592,8 +2591,8 @@ numeric_ge(PG_FUNCTION_ARGS)
 Datum
 numeric_lt(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	bool		result;
 
 	result = cmp_numerics(num1, num2) < 0;
@@ -2607,8 +2606,8 @@ numeric_lt(PG_FUNCTION_ARGS)
 Datum
 numeric_le(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	bool		result;
 
 	result = cmp_numerics(num1, num2) <= 0;
@@ -2620,7 +2619,7 @@ numeric_le(PG_FUNCTION_ARGS)
 }
 
 static int
-cmp_numerics(Numeric num1, Numeric num2)
+cmp_numerics(Numeric *num1, Numeric *num2)
 {
 	int			result;
 
@@ -2679,9 +2678,9 @@ cmp_numerics(Numeric num1, Numeric num2)
 Datum
 in_range_numeric_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		val = PG_GETARG_NUMERIC(0);
-	Numeric		base = PG_GETARG_NUMERIC(1);
-	Numeric		offset = PG_GETARG_NUMERIC(2);
+	Numeric    *val = PG_GETARG_NUMERIC(0);
+	Numeric    *base = PG_GETARG_NUMERIC(1);
+	Numeric    *offset = PG_GETARG_NUMERIC(2);
 	bool		sub = PG_GETARG_BOOL(3);
 	bool		less = PG_GETARG_BOOL(4);
 	bool		result;
@@ -2814,7 +2813,7 @@ in_range_numeric_numeric(PG_FUNCTION_ARGS)
 Datum
 hash_numeric(PG_FUNCTION_ARGS)
 {
-	Numeric		key = PG_GETARG_NUMERIC(0);
+	Numeric    *key = PG_GETARG_NUMERIC(0);
 	Datum		digit_hash;
 	Datum		result;
 	int			weight;
@@ -2894,7 +2893,7 @@ hash_numeric(PG_FUNCTION_ARGS)
 Datum
 hash_numeric_extended(PG_FUNCTION_ARGS)
 {
-	Numeric		key = PG_GETARG_NUMERIC(0);
+	Numeric    *key = PG_GETARG_NUMERIC(0);
 	uint64		seed = PG_GETARG_INT64(1);
 	Datum		digit_hash;
 	Datum		result;
@@ -2965,9 +2964,9 @@ hash_numeric_extended(PG_FUNCTION_ARGS)
 Datum
 numeric_add(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 
 	res = numeric_add_opt_error(num1, num2, NULL);
 
@@ -2981,13 +2980,13 @@ numeric_add(PG_FUNCTION_ARGS)
  *	on error it's set to true, NULL returned.  This is helpful when caller
  *	need to handle errors by itself.
  */
-Numeric
-numeric_add_opt_error(Numeric num1, Numeric num2, bool *have_error)
+Numeric *
+numeric_add_opt_error(Numeric *num1, Numeric *num2, bool *have_error)
 {
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities
@@ -3042,9 +3041,9 @@ numeric_add_opt_error(Numeric num1, Numeric num2, bool *have_error)
 Datum
 numeric_sub(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 
 	res = numeric_sub_opt_error(num1, num2, NULL);
 
@@ -3059,13 +3058,13 @@ numeric_sub(PG_FUNCTION_ARGS)
  *	on error it's set to true, NULL returned.  This is helpful when caller
  *	need to handle errors by itself.
  */
-Numeric
-numeric_sub_opt_error(Numeric num1, Numeric num2, bool *have_error)
+Numeric *
+numeric_sub_opt_error(Numeric *num1, Numeric *num2, bool *have_error)
 {
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities
@@ -3120,9 +3119,9 @@ numeric_sub_opt_error(Numeric num1, Numeric num2, bool *have_error)
 Datum
 numeric_mul(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 
 	res = numeric_mul_opt_error(num1, num2, NULL);
 
@@ -3137,13 +3136,13 @@ numeric_mul(PG_FUNCTION_ARGS)
  *	on error it's set to true, NULL returned.  This is helpful when caller
  *	need to handle errors by itself.
  */
-Numeric
-numeric_mul_opt_error(Numeric num1, Numeric num2, bool *have_error)
+Numeric *
+numeric_mul_opt_error(Numeric *num1, Numeric *num2, bool *have_error)
 {
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities
@@ -3241,9 +3240,9 @@ numeric_mul_opt_error(Numeric num1, Numeric num2, bool *have_error)
 Datum
 numeric_div(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 
 	res = numeric_div_opt_error(num1, num2, NULL);
 
@@ -3258,13 +3257,13 @@ numeric_div(PG_FUNCTION_ARGS)
  *	on error it's set to true, NULL returned.  This is helpful when caller
  *	need to handle errors by itself.
  */
-Numeric
-numeric_div_opt_error(Numeric num1, Numeric num2, bool *have_error)
+Numeric *
+numeric_div_opt_error(Numeric *num1, Numeric *num2, bool *have_error)
 {
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 	int			rscale;
 
 	if (have_error)
@@ -3376,12 +3375,12 @@ numeric_div_opt_error(Numeric num1, Numeric num2, bool *have_error)
 Datum
 numeric_div_trunc(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities
@@ -3465,9 +3464,9 @@ numeric_div_trunc(PG_FUNCTION_ARGS)
 Datum
 numeric_mod(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 
 	res = numeric_mod_opt_error(num1, num2, NULL);
 
@@ -3482,10 +3481,10 @@ numeric_mod(PG_FUNCTION_ARGS)
  *	on error it's set to true, NULL returned.  This is helpful when caller
  *	need to handle errors by itself.
  */
-Numeric
-numeric_mod_opt_error(Numeric num1, Numeric num2, bool *have_error)
+Numeric *
+numeric_mod_opt_error(Numeric *num1, Numeric *num2, bool *have_error)
 {
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
@@ -3554,9 +3553,9 @@ numeric_mod_opt_error(Numeric num1, Numeric num2, bool *have_error)
 Datum
 numeric_inc(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	NumericVar	arg;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities
@@ -3587,8 +3586,8 @@ numeric_inc(PG_FUNCTION_ARGS)
 Datum
 numeric_smaller(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 
 	/*
 	 * Use cmp_numerics so that this will agree with the comparison operators,
@@ -3609,8 +3608,8 @@ numeric_smaller(PG_FUNCTION_ARGS)
 Datum
 numeric_larger(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 
 	/*
 	 * Use cmp_numerics so that this will agree with the comparison operators,
@@ -3638,12 +3637,12 @@ numeric_larger(PG_FUNCTION_ARGS)
 Datum
 numeric_gcd(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities: we consider the result to be NaN in all such
@@ -3681,12 +3680,12 @@ numeric_gcd(PG_FUNCTION_ARGS)
 Datum
 numeric_lcm(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/*
 	 * Handle NaN and infinities: we consider the result to be NaN in all such
@@ -3742,7 +3741,7 @@ Datum
 numeric_fac(PG_FUNCTION_ARGS)
 {
 	int64		num = PG_GETARG_INT64(0);
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	fact;
 	NumericVar	result;
 
@@ -3793,8 +3792,8 @@ numeric_fac(PG_FUNCTION_ARGS)
 Datum
 numeric_sqrt(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 	NumericVar	arg;
 	NumericVar	result;
 	int			sweight;
@@ -3865,8 +3864,8 @@ numeric_sqrt(PG_FUNCTION_ARGS)
 Datum
 numeric_exp(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 	NumericVar	arg;
 	NumericVar	result;
 	int			rscale;
@@ -3932,8 +3931,8 @@ numeric_exp(PG_FUNCTION_ARGS)
 Datum
 numeric_ln(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 	NumericVar	arg;
 	NumericVar	result;
 	int			ln_dweight;
@@ -3981,9 +3980,9 @@ numeric_ln(PG_FUNCTION_ARGS)
 Datum
 numeric_log(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
@@ -4052,9 +4051,9 @@ numeric_log(PG_FUNCTION_ARGS)
 Datum
 numeric_power(PG_FUNCTION_ARGS)
 {
-	Numeric		num1 = PG_GETARG_NUMERIC(0);
-	Numeric		num2 = PG_GETARG_NUMERIC(1);
-	Numeric		res;
+	Numeric    *num1 = PG_GETARG_NUMERIC(0);
+	Numeric    *num2 = PG_GETARG_NUMERIC(1);
+	Numeric    *res;
 	NumericVar	arg1;
 	NumericVar	arg2;
 	NumericVar	result;
@@ -4239,7 +4238,7 @@ numeric_power(PG_FUNCTION_ARGS)
 Datum
 numeric_scale(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 
 	if (NUMERIC_IS_SPECIAL(num))
 		PG_RETURN_NULL();
@@ -4304,7 +4303,7 @@ get_min_scale(NumericVar *var)
 Datum
 numeric_min_scale(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	NumericVar	arg;
 	int			min_scale;
 
@@ -4324,8 +4323,8 @@ numeric_min_scale(PG_FUNCTION_ARGS)
 Datum
 numeric_trim_scale(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
-	Numeric		res;
+	Numeric    *num = PG_GETARG_NUMERIC(0);
+	Numeric    *res;
 	NumericVar	result;
 
 	if (NUMERIC_IS_SPECIAL(num))
@@ -4342,13 +4341,13 @@ numeric_trim_scale(PG_FUNCTION_ARGS)
 /*
  * Return a random numeric value in the range [rmin, rmax].
  */
-Numeric
-random_numeric(pg_prng_state *state, Numeric rmin, Numeric rmax)
+Numeric *
+random_numeric(pg_prng_state *state, Numeric *rmin, Numeric *rmax)
 {
 	NumericVar	rmin_var;
 	NumericVar	rmax_var;
 	NumericVar	result;
-	Numeric		res;
+	Numeric    *res;
 
 	/* Range bounds must not be NaN/infinity */
 	if (NUMERIC_IS_SPECIAL(rmin))
@@ -4397,10 +4396,10 @@ random_numeric(pg_prng_state *state, Numeric rmin, Numeric rmax)
  * ----------------------------------------------------------------------
  */
 
-Numeric
+Numeric *
 int64_to_numeric(int64 val)
 {
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	result;
 
 	init_var(&result);
@@ -4418,10 +4417,10 @@ int64_to_numeric(int64 val)
  * Convert val1/(10**log10val2) to numeric.  This is much faster than normal
  * numeric division.
  */
-Numeric
+Numeric *
 int64_div_fast_to_numeric(int64 val1, int log10val2)
 {
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	result;
 	int			rscale;
 	int			w;
@@ -4512,7 +4511,7 @@ int4_numeric(PG_FUNCTION_ARGS)
 }
 
 int32
-numeric_int4_opt_error(Numeric num, bool *have_error)
+numeric_int4_opt_error(Numeric *num, bool *have_error)
 {
 	NumericVar	x;
 	int32		result;
@@ -4564,7 +4563,7 @@ numeric_int4_opt_error(Numeric num, bool *have_error)
 Datum
 numeric_int4(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 
 	PG_RETURN_INT32(numeric_int4_opt_error(num, NULL));
 }
@@ -4600,7 +4599,7 @@ int8_numeric(PG_FUNCTION_ARGS)
 }
 
 int64
-numeric_int8_opt_error(Numeric num, bool *have_error)
+numeric_int8_opt_error(Numeric *num, bool *have_error)
 {
 	NumericVar	x;
 	int64		result;
@@ -4652,7 +4651,7 @@ numeric_int8_opt_error(Numeric num, bool *have_error)
 Datum
 numeric_int8(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 
 	PG_RETURN_INT64(numeric_int8_opt_error(num, NULL));
 }
@@ -4670,7 +4669,7 @@ int2_numeric(PG_FUNCTION_ARGS)
 Datum
 numeric_int2(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	NumericVar	x;
 	int64		val;
 	int16		result;
@@ -4711,7 +4710,7 @@ Datum
 float8_numeric(PG_FUNCTION_ARGS)
 {
 	float8		val = PG_GETARG_FLOAT8(0);
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	result;
 	char		buf[DBL_DIG + 100];
 	const char *endptr;
@@ -4745,7 +4744,7 @@ float8_numeric(PG_FUNCTION_ARGS)
 Datum
 numeric_float8(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	char	   *tmp;
 	Datum		result;
 
@@ -4778,7 +4777,7 @@ numeric_float8(PG_FUNCTION_ARGS)
 Datum
 numeric_float8_no_overflow(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	double		val;
 
 	if (NUMERIC_IS_SPECIAL(num))
@@ -4805,7 +4804,7 @@ Datum
 float4_numeric(PG_FUNCTION_ARGS)
 {
 	float4		val = PG_GETARG_FLOAT4(0);
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	result;
 	char		buf[FLT_DIG + 100];
 	const char *endptr;
@@ -4839,7 +4838,7 @@ float4_numeric(PG_FUNCTION_ARGS)
 Datum
 numeric_float4(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	char	   *tmp;
 	Datum		result;
 
@@ -4867,7 +4866,7 @@ numeric_float4(PG_FUNCTION_ARGS)
 Datum
 numeric_pg_lsn(PG_FUNCTION_ARGS)
 {
-	Numeric		num = PG_GETARG_NUMERIC(0);
+	Numeric    *num = PG_GETARG_NUMERIC(0);
 	NumericVar	x;
 	XLogRecPtr	result;
 
@@ -4972,7 +4971,7 @@ makeNumericAggStateCurrentContext(bool calcSumX2)
  * Accumulate a new input value for numeric aggregate functions.
  */
 static void
-do_numeric_accum(NumericAggState *state, Numeric newval)
+do_numeric_accum(NumericAggState *state, Numeric *newval)
 {
 	NumericVar	X;
 	NumericVar	X2;
@@ -5042,7 +5041,7 @@ do_numeric_accum(NumericAggState *state, Numeric newval)
  * dscale (up to some sane limit).  Not yet clear if it's worth the trouble.
  */
 static bool
-do_numeric_discard(NumericAggState *state, Numeric newval)
+do_numeric_discard(NumericAggState *state, Numeric *newval)
 {
 	NumericVar	X;
 	NumericVar	X2;
@@ -6189,7 +6188,7 @@ numeric_poly_sum(PG_FUNCTION_ARGS)
 {
 #ifdef HAVE_INT128
 	PolyNumAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	result;
 
 	state = PG_ARGISNULL(0) ? NULL : (PolyNumAggState *) PG_GETARG_POINTER(0);
@@ -6282,7 +6281,7 @@ numeric_sum(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state;
 	NumericVar	sumX_var;
-	Numeric		result;
+	Numeric    *result;
 
 	state = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
 
@@ -6320,12 +6319,12 @@ numeric_sum(PG_FUNCTION_ARGS)
  * If appropriate variance statistic is undefined for the input,
  * *is_null is set to true and NULL is returned.
  */
-static Numeric
+static Numeric *
 numeric_stddev_internal(NumericAggState *state,
 						bool variance, bool sample,
 						bool *is_null)
 {
-	Numeric		res;
+	Numeric    *res;
 	NumericVar	vN,
 				vsumX,
 				vsumX2,
@@ -6408,7 +6407,7 @@ Datum
 numeric_var_samp(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
@@ -6425,7 +6424,7 @@ Datum
 numeric_stddev_samp(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
@@ -6442,7 +6441,7 @@ Datum
 numeric_var_pop(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
@@ -6459,7 +6458,7 @@ Datum
 numeric_stddev_pop(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (NumericAggState *) PG_GETARG_POINTER(0);
@@ -6473,13 +6472,13 @@ numeric_stddev_pop(PG_FUNCTION_ARGS)
 }
 
 #ifdef HAVE_INT128
-static Numeric
+static Numeric *
 numeric_poly_stddev_internal(Int128AggState *state,
 							 bool variance, bool sample,
 							 bool *is_null)
 {
 	NumericAggState numstate;
-	Numeric		res;
+	Numeric    *res;
 
 	/* Initialize an empty agg state */
 	memset(&numstate, 0, sizeof(NumericAggState));
@@ -6523,7 +6522,7 @@ numeric_poly_var_samp(PG_FUNCTION_ARGS)
 {
 #ifdef HAVE_INT128
 	PolyNumAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (PolyNumAggState *) PG_GETARG_POINTER(0);
@@ -6544,7 +6543,7 @@ numeric_poly_stddev_samp(PG_FUNCTION_ARGS)
 {
 #ifdef HAVE_INT128
 	PolyNumAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (PolyNumAggState *) PG_GETARG_POINTER(0);
@@ -6565,7 +6564,7 @@ numeric_poly_var_pop(PG_FUNCTION_ARGS)
 {
 #ifdef HAVE_INT128
 	PolyNumAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (PolyNumAggState *) PG_GETARG_POINTER(0);
@@ -6586,7 +6585,7 @@ numeric_poly_stddev_pop(PG_FUNCTION_ARGS)
 {
 #ifdef HAVE_INT128
 	PolyNumAggState *state;
-	Numeric		res;
+	Numeric    *res;
 	bool		is_null;
 
 	state = PG_ARGISNULL(0) ? NULL : (PolyNumAggState *) PG_GETARG_POINTER(0);
@@ -6726,7 +6725,7 @@ int4_sum(PG_FUNCTION_ARGS)
 Datum
 int8_sum(PG_FUNCTION_ARGS)
 {
-	Numeric		oldsum;
+	Numeric    *oldsum;
 
 	if (PG_ARGISNULL(0))
 	{
@@ -6973,7 +6972,7 @@ int2int4_sum(PG_FUNCTION_ARGS)
  * dump_numeric() - Dump a value in the db storage format for debugging
  */
 static void
-dump_numeric(const char *str, Numeric num)
+dump_numeric(const char *str, Numeric *num)
 {
 	NumericDigit *digits = NUMERIC_DIGITS(num);
 	int			ndigits;
@@ -7535,7 +7534,7 @@ invalid_syntax:
  *	Convert the packed db format into a variable
  */
 static void
-set_var_from_num(Numeric num, NumericVar *dest)
+set_var_from_num(Numeric *num, NumericVar *dest)
 {
 	int			ndigits;
 
@@ -7566,7 +7565,7 @@ set_var_from_num(Numeric num, NumericVar *dest)
  *	argument of one of the calculational functions, though.
  */
 static void
-init_var_from_num(Numeric num, NumericVar *dest)
+init_var_from_num(Numeric *num, NumericVar *dest)
 {
 	dest->ndigits = NUMERIC_NDIGITS(num);
 	dest->weight = NUMERIC_WEIGHT(num);
@@ -7877,12 +7876,12 @@ numericvar_deserialize(StringInfo buf, NumericVar *var)
  *
  * This will handle NaN and Infinity cases.
  */
-static Numeric
-duplicate_numeric(Numeric num)
+static Numeric *
+duplicate_numeric(Numeric *num)
 {
-	Numeric		res;
+	Numeric    *res;
 
-	res = (Numeric) palloc(VARSIZE(num));
+	res = (Numeric *) palloc(VARSIZE(num));
 	memcpy(res, num, VARSIZE(num));
 	return res;
 }
@@ -7896,10 +7895,10 @@ duplicate_numeric(Numeric num)
  *	If "have_error" isn't NULL, on overflow *have_error is set to true and
  *	NULL is returned.  This is helpful when caller needs to handle errors.
  */
-static Numeric
+static Numeric *
 make_result_opt_error(const NumericVar *var, bool *have_error)
 {
-	Numeric		result;
+	Numeric    *result;
 	NumericDigit *digits = var->digits;
 	int			weight = var->weight;
 	int			sign = var->sign;
@@ -7921,7 +7920,7 @@ make_result_opt_error(const NumericVar *var, bool *have_error)
 			  sign == NUMERIC_NINF))
 			elog(ERROR, "invalid numeric sign value 0x%x", sign);
 
-		result = (Numeric) palloc(NUMERIC_HDRSZ_SHORT);
+		result = (Numeric *) palloc(NUMERIC_HDRSZ_SHORT);
 
 		SET_VARSIZE(result, NUMERIC_HDRSZ_SHORT);
 		result->choice.n_header = sign;
@@ -7955,7 +7954,7 @@ make_result_opt_error(const NumericVar *var, bool *have_error)
 	if (NUMERIC_CAN_BE_SHORT(var->dscale, weight))
 	{
 		len = NUMERIC_HDRSZ_SHORT + n * sizeof(NumericDigit);
-		result = (Numeric) palloc(len);
+		result = (Numeric *) palloc(len);
 		SET_VARSIZE(result, len);
 		result->choice.n_short.n_header =
 			(sign == NUMERIC_NEG ? (NUMERIC_SHORT | NUMERIC_SHORT_SIGN_MASK)
@@ -7967,7 +7966,7 @@ make_result_opt_error(const NumericVar *var, bool *have_error)
 	else
 	{
 		len = NUMERIC_HDRSZ + n * sizeof(NumericDigit);
-		result = (Numeric) palloc(len);
+		result = (Numeric *) palloc(len);
 		SET_VARSIZE(result, len);
 		result->choice.n_long.n_sign_dscale =
 			sign | (var->dscale & NUMERIC_DSCALE_MASK);
@@ -8005,7 +8004,7 @@ make_result_opt_error(const NumericVar *var, bool *have_error)
  *
  *	An interface to make_result_opt_error() without "have_error" argument.
  */
-static Numeric
+static Numeric *
 make_result(const NumericVar *var)
 {
 	return make_result_opt_error(var, NULL);
@@ -8107,7 +8106,7 @@ apply_typmod(NumericVar *var, int32 typmod, Node *escontext)
  * ErrorSaveContext; otherwise errors are thrown).
  */
 static bool
-apply_typmod_special(Numeric num, int32 typmod, Node *escontext)
+apply_typmod_special(Numeric *num, int32 typmod, Node *escontext)
 {
 	int			precision;
 	int			scale;

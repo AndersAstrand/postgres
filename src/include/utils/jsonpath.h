@@ -199,7 +199,7 @@ extern bool jspGetNext(JsonPathItem *v, JsonPathItem *a);
 extern void jspGetArg(JsonPathItem *v, JsonPathItem *a);
 extern void jspGetLeftArg(JsonPathItem *v, JsonPathItem *a);
 extern void jspGetRightArg(JsonPathItem *v, JsonPathItem *a);
-extern Numeric jspGetNumeric(JsonPathItem *v);
+extern Numeric *jspGetNumeric(JsonPathItem *v);
 extern bool jspGetBool(JsonPathItem *v);
 extern char *jspGetString(JsonPathItem *v, int32 *len);
 extern bool jspGetArraySubscript(JsonPathItem *v, JsonPathItem *from,
@@ -259,7 +259,7 @@ struct JsonPathParseItem
 		}			like_regex;
 
 		/* scalars */
-		Numeric numeric;
+		Numeric    *numeric;
 		bool		boolean;
 		struct
 		{

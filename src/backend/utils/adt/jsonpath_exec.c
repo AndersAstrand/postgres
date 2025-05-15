@@ -252,7 +252,7 @@ typedef JsonPathBool (*JsonPathPredicateCallback) (JsonPathItem *jsp,
 												   JsonbValue *larg,
 												   JsonbValue *rarg,
 												   void *param);
-typedef Numeric (*BinaryArithmFunc) (Numeric num1, Numeric num2, bool *error);
+typedef Numeric *(*BinaryArithmFunc) (Numeric *num1, Numeric *num2, bool *error);
 
 static JsonPathExecResult executeJsonPath(JsonPath *path, void *vars,
 										  JsonPathGetVarCallback getVar,
@@ -325,7 +325,7 @@ static JsonPathBool executeComparison(JsonPathItem *cmp, JsonbValue *lv,
 									  JsonbValue *rv, void *p);
 static JsonPathBool compareItems(int32 op, JsonbValue *jb1, JsonbValue *jb2,
 								 bool useTz);
-static int	compareNumeric(Numeric a, Numeric b);
+static int	compareNumeric(Numeric *a, Numeric *b);
 static JsonbValue *copyJsonbValue(JsonbValue *src);
 static JsonPathExecResult getArrayIndex(JsonPathExecContext *cxt,
 										JsonPathItem *jsp, JsonbValue *jb, int32 *index);
@@ -1397,7 +1397,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiNumber:
 			{
 				JsonbValue	jbv;
-				Numeric		num;
+				Numeric    *num;
 				char	   *numstr = NULL;
 
 				if (unwrap && JsonbType(jb) == jbvArray)
@@ -2111,7 +2111,7 @@ executeBinaryArithmExpr(JsonPathExecContext *cxt, JsonPathItem *jsp,
 	JsonValueList rseq = {0};
 	JsonbValue *lval;
 	JsonbValue *rval;
-	Numeric		res;
+	Numeric    *res;
 
 	jspGetLeftArg(jsp, &elem);
 
@@ -3433,7 +3433,7 @@ compareItems(int32 op, JsonbValue *jb1, JsonbValue *jb2, bool useTz)
 
 /* Compare two numerics */
 static int
-compareNumeric(Numeric a, Numeric b)
+compareNumeric(Numeric *a, Numeric *b)
 {
 	return DatumGetInt32(DirectFunctionCall2(numeric_cmp,
 											 NumericGetDatum(a),

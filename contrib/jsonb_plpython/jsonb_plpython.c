@@ -359,7 +359,7 @@ PLySequence_ToJsonbValue(PyObject *obj, JsonbParseState **jsonb_state)
 static JsonbValue *
 PLyNumber_ToJsonbValue(PyObject *obj, JsonbValue *jbvNum)
 {
-	Numeric		num;
+	Numeric    *num;
 	char	   *str = PLyObject_AsString(obj);
 
 	PG_TRY();

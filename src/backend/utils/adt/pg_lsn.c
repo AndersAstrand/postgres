@@ -251,7 +251,7 @@ Datum
 pg_lsn_pli(PG_FUNCTION_ARGS)
 {
 	XLogRecPtr	lsn = PG_GETARG_LSN(0);
-	Numeric		nbytes = PG_GETARG_NUMERIC(1);
+	Numeric    *nbytes = PG_GETARG_NUMERIC(1);
 	Datum		num;
 	Datum		res;
 	char		buf[32];
@@ -285,7 +285,7 @@ Datum
 pg_lsn_mii(PG_FUNCTION_ARGS)
 {
 	XLogRecPtr	lsn = PG_GETARG_LSN(0);
-	Numeric		nbytes = PG_GETARG_NUMERIC(1);
+	Numeric    *nbytes = PG_GETARG_NUMERIC(1);
 	Datum		num;
 	Datum		res;
 	char		buf[32];

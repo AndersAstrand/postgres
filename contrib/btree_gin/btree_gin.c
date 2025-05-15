@@ -400,8 +400,8 @@ PG_FUNCTION_INFO_V1(gin_numeric_cmp);
 Datum
 gin_numeric_cmp(PG_FUNCTION_ARGS)
 {
-	Numeric		a = (Numeric) PG_GETARG_POINTER(0);
-	Numeric		b = (Numeric) PG_GETARG_POINTER(1);
+	Numeric    *a = (Numeric *) PG_GETARG_POINTER(0);
+	Numeric    *b = (Numeric *) PG_GETARG_POINTER(1);
 	int			res = 0;
 
 	if (NUMERIC_IS_LEFTMOST(a))
