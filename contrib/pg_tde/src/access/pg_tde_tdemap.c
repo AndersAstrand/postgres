@@ -111,7 +111,6 @@ static InternalKey *tde_decrypt_rel_key(TDEPrincipalKey *principal_key, TDEMapEn
 static int	pg_tde_open_file_basic(const char *tde_filename, int fileFlags, bool ignore_missing);
 static void pg_tde_file_header_read(const char *tde_filename, int fd, TDEFileHeader *fheader, off_t *bytes_read);
 static bool pg_tde_read_one_map_entry(int fd, TDEMapEntry *map_entry, off_t *offset);
-static void pg_tde_read_one_map_entry2(int keydata_fd, int32 key_index, TDEMapEntry *map_entry, Oid databaseId);
 static int	pg_tde_open_file_read(const char *tde_filename, bool ignore_missing, off_t *curr_pos);
 static InternalKey *pg_tde_get_key_from_cache(const RelFileLocator *rlocator, uint32 key_type);
 static WALKeyCacheRec *pg_tde_add_wal_key_to_cache(InternalKey *cached_key, XLogRecPtr start_lsn);
@@ -1009,30 +1008,6 @@ pg_tde_read_one_map_entry(int map_file, TDEMapEntry *map_entry, off_t *offset)
 }
 
 /*
- * TODO: Unify with pg_tde_read_one_map_entry()
- */
-static void
-pg_tde_read_one_map_entry2(int fd, int32 key_index, TDEMapEntry *map_entry, Oid databaseId)
-{
-	off_t		read_pos;
-
-	/* Calculate the reading position in the file. */
-	read_pos = TDE_FILE_HEADER_SIZE + key_index * MAP_ENTRY_SIZE;
-
-	/* Read the encrypted key */
-	if (pg_pread(fd, map_entry, MAP_ENTRY_SIZE, read_pos) != MAP_ENTRY_SIZE)
-	{
-		char		db_map_path[MAXPGPATH];
-
-		pg_tde_set_db_file_path(databaseId, db_map_path);
-		ereport(FATAL,
-				errcode_for_file_access(),
-				errmsg("could not find the required key at index %d in tde data file \"%s\": %m",
-					   key_index, db_map_path));
-	}
-}
-
-/*
  * Get the principal key from the map file. The caller must hold
  * a LW_SHARED or higher lock on files before calling this function.
  */
@@ -1222,8 +1197,12 @@ pg_tde_read_last_wal_key(void)
 		return NULL;
 	}
 
-	file_idx = ((fsize - TDE_FILE_HEADER_SIZE) / MAP_ENTRY_SIZE) - 1;
-	pg_tde_read_one_map_entry2(fd, file_idx, &map_entry, rlocator.dbOid);
+	if (!pg_tde_read_one_map_entry(fd, &map_entry, fsize - MAP_ENTRY_SIZE))
+	{
+		ereport(FATAL,
+				errcode_for_file_access(),
+				errmsg("could not find the required key in tde data file \"%s\": %m", db_map_path));
+	}
 
 	rel_key_data = tde_decrypt_rel_key(principal_key, &map_entry);
 	LWLockRelease(lock_pk);
@@ -1284,8 +1263,14 @@ pg_tde_fetch_wal_keys(XLogRecPtr start_lsn)
 	for (int file_idx = 0; file_idx < keys_count; file_idx++)
 	{
 		TDEMapEntry map_entry;
+		off_t		file_offset = TDE_FILE_HEADER_SIZE + file_idx * MAP_ENTRY_SIZE;
 
-		pg_tde_read_one_map_entry2(fd, file_idx, &map_entry, rlocator.dbOid);
+		if (!pg_tde_read_one_map_entry(fd, &map_entry, file_offset))
+		{
+			ereport(FATAL,
+					errcode_for_file_access(),
+					errmsg("could not find the required key at index %d in tde data file \"%s\": %m", file_idx, db_map_path));
+		}
 
 		/*
 		 * Skip new (just created but not updated by write) and invalid keys
