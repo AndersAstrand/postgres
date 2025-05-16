@@ -1173,10 +1173,10 @@ pg_tde_read_last_wal_key(void)
 	LWLock	   *lock_pk = tde_lwlock_enc_keys();
 	TDEPrincipalKey *principal_key;
 	int			fd;
-	int			file_idx;
 	TDEMapEntry map_entry;
 	InternalKey *rel_key_data;
 	off_t		fsize;
+	off_t		file_offset;
 
 	LWLockAcquire(lock_pk, LW_EXCLUSIVE);
 	principal_key = GetPrincipalKey(rlocator.dbOid, LW_EXCLUSIVE);
@@ -1197,7 +1197,8 @@ pg_tde_read_last_wal_key(void)
 		return NULL;
 	}
 
-	if (!pg_tde_read_one_map_entry(fd, &map_entry, fsize - MAP_ENTRY_SIZE))
+	file_offset = fsize - MAP_ENTRY_SIZE;
+	if (!pg_tde_read_one_map_entry(fd, &map_entry, &file_offset))
 	{
 		ereport(FATAL,
 				errcode_for_file_access(),
@@ -1223,6 +1224,8 @@ pg_tde_fetch_wal_keys(XLogRecPtr start_lsn)
 	int			fd;
 	int			keys_count;
 	WALKeyCacheRec *return_wal_rec = NULL;
+	off_t file_offset;
+	TDEMapEntry map_entry;
 
 	LWLockAcquire(lock_pk, LW_SHARED);
 	principal_key = GetPrincipalKey(rlocator.dbOid, LW_SHARED);
@@ -1260,18 +1263,14 @@ pg_tde_fetch_wal_keys(XLogRecPtr start_lsn)
 		return wal_rec;
 	}
 
-	for (int file_idx = 0; file_idx < keys_count; file_idx++)
+	/*
+	* Reset errno before each call to to pg_tde_read_one_map_entry() so we can
+	* detect file read errors when the loop ends.
+	*/
+	errno = 0;
+	file_offset = TDE_FILE_HEADER_SIZE;
+	while (pg_tde_read_one_map_entry(fd, &map_entry, &file_offset))
 	{
-		TDEMapEntry map_entry;
-		off_t		file_offset = TDE_FILE_HEADER_SIZE + file_idx * MAP_ENTRY_SIZE;
-
-		if (!pg_tde_read_one_map_entry(fd, &map_entry, file_offset))
-		{
-			ereport(FATAL,
-					errcode_for_file_access(),
-					errmsg("could not find the required key at index %d in tde data file \"%s\": %m", file_idx, db_map_path));
-		}
-
 		/*
 		 * Skip new (just created but not updated by write) and invalid keys
 		 */
@@ -1289,7 +1288,14 @@ pg_tde_fetch_wal_keys(XLogRecPtr start_lsn)
 			if (!return_wal_rec)
 				return_wal_rec = wal_rec;
 		}
+
+		errno = 0;
 	}
+	if (errno)
+		ereport(FATAL,
+				errcode_for_file_access(),
+				errmsg("could not find the required key in tde data file \"%s\": %m", db_map_path));
+
 	LWLockRelease(lock_pk);
 	close(fd);
 
