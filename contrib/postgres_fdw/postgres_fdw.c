@@ -169,8 +169,8 @@ typedef struct PgFdwScanState
 	bool		async_capable;	/* engage asynchronous-capable logic? */
 
 	/* working memory contexts */
-	MemoryContext batch_cxt;	/* context holding current batch of tuples */
-	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
+	MemoryContext *batch_cxt;	/* context holding current batch of tuples */
+	MemoryContext *temp_cxt;	/* context for per-tuple temporary data */
 
 	int			fetch_size;		/* number of tuples per fetch */
 } PgFdwScanState;
@@ -206,7 +206,7 @@ typedef struct PgFdwModifyState
 	int			num_slots;		/* number of slots to insert */
 
 	/* working memory context */
-	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
+	MemoryContext *temp_cxt;	/* context for per-tuple temporary data */
 
 	/* for update row movement if subplan result rel */
 	struct PgFdwModifyState *aux_fmstate;	/* foreign-insert state, if
@@ -246,7 +246,7 @@ typedef struct PgFdwDirectModifyState
 	bool		hasSystemCols;	/* are there system columns of resultRel? */
 
 	/* working memory context */
-	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
+	MemoryContext *temp_cxt;	/* context for per-tuple temporary data */
 } PgFdwDirectModifyState;
 
 /*
@@ -269,8 +269,8 @@ typedef struct PgFdwAnalyzeState
 	ReservoirStateData rstate;	/* state for reservoir sampling */
 
 	/* working memory contexts */
-	MemoryContext anl_cxt;		/* context for per-analyze lifespan data */
-	MemoryContext temp_cxt;		/* context for per-tuple temporary data */
+	MemoryContext *anl_cxt;		/* context for per-analyze lifespan data */
+	MemoryContext *temp_cxt;	/* context for per-tuple temporary data */
 } PgFdwAnalyzeState;
 
 /*
@@ -513,7 +513,7 @@ static HeapTuple make_tuple_from_result_row(PGresult *res,
 											AttInMetadata *attinmeta,
 											List *retrieved_attrs,
 											ForeignScanState *fsstate,
-											MemoryContext temp_context);
+											MemoryContext *temp_context);
 static void conversion_error_callback(void *arg);
 static bool foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel,
 							JoinType jointype, RelOptInfo *outerrel, RelOptInfo *innerrel,
@@ -3736,7 +3736,7 @@ create_cursor(ForeignScanState *node)
 	 */
 	if (numParams > 0)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 
@@ -3795,7 +3795,7 @@ fetch_more_data(ForeignScanState *node)
 {
 	PgFdwScanState *fsstate = (PgFdwScanState *) node->fdw_state;
 	PGresult   *volatile res = NULL;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * We'll store the tuples in the batch_cxt.  First, flush the previous
@@ -4267,7 +4267,7 @@ convert_prep_stmt_params(PgFdwModifyState *fmstate,
 	int			i;
 	int			j;
 	int			pindex = 0;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(fmstate->temp_cxt);
 
@@ -5379,7 +5379,7 @@ analyze_row_processor(PGresult *res, int row, PgFdwAnalyzeState *astate)
 {
 	int			targrows = astate->targrows;
 	int			pos;			/* array index to store tuple in */
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Always increment sample row counter. */
 	astate->samplerows += 1;
@@ -7559,7 +7559,7 @@ make_tuple_from_result_row(PGresult *res,
 						   AttInMetadata *attinmeta,
 						   List *retrieved_attrs,
 						   ForeignScanState *fsstate,
-						   MemoryContext temp_context)
+						   MemoryContext *temp_context)
 {
 	HeapTuple	tuple;
 	TupleDesc	tupdesc;
@@ -7568,7 +7568,7 @@ make_tuple_from_result_row(PGresult *res,
 	ItemPointer ctid = NULL;
 	ConversionLocation errpos;
 	ErrorContextCallback errcallback;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ListCell   *lc;
 	int			j;
 

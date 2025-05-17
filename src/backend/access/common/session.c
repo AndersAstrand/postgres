@@ -77,7 +77,7 @@ GetSessionDsmHandle(void)
 	void	   *dsa_space;
 	void	   *typmod_registry_space;
 	dsa_area   *dsa;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/*
 	 * If we have already created a session-scope DSM segment in this backend,
@@ -159,7 +159,7 @@ AttachSession(dsm_handle handle)
 	void	   *dsa_space;
 	void	   *typmod_registry_space;
 	dsa_area   *dsa;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	old_context = MemoryContextSwitchTo(TopMemoryContext);
 

@@ -1000,7 +1000,7 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 		 */
 		if (queryDesc->totaltime == NULL)
 		{
-			MemoryContext oldcxt;
+			MemoryContext *oldcxt;
 
 			oldcxt = MemoryContextSwitchTo(queryDesc->estate->es_query_cxt);
 			queryDesc->totaltime = InstrAlloc(1, INSTRUMENT_ALL, false);

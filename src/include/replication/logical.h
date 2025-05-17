@@ -33,7 +33,7 @@ typedef void (*LogicalOutputPluginWriterUpdateProgress) (struct LogicalDecodingC
 typedef struct LogicalDecodingContext
 {
 	/* memory context this is all allocated in */
-	MemoryContext context;
+	MemoryContext *context;
 
 	/* The associated replication slot */
 	ReplicationSlot *slot;

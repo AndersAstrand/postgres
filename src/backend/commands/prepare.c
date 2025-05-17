@@ -581,8 +581,8 @@ ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
 	BufferUsage bufusage_start,
 				bufusage;
 	MemoryContextCounters mem_counters;
-	MemoryContext planner_ctx = NULL;
-	MemoryContext saved_ctx = NULL;
+	MemoryContext *planner_ctx = NULL;
+	MemoryContext *saved_ctx = NULL;
 
 	if (es->memory)
 	{

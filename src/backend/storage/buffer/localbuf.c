@@ -731,7 +731,7 @@ GetLocalBufferStorage(void)
 	static int	next_buf_in_block = 0;
 	static int	num_bufs_in_block = 0;
 	static int	total_bufs_allocated = 0;
-	static MemoryContext LocalBufferContext = NULL;
+	static MemoryContext *LocalBufferContext = NULL;
 
 	char	   *this_buf;
 

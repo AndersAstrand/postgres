@@ -1581,8 +1581,8 @@ shdepReassignOwned(List *roleids, Oid newrole)
 		while ((tuple = systable_getnext(scan)) != NULL)
 		{
 			Form_pg_shdepend sdepForm = (Form_pg_shdepend) GETSTRUCT(tuple);
-			MemoryContext cxt,
-						oldcxt;
+			MemoryContext *cxt,
+					   *oldcxt;
 
 			/*
 			 * We only operate on shared objects and objects in the current

@@ -132,7 +132,7 @@ static int	max_rdatas;			/* allocated size */
 static bool begininsert_called = false;
 
 /* Memory context to hold the registered buffer and data references. */
-static MemoryContext xloginsert_cxt;
+static MemoryContext *xloginsert_cxt;
 
 static XLogRecData *XLogRecordAssemble(RmgrId rmid, uint8 info,
 									   XLogRecPtr RedoRecPtr, bool doPageWrites,

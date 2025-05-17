@@ -3303,7 +3303,7 @@ check_default_partition_contents(Relation parent, Relation default_rel,
 		Snapshot	snapshot;
 		ExprContext *econtext;
 		TableScanDesc scan;
-		MemoryContext oldCxt;
+		MemoryContext *oldCxt;
 		TupleTableSlot *tupslot;
 
 		/* Lock already taken above. */
@@ -4391,7 +4391,7 @@ get_qual_for_range(Relation parent, PartitionBoundSpec *spec,
 	forboth(cell1, spec->lowerdatums, cell2, spec->upperdatums)
 	{
 		EState	   *estate;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		Expr	   *test_expr;
 		ExprState  *test_exprstate;
 		Datum		test_result;

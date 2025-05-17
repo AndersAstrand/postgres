@@ -135,8 +135,8 @@ static void
 test_pattern(const test_spec *spec)
 {
 	IntegerSet *intset;
-	MemoryContext intset_ctx;
-	MemoryContext old_ctx;
+	MemoryContext *intset_ctx;
+	MemoryContext *old_ctx;
 	TimestampTz starttime;
 	TimestampTz endtime;
 	uint64		n;

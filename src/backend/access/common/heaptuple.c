@@ -168,7 +168,7 @@ getmissingattr(TupleDesc tupleDesc,
 			missing_cache_key key;
 			missing_cache_key *entry;
 			bool		found;
-			MemoryContext oldctx;
+			MemoryContext *oldctx;
 
 			*isnull = false;
 

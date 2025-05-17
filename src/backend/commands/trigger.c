@@ -90,7 +90,7 @@ static HeapTuple ExecCallTriggerFunc(TriggerData *trigdata,
 									 int tgindx,
 									 FmgrInfo *finfo,
 									 Instrumentation *instr,
-									 MemoryContext per_tuple_context);
+									 MemoryContext *per_tuple_context);
 static void AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 								  ResultRelInfo *src_partinfo,
 								  ResultRelInfo *dst_partinfo,
@@ -1139,8 +1139,8 @@ CreateTriggerFiringOn(CreateTrigStmt *stmt, const char *queryString,
 	{
 		PartitionDesc partdesc = RelationGetPartitionDesc(rel, true);
 		int			i;
-		MemoryContext oldcxt,
-					perChildCxt;
+		MemoryContext *oldcxt,
+				   *perChildCxt;
 
 		perChildCxt = AllocSetContextCreate(CurrentMemoryContext,
 											"part trig clone",
@@ -1862,7 +1862,7 @@ RelationBuildTriggers(Relation relation)
 	ScanKeyData skey;
 	SysScanDesc tgscan;
 	HeapTuple	htup;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	int			i;
 
 	/*
@@ -2302,12 +2302,12 @@ ExecCallTriggerFunc(TriggerData *trigdata,
 					int tgindx,
 					FmgrInfo *finfo,
 					Instrumentation *instr,
-					MemoryContext per_tuple_context)
+					MemoryContext *per_tuple_context)
 {
 	LOCAL_FCINFO(fcinfo, 0);
 	PgStat_FunctionCallUsage fcusage;
 	Datum		result;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * Protect against code paths that may fail to initialize transition table
@@ -3465,7 +3465,7 @@ TriggerEnabled(EState *estate, ResultRelInfo *relinfo,
 	{
 		ExprState **predicate;
 		ExprContext *econtext;
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 		int			i;
 
 		Assert(estate != NULL);
@@ -3817,7 +3817,7 @@ typedef struct AfterTriggersData
 	CommandId	firing_counter; /* next firing ID to assign */
 	SetConstraintState state;	/* the active S C state */
 	AfterTriggerEventList events;	/* deferred-event list */
-	MemoryContext event_cxt;	/* memory context for events, if any */
+	MemoryContext *event_cxt;	/* memory context for events, if any */
 
 	/* per-query-level data: */
 	AfterTriggersQueryData *query_stack;	/* array of structs shown below */
@@ -3884,7 +3884,7 @@ static void AfterTriggerExecute(EState *estate,
 								TriggerDesc *trigdesc,
 								FmgrInfo *finfo,
 								Instrumentation *instr,
-								MemoryContext per_tuple_context,
+								MemoryContext *per_tuple_context,
 								TupleTableSlot *trig_tuple_slot1,
 								TupleTableSlot *trig_tuple_slot2);
 static AfterTriggersTableData *GetAfterTriggersTableData(Oid relid,
@@ -3921,7 +3921,7 @@ GetCurrentFDWTuplestore(void)
 	ret = afterTriggers.query_stack[afterTriggers.query_depth].fdw_tuplestore;
 	if (ret == NULL)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		ResourceOwner saveResourceOwner;
 
 		/*
@@ -3998,7 +3998,7 @@ static Bitmapset *
 afterTriggerCopyBitmap(Bitmapset *src)
 {
 	Bitmapset  *dst;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	if (src == NULL)
 		return NULL;
@@ -4271,7 +4271,7 @@ AfterTriggerExecute(EState *estate,
 					ResultRelInfo *dst_relInfo,
 					TriggerDesc *trigdesc,
 					FmgrInfo *finfo, Instrumentation *instr,
-					MemoryContext per_tuple_context,
+					MemoryContext *per_tuple_context,
 					TupleTableSlot *trig_tuple_slot1,
 					TupleTableSlot *trig_tuple_slot2)
 {
@@ -4630,7 +4630,7 @@ afterTriggerInvokeEvents(AfterTriggerEventList *events,
 {
 	bool		all_fired = true;
 	AfterTriggerEventChunk *chunk;
-	MemoryContext per_tuple_context;
+	MemoryContext *per_tuple_context;
 	bool		local_estate = false;
 	ResultRelInfo *rInfo = NULL;
 	Relation	rel = NULL;
@@ -4796,7 +4796,7 @@ GetAfterTriggersTableData(Oid relid, CmdType cmdType)
 {
 	AfterTriggersTableData *table;
 	AfterTriggersQueryData *qs;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ListCell   *lc;
 
 	/* Caller should have ensured query_depth is OK. */
@@ -4835,7 +4835,7 @@ GetAfterTriggersStoreSlot(AfterTriggersTableData *table,
 	/* Create it if not already done. */
 	if (!table->storeslot)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/*
 		 * We need this slot only until AfterTriggerEndQuery, but making it
@@ -4886,7 +4886,7 @@ MakeTransitionCaptureState(TriggerDesc *trigdesc, Oid relid, CmdType cmdType)
 				need_old_del,
 				need_new_ins;
 	AfterTriggersTableData *table;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ResourceOwner saveResourceOwner;
 
 	if (trigdesc == NULL)

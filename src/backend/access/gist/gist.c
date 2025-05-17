@@ -118,7 +118,7 @@ gisthandler(PG_FUNCTION_ARGS)
  * GiST code itself, to avoid the need to do some awkward manual
  * memory management.
  */
-MemoryContext
+MemoryContext *
 createTempGistContext(void)
 {
 	return AllocSetContextCreate(CurrentMemoryContext,
@@ -164,7 +164,7 @@ gistinsert(Relation r, Datum *values, bool *isnull,
 {
 	GISTSTATE  *giststate = (GISTSTATE *) indexInfo->ii_AmCache;
 	IndexTuple	itup;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	/* Initialize GISTSTATE cache if first call in this statement */
 	if (giststate == NULL)
@@ -1532,8 +1532,8 @@ GISTSTATE *
 initGISTstate(Relation index)
 {
 	GISTSTATE  *giststate;
-	MemoryContext scanCxt;
-	MemoryContext oldCxt;
+	MemoryContext *scanCxt;
+	MemoryContext *oldCxt;
 	int			i;
 
 	/* safety check to protect fixed-size arrays in GISTSTATE */

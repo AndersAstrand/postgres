@@ -143,7 +143,7 @@ typedef struct RewriteStateData
 									 * for logical rewrites */
 	MultiXactId rs_cutoff_multi;	/* MultiXactId that will be used as cutoff
 									 * point for multixacts */
-	MemoryContext rs_cxt;		/* for hash tables and entries and tuples in
+	MemoryContext *rs_cxt;		/* for hash tables and entries and tuples in
 								 * them */
 	XLogRecPtr	rs_begin_lsn;	/* XLogInsertLsn when starting the rewrite */
 	HTAB	   *rs_unresolved_tups; /* unmatched A tuples */
@@ -235,8 +235,8 @@ begin_heap_rewrite(Relation old_heap, Relation new_heap, TransactionId oldest_xm
 				   TransactionId freeze_xid, MultiXactId cutoff_multi)
 {
 	RewriteState state;
-	MemoryContext rw_cxt;
-	MemoryContext old_cxt;
+	MemoryContext *rw_cxt;
+	MemoryContext *old_cxt;
 	HASHCTL		hash_ctl;
 
 	/*
@@ -341,7 +341,7 @@ void
 rewrite_heap_tuple(RewriteState state,
 				   HeapTuple old_tuple, HeapTuple new_tuple)
 {
-	MemoryContext old_cxt;
+	MemoryContext *old_cxt;
 	ItemPointerData old_tid;
 	TidHashKey	hashkey;
 	bool		found;

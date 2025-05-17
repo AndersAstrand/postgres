@@ -44,7 +44,7 @@ typedef struct
 {
 	DestReceiver pub;			/* publicly-known function pointers */
 	Tuplestorestate *tstore;	/* where to put result tuples */
-	MemoryContext cxt;			/* context containing tstore */
+	MemoryContext *cxt;			/* context containing tstore */
 	JunkFilter *filter;			/* filter to convert tuple type */
 } DR_sqlfunction;
 
@@ -120,7 +120,7 @@ typedef struct
 	 */
 	List	   *func_state;
 
-	MemoryContext fcontext;		/* memory context holding this struct and all
+	MemoryContext *fcontext;	/* memory context holding this struct and all
 								 * subsidiary data */
 
 	LocalTransactionId lxid;	/* lxid in which cache was made */
@@ -150,7 +150,7 @@ static void postquel_sub_params(SQLFunctionCachePtr fcache,
 static Datum postquel_get_single_result(TupleTableSlot *slot,
 										FunctionCallInfo fcinfo,
 										SQLFunctionCachePtr fcache,
-										MemoryContext resultcontext);
+										MemoryContext *resultcontext);
 static void sql_exec_error_callback(void *arg);
 static void ShutdownSQLFunction(Datum arg);
 static bool coerce_fn_result_column(TargetEntry *src_tle,
@@ -584,8 +584,8 @@ init_sql_fcache(FunctionCallInfo fcinfo, Oid collation, bool lazyEvalOK)
 {
 	FmgrInfo   *finfo = fcinfo->flinfo;
 	Oid			foid = finfo->fn_oid;
-	MemoryContext fcontext;
-	MemoryContext oldcontext;
+	MemoryContext *fcontext;
+	MemoryContext *oldcontext;
 	Oid			rettype;
 	TupleDesc	rettupdesc;
 	HeapTuple	procedureTuple;
@@ -986,10 +986,10 @@ static Datum
 postquel_get_single_result(TupleTableSlot *slot,
 						   FunctionCallInfo fcinfo,
 						   SQLFunctionCachePtr fcache,
-						   MemoryContext resultcontext)
+						   MemoryContext *resultcontext)
 {
 	Datum		value;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Set up to return the function value.  For pass-by-reference datatypes,
@@ -1030,7 +1030,7 @@ fmgr_sql(PG_FUNCTION_ARGS)
 {
 	SQLFunctionCachePtr fcache;
 	ErrorContextCallback sqlerrcontext;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	bool		randomAccess;
 	bool		lazyEvalOK;
 	bool		is_first;

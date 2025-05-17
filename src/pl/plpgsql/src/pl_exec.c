@@ -266,7 +266,7 @@ static void copy_plpgsql_datums(PLpgSQL_execstate *estate,
 								PLpgSQL_function *func);
 static void plpgsql_fulfill_promise(PLpgSQL_execstate *estate,
 									PLpgSQL_var *var);
-static MemoryContext get_stmt_mcontext(PLpgSQL_execstate *estate);
+static MemoryContext *get_stmt_mcontext(PLpgSQL_execstate *estate);
 static void push_stmt_mcontext(PLpgSQL_execstate *estate);
 static void pop_stmt_mcontext(PLpgSQL_execstate *estate);
 
@@ -656,7 +656,7 @@ plpgsql_exec_function(PLpgSQL_function *func, FunctionCallInfo fcinfo,
 		/* If we produced any tuples, send back the result */
 		if (estate.tuple_store)
 		{
-			MemoryContext oldcxt;
+			MemoryContext *oldcxt;
 
 			rsi->setResult = estate.tuple_store;
 			oldcxt = MemoryContextSwitchTo(estate.tuple_store_cxt);
@@ -1372,7 +1372,7 @@ static void
 plpgsql_fulfill_promise(PLpgSQL_execstate *estate,
 						PLpgSQL_var *var)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (var->promise == PLPGSQL_PROMISE_NONE)
 		return;					/* nothing to do */
@@ -1528,7 +1528,7 @@ plpgsql_fulfill_promise(PLpgSQL_execstate *estate,
  * have one already.  It will be a child of stmt_mcontext_parent, which is
  * either the function's main context or a pushed-down outer stmt_mcontext.
  */
-static MemoryContext
+static MemoryContext *
 get_stmt_mcontext(PLpgSQL_execstate *estate)
 {
 	if (estate->stmt_mcontext == NULL)
@@ -1755,11 +1755,11 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 		/*
 		 * Execute the statements in the block's body inside a sub-transaction
 		 */
-		MemoryContext oldcontext = CurrentMemoryContext;
+		MemoryContext *oldcontext = CurrentMemoryContext;
 		ResourceOwner oldowner = CurrentResourceOwner;
 		ExprContext *old_eval_econtext = estate->eval_econtext;
 		ErrorData  *save_cur_error = estate->cur_error;
-		MemoryContext stmt_mcontext;
+		MemoryContext *stmt_mcontext;
 
 		estate->err_text = gettext_noop("during statement block entry");
 
@@ -2285,7 +2285,7 @@ make_callstmt_target(PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
 	char	  **argnames;
 	char	   *argmodes;
 	int			numargs;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	PLpgSQL_row *row;
 	int			nfields;
 	int			i;
@@ -2482,7 +2482,7 @@ exec_stmt_getdiag(PLpgSQL_execstate *estate, PLpgSQL_stmt_getdiag *stmt)
 			case PLPGSQL_GETDIAG_CONTEXT:
 				{
 					char	   *contextstackstr;
-					MemoryContext oldcontext;
+					MemoryContext *oldcontext;
 
 					/* Use eval_mcontext for short-lived string */
 					oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
@@ -2856,7 +2856,7 @@ static int
 exec_stmt_forc(PLpgSQL_execstate *estate, PLpgSQL_stmt_forc *stmt)
 {
 	PLpgSQL_var *curvar;
-	MemoryContext stmt_mcontext = NULL;
+	MemoryContext *stmt_mcontext = NULL;
 	char	   *curname = NULL;
 	PLpgSQL_expr *query;
 	ParamListInfo paramLI;
@@ -2871,7 +2871,7 @@ exec_stmt_forc(PLpgSQL_execstate *estate, PLpgSQL_stmt_forc *stmt)
 	curvar = (PLpgSQL_var *) (estate->datums[stmt->curvar]);
 	if (!curvar->isnull)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* We only need stmt_mcontext to hold the cursor name string */
 		stmt_mcontext = get_stmt_mcontext(estate);
@@ -3002,8 +3002,8 @@ exec_stmt_foreach_a(PLpgSQL_execstate *estate, PLpgSQL_stmt_foreach_a *stmt)
 	Oid			loop_var_elem_type;
 	bool		found = false;
 	int			rc = PLPGSQL_RC_OK;
-	MemoryContext stmt_mcontext;
-	MemoryContext oldcontext;
+	MemoryContext *stmt_mcontext;
+	MemoryContext *oldcontext;
 	ArrayIterator array_iterator;
 	Oid			iterator_result_type;
 	int32		iterator_result_typmod;
@@ -3331,7 +3331,7 @@ exec_stmt_return_next(PLpgSQL_execstate *estate,
 	TupleDesc	tupdesc;
 	int			natts;
 	HeapTuple	tuple;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (!estate->retisset)
 		ereport(ERROR,
@@ -3550,8 +3550,8 @@ exec_stmt_return_query(PLpgSQL_execstate *estate,
 	DestReceiver *treceiver;
 	int			rc;
 	uint64		processed;
-	MemoryContext stmt_mcontext = get_stmt_mcontext(estate);
-	MemoryContext oldcontext;
+	MemoryContext *stmt_mcontext = get_stmt_mcontext(estate);
+	MemoryContext *oldcontext;
 
 	if (!estate->retisset)
 		ereport(ERROR,
@@ -3671,7 +3671,7 @@ static void
 exec_init_tuple_store(PLpgSQL_execstate *estate)
 {
 	ReturnSetInfo *rsi = estate->rsi;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ResourceOwner oldowner;
 
 	/*
@@ -3736,7 +3736,7 @@ exec_stmt_raise(PLpgSQL_execstate *estate, PLpgSQL_stmt_raise *stmt)
 	char	   *err_datatype = NULL;
 	char	   *err_table = NULL;
 	char	   *err_schema = NULL;
-	MemoryContext stmt_mcontext;
+	MemoryContext *stmt_mcontext;
 	ListCell   *lc;
 
 	/* RAISE with no parameters: re-throw current exception */
@@ -3765,7 +3765,7 @@ exec_stmt_raise(PLpgSQL_execstate *estate, PLpgSQL_stmt_raise *stmt)
 		StringInfoData ds;
 		ListCell   *current_param;
 		char	   *cp;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* build string in stmt_mcontext */
 		oldcontext = MemoryContextSwitchTo(stmt_mcontext);
@@ -4456,7 +4456,7 @@ exec_stmt_dynexecute(PLpgSQL_execstate *estate,
 	int			exec_res;
 	ParamListInfo paramLI;
 	SPIExecuteOptions options;
-	MemoryContext stmt_mcontext = get_stmt_mcontext(estate);
+	MemoryContext *stmt_mcontext = get_stmt_mcontext(estate);
 
 	/*
 	 * First we evaluate the string expression after the EXECUTE keyword. Its
@@ -4665,7 +4665,7 @@ static int
 exec_stmt_open(PLpgSQL_execstate *estate, PLpgSQL_stmt_open *stmt)
 {
 	PLpgSQL_var *curvar;
-	MemoryContext stmt_mcontext = NULL;
+	MemoryContext *stmt_mcontext = NULL;
 	char	   *curname = NULL;
 	PLpgSQL_expr *query;
 	Portal		portal;
@@ -4679,7 +4679,7 @@ exec_stmt_open(PLpgSQL_execstate *estate, PLpgSQL_stmt_open *stmt)
 	curvar = (PLpgSQL_var *) (estate->datums[stmt->curvar]);
 	if (!curvar->isnull)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* We only need stmt_mcontext to hold the cursor name string */
 		stmt_mcontext = get_stmt_mcontext(estate);
@@ -4835,7 +4835,7 @@ exec_stmt_fetch(PLpgSQL_execstate *estate, PLpgSQL_stmt_fetch *stmt)
 	Portal		portal;
 	char	   *curname;
 	uint64		n;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* ----------
 	 * Get the portal of the cursor by name
@@ -4923,7 +4923,7 @@ exec_stmt_close(PLpgSQL_execstate *estate, PLpgSQL_stmt_close *stmt)
 	PLpgSQL_var *curvar;
 	Portal		portal;
 	char	   *curname;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* ----------
 	 * Get the portal of the cursor by name
@@ -5056,7 +5056,7 @@ exec_assign_c_string(PLpgSQL_execstate *estate, PLpgSQL_datum *target,
 					 const char *str)
 {
 	text	   *value;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Use eval_mcontext for short-lived text value */
 	oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
@@ -5314,7 +5314,7 @@ exec_eval_datum(PLpgSQL_execstate *estate,
 				Datum *value,
 				bool *isnull)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	switch (datum->dtype)
 	{
@@ -6046,7 +6046,7 @@ exec_eval_simple_expr(PLpgSQL_execstate *estate,
 	ParamListInfo paramLI;
 	void	   *save_setup_arg;
 	bool		need_snapshot;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Forget it if expression wasn't simple before.
@@ -6971,7 +6971,7 @@ make_expanded_record_for_rec(PLpgSQL_execstate *estate,
 							 ExpandedRecordHeader *srcerh)
 {
 	ExpandedRecordHeader *newerh;
-	MemoryContext mcontext = get_eval_mcontext(estate);
+	MemoryContext *mcontext = get_eval_mcontext(estate);
 
 	if (rec->rectypeid != RECORDOID)
 	{
@@ -7568,7 +7568,7 @@ exec_move_row_from_datum(PLpgSQL_execstate *estate,
 		Oid			tupType;
 		int32		tupTypmod;
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* Ensure that any detoasted data winds up in the eval_mcontext */
 		oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
@@ -7620,7 +7620,7 @@ exec_move_row_from_datum(PLpgSQL_execstate *estate,
 			if (rec->rectypeid == RECORDOID || rec->rectypeid == tupType)
 			{
 				ExpandedRecordHeader *newerh;
-				MemoryContext mcontext = get_eval_mcontext(estate);
+				MemoryContext *mcontext = get_eval_mcontext(estate);
 
 				newerh = make_expanded_record_from_typeid(tupType, tupTypmod,
 														  mcontext);
@@ -7695,7 +7695,7 @@ static char *
 convert_value_to_string(PLpgSQL_execstate *estate, Datum value, Oid valtype)
 {
 	char	   *result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	Oid			typoutput;
 	bool		typIsVarlena;
 
@@ -7758,7 +7758,7 @@ do_cast_value(PLpgSQL_execstate *estate,
 	if (cast_entry)
 	{
 		ExprContext *econtext = estate->eval_econtext;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(get_eval_mcontext(estate));
 
@@ -7798,7 +7798,7 @@ get_cast_hashentry(PLpgSQL_execstate *estate,
 	plpgsql_CastExprHashEntry *expr_entry;
 	bool		found;
 	LocalTransactionId curlxid;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Look for existing entry */
 	cast_key.srctype = srctype;
@@ -7985,7 +7985,7 @@ exec_simple_check_plan(PLpgSQL_execstate *estate, PLpgSQL_expr *expr)
 	List	   *plansources;
 	CachedPlanSource *plansource;
 	CachedPlan *cplan;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Initialize to "not simple".
@@ -8413,7 +8413,7 @@ plpgsql_create_econtext(PLpgSQL_execstate *estate)
 	 */
 	if (estate->simple_eval_estate == NULL)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		if (shared_simple_eval_estate == NULL)
 		{
@@ -8573,7 +8573,7 @@ assign_simple_var(PLpgSQL_execstate *estate, PLpgSQL_var *var,
 	if (!estate->atomic && !isnull && var->datatype->typlen == -1 &&
 		VARATT_IS_EXTERNAL_NON_EXPANDED(DatumGetPointer(newvalue)))
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		Datum		detoasted;
 
 		/*
@@ -8657,8 +8657,8 @@ exec_eval_using_params(PLpgSQL_execstate *estate, List *params)
 {
 	ParamListInfo paramLI;
 	int			nargs;
-	MemoryContext stmt_mcontext;
-	MemoryContext oldcontext;
+	MemoryContext *stmt_mcontext;
+	MemoryContext *oldcontext;
 	int			i;
 	ListCell   *lc;
 
@@ -8748,7 +8748,7 @@ exec_dynquery_with_params(PLpgSQL_execstate *estate,
 	int32		restypmod;
 	char	   *querystr;
 	SPIParseOpenOptions options;
-	MemoryContext stmt_mcontext = get_stmt_mcontext(estate);
+	MemoryContext *stmt_mcontext = get_stmt_mcontext(estate);
 
 	/*
 	 * Evaluate the string expression after the EXECUTE keyword. Its result is
@@ -8802,7 +8802,7 @@ format_expr_params(PLpgSQL_execstate *estate,
 	int			paramno;
 	int			dno;
 	StringInfoData paramstr;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (!expr->paramnos)
 		return NULL;
@@ -8858,7 +8858,7 @@ format_preparedparamsdata(PLpgSQL_execstate *estate,
 {
 	int			paramno;
 	StringInfoData paramstr;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (!paramLI)
 		return NULL;

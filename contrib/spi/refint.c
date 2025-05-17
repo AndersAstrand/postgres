@@ -615,7 +615,7 @@ find_plan(char *ident, EPlan **eplan, int *nplans)
 {
 	EPlan	   *newp;
 	int			i;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * All allocations done for the plans need to happen in a session-safe

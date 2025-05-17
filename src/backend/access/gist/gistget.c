@@ -336,7 +336,7 @@ gistScanPage(IndexScanDesc scan, GISTSearchItem *pageItem,
 	GISTPageOpaque opaque;
 	OffsetNumber maxoff;
 	OffsetNumber i;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	Assert(!GISTSearchItemIsHeap(*pageItem));
 
@@ -654,7 +654,7 @@ gistgettuple(IndexScanDesc scan, ScanDirection dir)
 
 					if (so->killedItems == NULL)
 					{
-						MemoryContext oldCxt =
+						MemoryContext *oldCxt =
 							MemoryContextSwitchTo(so->giststate->scanCxt);
 
 						so->killedItems =
@@ -691,7 +691,7 @@ gistgettuple(IndexScanDesc scan, ScanDirection dir)
 
 				if (so->killedItems == NULL)
 				{
-					MemoryContext oldCxt =
+					MemoryContext *oldCxt =
 						MemoryContextSwitchTo(so->giststate->scanCxt);
 
 					so->killedItems =

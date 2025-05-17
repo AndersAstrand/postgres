@@ -1797,7 +1797,7 @@ operator_predicate_proof(Expr *predicate, Node *clause,
 	Datum		test_result;
 	bool		isNull;
 	EState	   *estate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Both expressions must be binary opclauses, else we can't do anything.

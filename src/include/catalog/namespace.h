@@ -165,7 +165,7 @@ extern void SetTempNamespaceState(Oid tempNamespaceId,
 								  Oid tempToastNamespaceId);
 extern void ResetTempTableNamespace(void);
 
-extern SearchPathMatcher *GetSearchPathMatcher(MemoryContext context);
+extern SearchPathMatcher *GetSearchPathMatcher(MemoryContext *context);
 extern SearchPathMatcher *CopySearchPathMatcher(SearchPathMatcher *path);
 extern bool SearchPathMatchesCurrentEnvironment(SearchPathMatcher *path);
 

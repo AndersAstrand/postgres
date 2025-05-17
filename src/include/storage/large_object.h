@@ -88,7 +88,7 @@ extern PGDLLIMPORT bool lo_compat_privileges;
 /* inversion stuff in inv_api.c */
 extern void close_lo_relation(bool isCommit);
 extern Oid	inv_create(Oid lobjId);
-extern LargeObjectDesc *inv_open(Oid lobjId, int flags, MemoryContext mcxt);
+extern LargeObjectDesc *inv_open(Oid lobjId, int flags, MemoryContext *mcxt);
 extern void inv_close(LargeObjectDesc *obj_desc);
 extern int	inv_drop(Oid lobjId);
 extern int64 inv_seek(LargeObjectDesc *obj_desc, int64 offset, int whence);

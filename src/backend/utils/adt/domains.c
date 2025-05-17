@@ -41,7 +41,7 @@
 #include "utils/typcache.h"
 
 static bool domain_check_internal(Datum value, bool isnull, Oid domainType,
-								  void **extra, MemoryContext mcxt,
+								  void **extra, MemoryContext *mcxt,
 								  Node *escontext);
 
 /*
@@ -60,7 +60,7 @@ typedef struct DomainIOData
 	/* Context for evaluating CHECK constraints in */
 	ExprContext *econtext;
 	/* Memory context this cache is in */
-	MemoryContext mcxt;
+	MemoryContext *mcxt;
 } DomainIOData;
 
 
@@ -73,7 +73,7 @@ typedef struct DomainIOData
  * the old struct for the duration of the query.
  */
 static DomainIOData *
-domain_state_setup(Oid domainType, bool binary, MemoryContext mcxt)
+domain_state_setup(Oid domainType, bool binary, MemoryContext *mcxt)
 {
 	DomainIOData *my_extra;
 	TypeCacheEntry *typentry;
@@ -166,7 +166,7 @@ domain_check_input(Datum value, bool isnull, DomainIOData *my_extra,
 					/* Make the econtext if we didn't already */
 					if (econtext == NULL)
 					{
-						MemoryContext oldcontext;
+						MemoryContext *oldcontext;
 
 						oldcontext = MemoryContextSwitchTo(my_extra->mcxt);
 						econtext = CreateStandaloneExprContext();
@@ -344,7 +344,7 @@ domain_recv(PG_FUNCTION_ARGS)
  */
 void
 domain_check(Datum value, bool isnull, Oid domainType,
-			 void **extra, MemoryContext mcxt)
+			 void **extra, MemoryContext *mcxt)
 {
 	(void) domain_check_internal(value, isnull, domainType, extra, mcxt,
 								 NULL);
@@ -353,7 +353,7 @@ domain_check(Datum value, bool isnull, Oid domainType,
 /* Error-safe variant of domain_check(). */
 bool
 domain_check_safe(Datum value, bool isnull, Oid domainType,
-				  void **extra, MemoryContext mcxt,
+				  void **extra, MemoryContext *mcxt,
 				  Node *escontext)
 {
 	return domain_check_internal(value, isnull, domainType, extra, mcxt,
@@ -369,7 +369,7 @@ domain_check_safe(Datum value, bool isnull, Oid domainType,
  */
 static bool
 domain_check_internal(Datum value, bool isnull, Oid domainType,
-					  void **extra, MemoryContext mcxt,
+					  void **extra, MemoryContext *mcxt,
 					  Node *escontext)
 {
 	DomainIOData *my_extra = NULL;

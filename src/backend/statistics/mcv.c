@@ -1342,7 +1342,7 @@ pg_stats_ext_mcvlist_items(PG_FUNCTION_ARGS)
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		MCVList    *mcvlist;
 		TupleDesc	tupdesc;
 

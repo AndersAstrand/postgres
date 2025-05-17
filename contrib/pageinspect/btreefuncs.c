@@ -347,7 +347,7 @@ bt_multi_page_stats(PG_FUNCTION_ARGS)
 	Relation	rel;
 	ua_page_stats *uargs;
 	FuncCallContext *fctx;
-	MemoryContext mctx;
+	MemoryContext *mctx;
 
 	if (!superuser())
 		ereport(ERROR,
@@ -628,7 +628,7 @@ bt_page_items_internal(PG_FUNCTION_ARGS, enum pageinspect_version ext_version)
 	int64		blkno = (ext_version == PAGEINSPECT_V1_8 ? PG_GETARG_UINT32(1) : PG_GETARG_INT64(1));
 	Datum		result;
 	FuncCallContext *fctx;
-	MemoryContext mctx;
+	MemoryContext *mctx;
 	ua_page_items *uargs;
 
 	if (!superuser())
@@ -747,7 +747,7 @@ bt_page_items_bytea(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		BTPageOpaque opaque;
-		MemoryContext mctx;
+		MemoryContext *mctx;
 		TupleDesc	tupleDesc;
 
 		fctx = SRF_FIRSTCALL_INIT();

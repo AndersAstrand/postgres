@@ -102,7 +102,7 @@
  */
 typedef struct SlabContext
 {
-	MemoryContextData header;	/* Standard memory-context fields */
+	MemoryContext header;		/* Standard memory-context fields */
 	/* Allocation parameters for this context: */
 	uint32		chunkSize;		/* the requested (non-aligned) chunk size */
 	uint32		fullChunkSize;	/* chunk size with chunk header and alignment */
@@ -318,8 +318,8 @@ SlabGetNextFreeChunk(SlabContext *slab, SlabBlock *block)
  * MEMORYCHUNK_MAX_VALUE.
  * 'blockSize' may not exceed MEMORYCHUNK_MAX_BLOCKOFFSET.
  */
-MemoryContext
-SlabContextCreate(MemoryContext parent,
+MemoryContext *
+SlabContextCreate(MemoryContext *parent,
 				  const char *name,
 				  Size blockSize,
 				  Size chunkSize)
@@ -411,13 +411,13 @@ SlabContextCreate(MemoryContext parent,
 #endif
 
 	/* Finally, do the type-independent part of context creation */
-	MemoryContextCreate((MemoryContext) slab,
+	MemoryContextCreate((MemoryContext *) slab,
 						T_SlabContext,
 						MCTX_SLAB_ID,
 						parent,
 						name);
 
-	return (MemoryContext) slab;
+	return (MemoryContext *) slab;
 }
 
 /*
@@ -428,7 +428,7 @@ SlabContextCreate(MemoryContext parent,
  * keeper blocks or anything like that.
  */
 void
-SlabReset(MemoryContext context)
+SlabReset(MemoryContext *context)
 {
 	SlabContext *slab = (SlabContext *) context;
 	dlist_mutable_iter miter;
@@ -482,7 +482,7 @@ SlabReset(MemoryContext context)
  *		Free all memory which is allocated in the given context.
  */
 void
-SlabDelete(MemoryContext context)
+SlabDelete(MemoryContext *context)
 {
 	/* Reset to release all the SlabBlocks */
 	SlabReset(context);
@@ -495,7 +495,7 @@ SlabDelete(MemoryContext context)
  * the code between SlabAlloc() and SlabAllocFromNewBlock().
  */
 static inline void *
-SlabAllocSetupNewChunk(MemoryContext context, SlabBlock *block,
+SlabAllocSetupNewChunk(MemoryContext *context, SlabBlock *block,
 					   MemoryChunk *chunk, Size size)
 {
 	SlabContext *slab = (SlabContext *) context;
@@ -536,7 +536,7 @@ SlabAllocSetupNewChunk(MemoryContext context, SlabBlock *block,
 
 pg_noinline
 static void *
-SlabAllocFromNewBlock(MemoryContext context, Size size, int flags)
+SlabAllocFromNewBlock(MemoryContext *context, Size size, int flags)
 {
 	SlabContext *slab = (SlabContext *) context;
 	SlabBlock  *block;
@@ -603,7 +603,7 @@ SlabAllocFromNewBlock(MemoryContext context, Size size, int flags)
 pg_noinline
 static void
 pg_attribute_noreturn()
-SlabAllocInvalidSize(MemoryContext context, Size size)
+SlabAllocInvalidSize(MemoryContext *context, Size size)
 {
 	SlabContext *slab = (SlabContext *) context;
 
@@ -627,7 +627,7 @@ SlabAllocInvalidSize(MemoryContext context, Size size)
  * call.
  */
 void *
-SlabAlloc(MemoryContext context, Size size, int flags)
+SlabAlloc(MemoryContext *context, Size size, int flags)
 {
 	SlabContext *slab = (SlabContext *) context;
 	SlabBlock  *block;
@@ -859,7 +859,7 @@ SlabRealloc(void *pointer, Size size, int flags)
  * SlabGetChunkContext
  *		Return the MemoryContext that 'pointer' belongs to.
  */
-MemoryContext
+MemoryContext *
 SlabGetChunkContext(void *pointer)
 {
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
@@ -909,7 +909,7 @@ SlabGetChunkSpace(void *pointer)
  *		Is the slab empty of any allocated space?
  */
 bool
-SlabIsEmpty(MemoryContext context)
+SlabIsEmpty(MemoryContext *context)
 {
 	Assert(SlabIsValid((SlabContext *) context));
 
@@ -926,7 +926,7 @@ SlabIsEmpty(MemoryContext context)
  * print_to_stderr: print stats to stderr if true, elog otherwise.
  */
 void
-SlabStats(MemoryContext context,
+SlabStats(MemoryContext *context,
 		  MemoryStatsPrintFunc printfunc, void *passthru,
 		  MemoryContextCounters *totals,
 		  bool print_to_stderr)
@@ -994,7 +994,7 @@ SlabStats(MemoryContext context,
  * routine will be entered again when elog cleanup tries to release memory!
  */
 void
-SlabCheck(MemoryContext context)
+SlabCheck(MemoryContext *context)
 {
 	SlabContext *slab = (SlabContext *) context;
 	int			i;

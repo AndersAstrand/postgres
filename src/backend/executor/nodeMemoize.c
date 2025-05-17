@@ -159,7 +159,7 @@ MemoizeHash_hash(struct memoize_hash *tb, const MemoizeKey *key)
 {
 	MemoizeState *mstate = (MemoizeState *) tb->private_data;
 	ExprContext *econtext = mstate->ss.ps.ps_ExprContext;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TupleTableSlot *pslot = mstate->probeslot;
 	uint32		hashkey = 0;
 	int			numkeys = mstate->nkeys;
@@ -231,7 +231,7 @@ MemoizeHash_equal(struct memoize_hash *tb, const MemoizeKey *key1,
 
 	if (mstate->binary_mode)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		int			numkeys = mstate->nkeys;
 		bool		match = true;
 
@@ -310,7 +310,7 @@ prepare_probe_slot(MemoizeState *mstate, MemoizeKey *key)
 	if (key == NULL)
 	{
 		ExprContext *econtext = mstate->ss.ps.ps_ExprContext;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 
@@ -529,7 +529,7 @@ cache_lookup(MemoizeState *mstate, bool *found)
 {
 	MemoizeKey *key;
 	MemoizeEntry *entry;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* prepare the probe slot with the current scan parameters */
 	prepare_probe_slot(mstate, NULL);
@@ -626,7 +626,7 @@ cache_store_tuple(MemoizeState *mstate, TupleTableSlot *slot)
 {
 	MemoizeTuple *tuple;
 	MemoizeEntry *entry = mstate->entry;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	Assert(slot != NULL);
 	Assert(entry != NULL);

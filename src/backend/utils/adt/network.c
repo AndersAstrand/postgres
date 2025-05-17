@@ -444,7 +444,7 @@ network_sortsupport(PG_FUNCTION_ARGS)
 	if (ssup->abbreviate)
 	{
 		network_sortsupport_state *uss;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 

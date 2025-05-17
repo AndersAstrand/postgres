@@ -469,7 +469,7 @@ typedef struct ErrorData
 	int			saved_errno;	/* errno at entry */
 
 	/* context containing associated non-constant strings */
-	struct MemoryContextData *assoc_context;
+	struct MemoryContext *assoc_context;
 } ErrorData;
 
 extern void EmitErrorReport(void);

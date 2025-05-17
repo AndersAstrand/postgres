@@ -58,7 +58,7 @@ make_canonical_pathkey(PlannerInfo *root,
 {
 	PathKey    *pk;
 	ListCell   *lc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Can't make canonical pathkeys if the set of ECs might still change */
 	if (!root->ec_merging_done)

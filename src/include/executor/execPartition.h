@@ -114,7 +114,7 @@ typedef struct PartitionPruneState
 {
 	Bitmapset  *execparamids;
 	Bitmapset  *other_subplans;
-	MemoryContext prune_context;
+	MemoryContext *prune_context;
 	bool		do_initial_prune;
 	bool		do_exec_prune;
 	int			num_partprunedata;

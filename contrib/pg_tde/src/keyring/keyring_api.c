@@ -68,7 +68,7 @@ RegisterKeyProviderType(const TDEKeyringRoutine *routine, ProviderType type)
 {
 	RegisteredKeyProviderType *kp;
 #ifndef FRONTEND
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 #endif
 
 	Assert(routine != NULL);

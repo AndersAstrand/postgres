@@ -6047,8 +6047,8 @@ strlist_to_textarray(List *list)
 	bool	   *nulls;
 	int			j = 0;
 	ListCell   *cell;
-	MemoryContext memcxt;
-	MemoryContext oldcxt;
+	MemoryContext *memcxt;
+	MemoryContext *oldcxt;
 	int			lb[1];
 
 	/* Work in a temp context; easier than individually pfree'ing the Datums */

@@ -73,7 +73,7 @@ typedef struct AnlIndexData
 int			default_statistics_target = 100;
 
 /* A few variables that don't seem worth passing around as parameters */
-static MemoryContext anl_context = NULL;
+static MemoryContext *anl_context = NULL;
 static BufferAccessStrategy vac_strategy;
 
 
@@ -84,7 +84,7 @@ static void do_analyze_rel(Relation onerel,
 static void compute_index_stats(Relation onerel, double totalrows,
 								AnlIndexData *indexdata, int nindexes,
 								HeapTuple *rows, int numrows,
-								MemoryContext col_context);
+								MemoryContext *col_context);
 static VacAttrStats *examine_attribute(Relation onerel, int attnum,
 									   Node *index_expr);
 static int	acquire_sample_rows(Relation onerel, int elevel,
@@ -299,7 +299,7 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	HeapTuple  *rows;
 	PGRUsage	ru0;
 	TimestampTz starttime = 0;
-	MemoryContext caller_context;
+	MemoryContext *caller_context;
 	Oid			save_userid;
 	int			save_sec_context;
 	int			save_nestlevel;
@@ -536,8 +536,8 @@ do_analyze_rel(Relation onerel, VacuumParams *params,
 	 */
 	if (numrows > 0)
 	{
-		MemoryContext col_context,
-					old_context;
+		MemoryContext *col_context,
+				   *old_context;
 
 		pgstat_progress_update_param(PROGRESS_ANALYZE_PHASE,
 									 PROGRESS_ANALYZE_PHASE_COMPUTE_STATS);
@@ -828,10 +828,10 @@ static void
 compute_index_stats(Relation onerel, double totalrows,
 					AnlIndexData *indexdata, int nindexes,
 					HeapTuple *rows, int numrows,
-					MemoryContext col_context)
+					MemoryContext *col_context)
 {
-	MemoryContext ind_context,
-				old_context;
+	MemoryContext *ind_context,
+			   *old_context;
 	Datum		values[INDEX_MAX_KEYS];
 	bool		isnull[INDEX_MAX_KEYS];
 	int			ind,
@@ -2293,7 +2293,7 @@ compute_distinct_stats(VacAttrStatsP stats,
 		/* Generate MCV slot entry */
 		if (num_mcv > 0)
 		{
-			MemoryContext old_context;
+			MemoryContext *old_context;
 			Datum	   *mcv_values;
 			float4	   *mcv_freqs;
 
@@ -2658,7 +2658,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 		/* Generate MCV slot entry */
 		if (num_mcv > 0)
 		{
-			MemoryContext old_context;
+			MemoryContext *old_context;
 			Datum	   *mcv_values;
 			float4	   *mcv_freqs;
 
@@ -2700,7 +2700,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 			num_hist = num_bins + 1;
 		if (num_hist >= 2)
 		{
-			MemoryContext old_context;
+			MemoryContext *old_context;
 			Datum	   *hist_values;
 			int			nvals;
 			int			pos,
@@ -2807,7 +2807,7 @@ compute_scalar_stats(VacAttrStatsP stats,
 		/* Generate a correlation entry if there are multiple values */
 		if (values_cnt > 1)
 		{
-			MemoryContext old_context;
+			MemoryContext *old_context;
 			float4	   *corrs;
 			double		corr_xsum,
 						corr_x2sum;

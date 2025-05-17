@@ -22,7 +22,7 @@
 #include "utils/memutils.h"
 
 
-static MemoryContext opCtx;		/* working memory for operations */
+static MemoryContext *opCtx;	/* working memory for operations */
 
 
 /*
@@ -935,7 +935,7 @@ void
 spg_redo(XLogReaderState *record)
 {
 	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	oldCxt = MemoryContextSwitchTo(opCtx);
 	switch (info)

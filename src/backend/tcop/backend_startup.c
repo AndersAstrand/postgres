@@ -127,7 +127,7 @@ BackendInitialize(ClientSocket *client_sock, CAC_state cac)
 	char		remote_host[NI_MAXHOST];
 	char		remote_port[NI_MAXSERV];
 	StringInfoData ps_data;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Tell fd.c about the long-lived FD associated with the client_sock */
 	ReserveExternalFD();
@@ -455,7 +455,7 @@ ProcessStartupPacket(Port *port, bool ssl_done, bool gss_done)
 	int32		len;
 	char	   *buf;
 	ProtocolVersion proto;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	pq_startmsgread();
 

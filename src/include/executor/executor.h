@@ -137,8 +137,8 @@ extern TupleHashTable BuildTupleHashTable(PlanState *parent,
 										  FmgrInfo *hashfunctions,
 										  Oid *collations,
 										  long nbuckets, Size additionalsize,
-										  MemoryContext tablecxt,
-										  MemoryContext tempcxt, bool use_variable_hash_iv);
+										  MemoryContext *tablecxt,
+										  MemoryContext *tempcxt, bool use_variable_hash_iv);
 extern TupleHashTable BuildTupleHashTableExt(PlanState *parent,
 											 TupleDesc inputDesc,
 											 int numCols, AttrNumber *keyColIdx,
@@ -146,9 +146,9 @@ extern TupleHashTable BuildTupleHashTableExt(PlanState *parent,
 											 FmgrInfo *hashfunctions,
 											 Oid *collations,
 											 long nbuckets, Size additionalsize,
-											 MemoryContext metacxt,
-											 MemoryContext tablecxt,
-											 MemoryContext tempcxt, bool use_variable_hash_iv);
+											 MemoryContext *metacxt,
+											 MemoryContext *tablecxt,
+											 MemoryContext *tempcxt, bool use_variable_hash_iv);
 extern TupleHashEntry LookupTupleHashEntry(TupleHashTable hashtable,
 										   TupleTableSlot *slot,
 										   bool *isnew, uint32 *hash);
@@ -350,7 +350,7 @@ ExecEvalExprSwitchContext(ExprState *state,
 						  bool *isNull)
 {
 	Datum		retDatum;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 	retDatum = state->evalfunc(state, econtext, isNull);
@@ -456,14 +456,14 @@ extern SetExprState *ExecInitTableFunctionResult(Expr *expr,
 												 ExprContext *econtext, PlanState *parent);
 extern Tuplestorestate *ExecMakeTableFunctionResult(SetExprState *setexpr,
 													ExprContext *econtext,
-													MemoryContext argContext,
+													MemoryContext *argContext,
 													TupleDesc expectedDesc,
 													bool randomAccess);
 extern SetExprState *ExecInitFunctionResultSet(Expr *expr,
 											   ExprContext *econtext, PlanState *parent);
 extern Datum ExecMakeFunctionResultSet(SetExprState *fcache,
 									   ExprContext *econtext,
-									   MemoryContext argContext,
+									   MemoryContext *argContext,
 									   bool *isNull,
 									   ExprDoneCond *isDone);
 

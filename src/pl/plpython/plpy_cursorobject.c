@@ -79,7 +79,7 @@ PLy_cursor_query(const char *query)
 {
 	PLyCursorObject *cursor;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 
 	if ((cursor = PyObject_New(PLyCursorObject, &PLy_CursorType)) == NULL)
@@ -98,7 +98,7 @@ PLy_cursor_query(const char *query)
 	oldcontext = CurrentMemoryContext;
 	oldowner = CurrentResourceOwner;
 
-	PLy_spi_subtransaction_begin(oldcontext, oldowner);
+	PLy_spi_subtransaction_begin((MemoryContext *) oldcontext, oldowner);
 
 	PG_TRY();
 	{
@@ -124,11 +124,11 @@ PLy_cursor_query(const char *query)
 
 		PinPortal(portal);
 
-		PLy_spi_subtransaction_commit(oldcontext, oldowner);
+		PLy_spi_subtransaction_commit((MemoryContext *) oldcontext, oldowner);
 	}
 	PG_CATCH();
 	{
-		PLy_spi_subtransaction_abort(oldcontext, oldowner);
+		PLy_spi_subtransaction_abort((MemoryContext *) oldcontext, oldowner);
 		return NULL;
 	}
 	PG_END_TRY();
@@ -144,7 +144,7 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 	volatile int nargs;
 	PLyPlanObject *plan;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 
 	if (args)
@@ -195,12 +195,12 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 	oldcontext = CurrentMemoryContext;
 	oldowner = CurrentResourceOwner;
 
-	PLy_spi_subtransaction_begin(oldcontext, oldowner);
+	PLy_spi_subtransaction_begin((MemoryContext *) oldcontext, oldowner);
 
 	PG_TRY();
 	{
 		Portal		portal;
-		MemoryContext tmpcontext;
+		MemoryContext *tmpcontext;
 		Datum	   *volatile values;
 		char	   *volatile nulls;
 		volatile int j;
@@ -245,7 +245,7 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 			PG_END_TRY(2);
 		}
 
-		MemoryContextSwitchTo(oldcontext);
+		MemoryContextSwitchTo((MemoryContext *) oldcontext);
 
 		portal = SPI_cursor_open(NULL, plan->plan, values, nulls,
 								 exec_ctx->curr_proc->fn_readonly);
@@ -258,13 +258,13 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 		PinPortal(portal);
 
 		MemoryContextDelete(tmpcontext);
-		PLy_spi_subtransaction_commit(oldcontext, oldowner);
+		PLy_spi_subtransaction_commit((MemoryContext *) oldcontext, oldowner);
 	}
 	PG_CATCH();
 	{
 		Py_DECREF(cursor);
 		/* Subtransaction abort will remove the tmpcontext */
-		PLy_spi_subtransaction_abort(oldcontext, oldowner);
+		PLy_spi_subtransaction_abort((MemoryContext *) oldcontext, oldowner);
 		return NULL;
 	}
 	PG_END_TRY();
@@ -306,7 +306,7 @@ PLy_cursor_iternext(PyObject *self)
 	PLyCursorObject *cursor;
 	PyObject   *ret;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	Portal		portal;
 
@@ -329,7 +329,7 @@ PLy_cursor_iternext(PyObject *self)
 	oldcontext = CurrentMemoryContext;
 	oldowner = CurrentResourceOwner;
 
-	PLy_spi_subtransaction_begin(oldcontext, oldowner);
+	PLy_spi_subtransaction_begin((MemoryContext *) oldcontext, oldowner);
 
 	PG_TRY();
 	{
@@ -350,11 +350,11 @@ PLy_cursor_iternext(PyObject *self)
 
 		SPI_freetuptable(SPI_tuptable);
 
-		PLy_spi_subtransaction_commit(oldcontext, oldowner);
+		PLy_spi_subtransaction_commit((MemoryContext *) oldcontext, oldowner);
 	}
 	PG_CATCH();
 	{
-		PLy_spi_subtransaction_abort(oldcontext, oldowner);
+		PLy_spi_subtransaction_abort((MemoryContext *) oldcontext, oldowner);
 		return NULL;
 	}
 	PG_END_TRY();
@@ -369,7 +369,7 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 	int			count;
 	PLyResultObject *ret;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	Portal		portal;
 
@@ -399,7 +399,7 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 	oldcontext = CurrentMemoryContext;
 	oldowner = CurrentResourceOwner;
 
-	PLy_spi_subtransaction_begin(oldcontext, oldowner);
+	PLy_spi_subtransaction_begin((MemoryContext *) oldcontext, oldowner);
 
 	PG_TRY();
 	{
@@ -451,11 +451,11 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 
 		SPI_freetuptable(SPI_tuptable);
 
-		PLy_spi_subtransaction_commit(oldcontext, oldowner);
+		PLy_spi_subtransaction_commit((MemoryContext *) oldcontext, oldowner);
 	}
 	PG_CATCH();
 	{
-		PLy_spi_subtransaction_abort(oldcontext, oldowner);
+		PLy_spi_subtransaction_abort((MemoryContext *) oldcontext, oldowner);
 		return NULL;
 	}
 	PG_END_TRY();

@@ -68,7 +68,7 @@ static LocalPgBackendStatus *localBackendStatusTable = NULL;
 /* Total number of backends including auxiliary */
 static int	localNumBackends = 0;
 
-static MemoryContext backendStatusSnapContext;
+static MemoryContext *backendStatusSnapContext;
 
 
 static void pgstat_beshutdown_hook(int code, Datum arg);

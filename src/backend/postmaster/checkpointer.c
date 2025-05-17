@@ -173,7 +173,7 @@ void
 CheckpointerMain(char *startup_data, size_t startup_data_len)
 {
 	sigjmp_buf	local_sigjmp_buf;
-	MemoryContext checkpointer_context;
+	MemoryContext *checkpointer_context;
 
 	Assert(startup_data_len == 0);
 

@@ -126,7 +126,7 @@ gistGetNodeBuffer(GISTBuildBuffers *gfbb, GISTSTATE *giststate,
 		/*
 		 * Node buffer wasn't found. Initialize the new buffer as empty.
 		 */
-		MemoryContext oldcxt = MemoryContextSwitchTo(gfbb->context);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(gfbb->context);
 
 		/* nodeBuffer->nodeBlocknum is the hash key and was filled in already */
 		nodeBuffer->blocksCount = 0;
@@ -340,7 +340,7 @@ gistPushItupToNodeBuffer(GISTBuildBuffers *gfbb, GISTNodeBuffer *nodeBuffer,
 	 * Most part of memory operations will be in buffering build persistent
 	 * context. So, let's switch to it.
 	 */
-	MemoryContext oldcxt = MemoryContextSwitchTo(gfbb->context);
+	MemoryContext *oldcxt = MemoryContextSwitchTo(gfbb->context);
 
 	/*
 	 * If the buffer is currently empty, create the first page.

@@ -82,8 +82,8 @@ PLy_input_convert(PLyDatumToOb *arg, Datum val)
 {
 	PyObject   *result;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	MemoryContext scratch_context = PLy_get_scratch_context(exec_ctx);
-	MemoryContext oldcontext;
+	MemoryContext *scratch_context = PLy_get_scratch_context(exec_ctx);
+	MemoryContext *oldcontext;
 
 	/*
 	 * Do the work in the scratch context to avoid leaking memory from the
@@ -135,8 +135,8 @@ PLy_input_from_tuple(PLyDatumToOb *arg, HeapTuple tuple, TupleDesc desc, bool in
 {
 	PyObject   *dict;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	MemoryContext scratch_context = PLy_get_scratch_context(exec_ctx);
-	MemoryContext oldcontext;
+	MemoryContext *scratch_context = PLy_get_scratch_context(exec_ctx);
+	MemoryContext *oldcontext;
 
 	/*
 	 * As in PLy_input_convert, do the work in the scratch context.
@@ -293,7 +293,7 @@ PLy_output_setup_record(PLyObToDatum *arg, TupleDesc desc, PLyProcedure *proc)
  * proc is used to look up transform functions.
  */
 void
-PLy_output_setup_func(PLyObToDatum *arg, MemoryContext arg_mcxt,
+PLy_output_setup_func(PLyObToDatum *arg, MemoryContext *arg_mcxt,
 					  Oid typeOid, int32 typmod,
 					  PLyProcedure *proc)
 {
@@ -415,7 +415,7 @@ PLy_output_setup_func(PLyObToDatum *arg, MemoryContext arg_mcxt,
  * proc is used to look up transform functions.
  */
 void
-PLy_input_setup_func(PLyDatumToOb *arg, MemoryContext arg_mcxt,
+PLy_input_setup_func(PLyDatumToOb *arg, MemoryContext *arg_mcxt,
 					 Oid typeOid, int32 typmod,
 					 PLyProcedure *proc)
 {

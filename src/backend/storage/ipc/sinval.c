@@ -197,7 +197,7 @@ ProcessCatchupInterrupt(void)
 		}
 		else
 		{
-			MemoryContext oldcontext = CurrentMemoryContext;
+			MemoryContext *oldcontext = CurrentMemoryContext;
 
 			elog(DEBUG4, "ProcessCatchupEvent outside transaction");
 			StartTransactionCommand();

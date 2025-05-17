@@ -414,8 +414,8 @@ pg_get_wal_block_info(PG_FUNCTION_ARGS)
 	XLogRecPtr	end_lsn = PG_GETARG_LSN(1);
 	bool		show_data = PG_GETARG_BOOL(2);
 	XLogReaderState *xlogreader;
-	MemoryContext old_cxt;
-	MemoryContext tmp_cxt;
+	MemoryContext *old_cxt;
+	MemoryContext *tmp_cxt;
 
 	ValidateInputLSNs(start_lsn, &end_lsn);
 
@@ -539,8 +539,8 @@ GetWALRecordsInfo(FunctionCallInfo fcinfo, XLogRecPtr start_lsn,
 #define PG_GET_WAL_RECORDS_INFO_COLS 11
 	XLogReaderState *xlogreader;
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-	MemoryContext old_cxt;
-	MemoryContext tmp_cxt;
+	MemoryContext *old_cxt;
+	MemoryContext *tmp_cxt;
 
 	Assert(start_lsn <= end_lsn);
 
@@ -650,8 +650,8 @@ GetXLogSummaryStats(XLogStats *stats, ReturnSetInfo *rsinfo,
 					Datum *values, bool *nulls, uint32 ncols,
 					bool stats_per_record)
 {
-	MemoryContext old_cxt;
-	MemoryContext tmp_cxt;
+	MemoryContext *old_cxt;
+	MemoryContext *tmp_cxt;
 	uint64		total_count = 0;
 	uint64		total_rec_len = 0;
 	uint64		total_fpi_len = 0;

@@ -421,7 +421,7 @@ pg_get_keywords(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		TupleDesc	tupdesc;
 
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -500,7 +500,7 @@ pg_get_catalog_foreign_keys(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		TupleDesc	tupdesc;
 
 		funcctx = SRF_FIRSTCALL_INIT();

@@ -47,13 +47,13 @@ static void copy_byval_expanded_array(ExpandedArrayHeader *eah,
  * If no cross-call caching is required, pass NULL for metacache.
  */
 Datum
-expand_array(Datum arraydatum, MemoryContext parentcontext,
+expand_array(Datum arraydatum, MemoryContext *parentcontext,
 			 ArrayMetaState *metacache)
 {
 	ArrayType  *array;
 	ExpandedArrayHeader *eah;
-	MemoryContext objcxt;
-	MemoryContext oldcxt;
+	MemoryContext *objcxt;
+	MemoryContext *oldcxt;
 	ArrayMetaState fakecache;
 
 	/*
@@ -185,7 +185,7 @@ static void
 copy_byval_expanded_array(ExpandedArrayHeader *eah,
 						  ExpandedArrayHeader *oldeah)
 {
-	MemoryContext objcxt = eah->hdr.eoh_context;
+	MemoryContext *objcxt = eah->hdr.eoh_context;
 	int			ndims = oldeah->ndims;
 	int			dvalueslen = oldeah->dvalueslen;
 
@@ -425,7 +425,7 @@ deconstruct_expanded_array(ExpandedArrayHeader *eah)
 {
 	if (eah->dvalues == NULL)
 	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(eah->hdr.eoh_context);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(eah->hdr.eoh_context);
 		Datum	   *dvalues;
 		bool	   *dnulls;
 		int			nelems;

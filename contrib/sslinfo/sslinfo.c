@@ -365,7 +365,7 @@ ssl_extension_info(PG_FUNCTION_ARGS)
 	FuncCallContext *funcctx;
 	int			call_cntr;
 	int			max_calls;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	SSLExtensionInfoContext *fctx;
 
 	if (SRF_IS_FIRSTCALL())

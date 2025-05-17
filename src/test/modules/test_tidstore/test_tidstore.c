@@ -86,7 +86,7 @@ Datum
 test_create(PG_FUNCTION_ARGS)
 {
 	bool		shared = PG_GETARG_BOOL(0);
-	MemoryContext old_ctx;
+	MemoryContext *old_ctx;
 
 	/* doesn't really matter, since it's just a hint */
 	size_t		tidstore_max_size = 2 * 1024 * 1024;

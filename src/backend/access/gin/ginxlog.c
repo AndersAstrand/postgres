@@ -19,7 +19,7 @@
 #include "access/xlogutils.h"
 #include "utils/memutils.h"
 
-static MemoryContext opCtx;		/* working memory for operations */
+static MemoryContext *opCtx;	/* working memory for operations */
 
 static void
 ginRedoClearIncompleteSplit(XLogReaderState *record, uint8 block_id)
@@ -726,7 +726,7 @@ void
 gin_redo(XLogReaderState *record)
 {
 	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	/*
 	 * GIN indexes do not require any conflict processing. NB: If we ever

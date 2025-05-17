@@ -51,7 +51,7 @@ typedef struct OSAPerQueryState
 	/* Representative Aggref for this aggregate: */
 	Aggref	   *aggref;
 	/* Memory context containing this struct and other per-query data: */
-	MemoryContext qcontext;
+	MemoryContext *qcontext;
 	/* Context for expression evaluation */
 	ExprContext *econtext;
 	/* Do we expect multiple final-function calls within one group? */
@@ -94,7 +94,7 @@ typedef struct OSAPerGroupState
 	/* Link to the per-query state for this aggregate: */
 	OSAPerQueryState *qstate;
 	/* Memory context containing per-group data: */
-	MemoryContext gcontext;
+	MemoryContext *gcontext;
 	/* Sort object we're accumulating data in: */
 	Tuplesortstate *sortstate;
 	/* Number of normal rows inserted into sortstate: */
@@ -114,8 +114,8 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 {
 	OSAPerGroupState *osastate;
 	OSAPerQueryState *qstate;
-	MemoryContext gcontext;
-	MemoryContext oldcontext;
+	MemoryContext *gcontext;
+	MemoryContext *oldcontext;
 	int			tuplesortopt;
 
 	/*
@@ -134,7 +134,7 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 	if (qstate == NULL)
 	{
 		Aggref	   *aggref;
-		MemoryContext qcontext;
+		MemoryContext *qcontext;
 		List	   *sortlist;
 		int			numSortCols;
 
@@ -1318,7 +1318,7 @@ hypothetical_dense_rank_final(PG_FUNCTION_ARGS)
 	econtext = osastate->qstate->econtext;
 	if (!econtext)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* Make sure to we create econtext under correct parent context. */
 		oldcontext = MemoryContextSwitchTo(osastate->qstate->qcontext);
@@ -1345,7 +1345,7 @@ hypothetical_dense_rank_final(PG_FUNCTION_ARGS)
 	if (compareTuple == NULL)
 	{
 		AttrNumber *sortColIdx = osastate->qstate->sortColIdx;
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 
 		oldContext = MemoryContextSwitchTo(osastate->qstate->qcontext);
 		compareTuple = execTuplesMatchPrepare(osastate->qstate->tupdesc,

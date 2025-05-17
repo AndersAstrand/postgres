@@ -923,7 +923,7 @@ pgp_armor_headers(PG_FUNCTION_ARGS)
 	{
 		text	   *data = PG_GETARG_TEXT_PP(0);
 		int			res;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 

@@ -36,7 +36,7 @@
 /* static function decls */
 static void init_sexpr(Oid foid, Oid input_collation, Expr *node,
 					   SetExprState *sexpr, PlanState *parent,
-					   MemoryContext sexprCxt, bool allowSRF, bool needDescForSRF);
+					   MemoryContext *sexprCxt, bool allowSRF, bool needDescForSRF);
 static void ShutdownSetExpr(Datum arg);
 static void ExecEvalFuncArgs(FunctionCallInfo fcinfo,
 							 List *argList, ExprContext *econtext);
@@ -100,7 +100,7 @@ ExecInitTableFunctionResult(Expr *expr,
 Tuplestorestate *
 ExecMakeTableFunctionResult(SetExprState *setexpr,
 							ExprContext *econtext,
-							MemoryContext argContext,
+							MemoryContext *argContext,
 							TupleDesc expectedDesc,
 							bool randomAccess)
 {
@@ -113,7 +113,7 @@ ExecMakeTableFunctionResult(SetExprState *setexpr,
 	PgStat_FunctionCallUsage fcusage;
 	ReturnSetInfo rsinfo;
 	HeapTupleData tmptup;
-	MemoryContext callerContext;
+	MemoryContext *callerContext;
 	bool		first_time = true;
 
 	/*
@@ -258,7 +258,7 @@ ExecMakeTableFunctionResult(SetExprState *setexpr,
 			 */
 			if (first_time)
 			{
-				MemoryContext oldcontext =
+				MemoryContext *oldcontext =
 					MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 
 				tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
@@ -288,7 +288,7 @@ ExecMakeTableFunctionResult(SetExprState *setexpr,
 
 					if (tupdesc == NULL)
 					{
-						MemoryContext oldcontext =
+						MemoryContext *oldcontext =
 							MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 
 						/*
@@ -393,7 +393,7 @@ no_function_result:
 	 */
 	if (rsinfo.setResult == NULL)
 	{
-		MemoryContext oldcontext =
+		MemoryContext *oldcontext =
 			MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
 
 		tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
@@ -496,7 +496,7 @@ ExecInitFunctionResultSet(Expr *expr,
 Datum
 ExecMakeFunctionResultSet(SetExprState *fcache,
 						  ExprContext *econtext,
-						  MemoryContext argContext,
+						  MemoryContext *argContext,
 						  bool *isNull,
 						  ExprDoneCond *isDone)
 {
@@ -521,7 +521,7 @@ restart:
 	if (fcache->funcResultStore)
 	{
 		TupleTableSlot *slot = fcache->funcResultSlot;
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 		bool		foundTup;
 
 		/*
@@ -571,7 +571,7 @@ restart:
 	arguments = fcache->args;
 	if (!fcache->setArgsValid)
 	{
-		MemoryContext oldContext = MemoryContextSwitchTo(argContext);
+		MemoryContext *oldContext = MemoryContextSwitchTo(argContext);
 
 		ExecEvalFuncArgs(fcinfo, arguments, econtext);
 		MemoryContextSwitchTo(oldContext);
@@ -695,7 +695,7 @@ restart:
 static void
 init_sexpr(Oid foid, Oid input_collation, Expr *node,
 		   SetExprState *sexpr, PlanState *parent,
-		   MemoryContext sexprCxt, bool allowSRF, bool needDescForSRF)
+		   MemoryContext *sexprCxt, bool allowSRF, bool needDescForSRF)
 {
 	AclResult	aclresult;
 	size_t		numargs = list_length(sexpr->args);
@@ -748,7 +748,7 @@ init_sexpr(Oid foid, Oid input_collation, Expr *node,
 		TypeFuncClass functypclass;
 		Oid			funcrettype;
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		functypclass = get_expr_result_type(sexpr->func.fn_expr,
 											&funcrettype,
@@ -872,7 +872,7 @@ ExecPrepareTuplestoreResult(SetExprState *sexpr,
 	{
 		/* Create a slot so we can read data out of the tuplestore */
 		TupleDesc	slotDesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(sexpr->func.fn_mcxt);
 

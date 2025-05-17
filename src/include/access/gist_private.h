@@ -74,8 +74,8 @@ typedef struct
  */
 typedef struct GISTSTATE
 {
-	MemoryContext scanCxt;		/* context for scan-lifespan data */
-	MemoryContext tempCxt;		/* short-term context for calling functions */
+	MemoryContext *scanCxt;		/* context for scan-lifespan data */
+	MemoryContext *tempCxt;		/* short-term context for calling functions */
 
 	TupleDesc	leafTupdesc;	/* index's tuple descriptor */
 	TupleDesc	nonLeafTupdesc; /* truncated tuple descriptor for non-leaf
@@ -157,7 +157,7 @@ typedef struct GISTScanOpaqueData
 	Oid		   *orderByTypes;	/* datatypes of ORDER BY expressions */
 
 	pairingheap *queue;			/* queue of unvisited items */
-	MemoryContext queueCxt;		/* context holding the queue */
+	MemoryContext *queueCxt;	/* context holding the queue */
 	bool		qual_ok;		/* false if qual can never be satisfied */
 	bool		firstCall;		/* true until first gistgettuple call */
 
@@ -174,7 +174,7 @@ typedef struct GISTScanOpaqueData
 	GISTSearchHeapItem pageData[BLCKSZ / sizeof(IndexTupleData)];
 	OffsetNumber nPageData;		/* number of valid items in array */
 	OffsetNumber curPageData;	/* next item to return */
-	MemoryContext pageDataCxt;	/* context holding the fetched tuples, for
+	MemoryContext *pageDataCxt; /* context holding the fetched tuples, for
 								 * index-only scans */
 } GISTScanOpaqueData;
 
@@ -338,7 +338,7 @@ typedef struct
 typedef struct GISTBuildBuffers
 {
 	/* Persistent memory context for the buffers and metadata. */
-	MemoryContext context;
+	MemoryContext *context;
 
 	BufFile    *pfile;			/* Temporary file to store buffers in */
 	long		nFileBlocks;	/* Current size of the temporary file */
@@ -405,7 +405,7 @@ extern bool gistinsert(Relation r, Datum *values, bool *isnull,
 					   IndexUniqueCheck checkUnique,
 					   bool indexUnchanged,
 					   struct IndexInfo *indexInfo);
-extern MemoryContext createTempGistContext(void);
+extern MemoryContext *createTempGistContext(void);
 extern GISTSTATE *initGISTstate(Relation index);
 extern void freeGISTstate(GISTSTATE *giststate);
 extern void gistdoinsert(Relation r,

@@ -83,7 +83,7 @@ typedef struct HASHCTL
 	/* Used if HASH_ALLOC flag is set: */
 	HashAllocFunc alloc;		/* memory allocator */
 	/* Used if HASH_CONTEXT flag is set: */
-	MemoryContext hcxt;			/* memory context to use for allocations */
+	MemoryContext *hcxt;		/* memory context to use for allocations */
 	/* Used if HASH_SHARED_MEM flag is set: */
 	HASHHDR    *hctl;			/* location of header in shared mem */
 } HASHCTL;

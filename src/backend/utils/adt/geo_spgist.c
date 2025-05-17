@@ -555,7 +555,7 @@ spg_box_quad_inner_consistent(PG_FUNCTION_ARGS)
 	spgInnerConsistentIn *in = (spgInnerConsistentIn *) PG_GETARG_POINTER(0);
 	spgInnerConsistentOut *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
 	int			i;
-	MemoryContext old_ctx;
+	MemoryContext *old_ctx;
 	RectBox    *rect_box;
 	uint8		quadrant;
 	RangeBox   *centroid,

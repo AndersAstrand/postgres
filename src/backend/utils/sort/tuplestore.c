@@ -111,7 +111,7 @@ struct Tuplestorestate
 	int64		allowedMem;		/* total memory allowed, in bytes */
 	int64		tuples;			/* number of tuples added */
 	BufFile    *myfile;			/* underlying file, or NULL if none */
-	MemoryContext context;		/* memory context for holding tuples */
+	MemoryContext *context;		/* memory context for holding tuples */
 	ResourceOwner resowner;		/* resowner for holding temp files */
 
 	/*
@@ -709,7 +709,7 @@ tuplestore_puttupleslot(Tuplestorestate *state,
 						TupleTableSlot *slot)
 {
 	MinimalTuple tuple;
-	MemoryContext oldcxt = MemoryContextSwitchTo(state->context);
+	MemoryContext *oldcxt = MemoryContextSwitchTo(state->context);
 
 	/*
 	 * Form a MinimalTuple in working memory
@@ -729,7 +729,7 @@ tuplestore_puttupleslot(Tuplestorestate *state,
 void
 tuplestore_puttuple(Tuplestorestate *state, HeapTuple tuple)
 {
-	MemoryContext oldcxt = MemoryContextSwitchTo(state->context);
+	MemoryContext *oldcxt = MemoryContextSwitchTo(state->context);
 
 	/*
 	 * Copy the tuple.  (Must do this even in WRITEFILE case.  Note that
@@ -751,7 +751,7 @@ tuplestore_putvalues(Tuplestorestate *state, TupleDesc tdesc,
 					 const Datum *values, const bool *isnull)
 {
 	MinimalTuple tuple;
-	MemoryContext oldcxt = MemoryContextSwitchTo(state->context);
+	MemoryContext *oldcxt = MemoryContextSwitchTo(state->context);
 
 	tuple = heap_form_minimal_tuple(tdesc, values, isnull);
 	USEMEM(state, GetMemoryChunkSpace(tuple));

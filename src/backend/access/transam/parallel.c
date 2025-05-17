@@ -169,7 +169,7 @@ ParallelContext *
 CreateParallelContext(const char *library_name, const char *function_name,
 					  int nworkers)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ParallelContext *pcxt;
 
 	/* It is unsafe to create a parallel context if not in parallel mode. */
@@ -206,7 +206,7 @@ CreateParallelContext(const char *library_name, const char *function_name,
 void
 InitializeParallelDSM(ParallelContext *pcxt)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	Size		library_len = 0;
 	Size		guc_len = 0;
 	Size		combocidlen = 0;
@@ -568,7 +568,7 @@ ReinitializeParallelWorkers(ParallelContext *pcxt, int nworkers_to_launch)
 void
 LaunchParallelWorkers(ParallelContext *pcxt)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	BackgroundWorker worker;
 	int			i;
 	bool		any_registrations_failed = false;
@@ -1044,9 +1044,9 @@ void
 HandleParallelMessages(void)
 {
 	dlist_iter	iter;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
-	static MemoryContext hpm_context = NULL;
+	static MemoryContext *hpm_context = NULL;
 
 	/*
 	 * This is invoked from ProcessInterrupts(), and since some of the

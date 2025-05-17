@@ -34,7 +34,7 @@
 
 typedef struct PartitionDirectoryData
 {
-	MemoryContext pdir_mcxt;
+	MemoryContext *pdir_mcxt;
 	HTAB	   *pdir_hash;
 	bool		omit_detached;
 }			PartitionDirectoryData;
@@ -147,8 +147,8 @@ RelationBuildPartitionDesc(Relation rel, bool omit_detached)
 				nparts;
 	bool		retried = false;
 	PartitionKey key = RelationGetPartitionKey(rel);
-	MemoryContext new_pdcxt;
-	MemoryContext oldcxt;
+	MemoryContext *new_pdcxt;
+	MemoryContext *oldcxt;
 	int		   *mapping;
 
 retry:
@@ -420,9 +420,9 @@ retry:
  *		Create a new partition directory object.
  */
 PartitionDirectory
-CreatePartitionDirectory(MemoryContext mcxt, bool omit_detached)
+CreatePartitionDirectory(MemoryContext *mcxt, bool omit_detached)
 {
-	MemoryContext oldcontext = MemoryContextSwitchTo(mcxt);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(mcxt);
 	PartitionDirectory pdir;
 	HASHCTL		ctl;
 

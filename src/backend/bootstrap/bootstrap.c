@@ -152,7 +152,7 @@ static struct typmap *Ap = NULL;
 static Datum values[MAXATTR];	/* current row's attribute values */
 static bool Nulls[MAXATTR];
 
-static MemoryContext nogc = NULL;	/* special no-gc mem context */
+static MemoryContext *nogc = NULL;	/* special no-gc mem context */
 
 /*
  *	At bootstrap time, we first declare all the indices to be built, and
@@ -697,7 +697,7 @@ populate_typ_list(void)
 	Relation	rel;
 	TableScanDesc scan;
 	HeapTuple	tup;
-	MemoryContext old;
+	MemoryContext *old;
 
 	Assert(Typ == NIL);
 
@@ -903,7 +903,7 @@ index_register(Oid heap,
 			   const IndexInfo *indexInfo)
 {
 	IndexList  *newind;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * XXX mao 10/31/92 -- don't gc index reldescs, associated info at

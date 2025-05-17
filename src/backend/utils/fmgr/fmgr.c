@@ -55,7 +55,7 @@ typedef struct
 static HTAB *CFuncHash = NULL;
 
 
-static void fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
+static void fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext *mcxt,
 								   bool ignore_security);
 static void fmgr_info_C_lang(Oid functionId, FmgrInfo *finfo, HeapTuple procedureTuple);
 static void fmgr_info_other_lang(Oid functionId, FmgrInfo *finfo, HeapTuple procedureTuple);
@@ -134,7 +134,7 @@ fmgr_info(Oid functionId, FmgrInfo *finfo)
  * subsidiary data should go.
  */
 void
-fmgr_info_cxt(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt)
+fmgr_info_cxt(Oid functionId, FmgrInfo *finfo, MemoryContext *mcxt)
 {
 	fmgr_info_cxt_security(functionId, finfo, mcxt, false);
 }
@@ -144,7 +144,7 @@ fmgr_info_cxt(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt)
  * but is set to true when we need to avoid recursion.
  */
 static void
-fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext mcxt,
+fmgr_info_cxt_security(Oid functionId, FmgrInfo *finfo, MemoryContext *mcxt,
 					   bool ignore_security)
 {
 	const FmgrBuiltin *fbp;
@@ -578,7 +578,7 @@ record_C_func(HeapTuple procedureTuple,
  */
 void
 fmgr_info_copy(FmgrInfo *dstinfo, FmgrInfo *srcinfo,
-			   MemoryContext destcxt)
+			   MemoryContext *destcxt)
 {
 	memcpy(dstinfo, srcinfo, sizeof(FmgrInfo));
 	dstinfo->fn_mcxt = destcxt;
@@ -648,7 +648,7 @@ fmgr_security_definer(PG_FUNCTION_ARGS)
 		Form_pg_proc procedureStruct;
 		Datum		datum;
 		bool		isnull;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		fcache = MemoryContextAllocZero(fcinfo->flinfo->fn_mcxt,
 										sizeof(*fcache));

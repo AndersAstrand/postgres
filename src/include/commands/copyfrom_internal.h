@@ -89,7 +89,7 @@ typedef struct CopyFromStateData
 	/*
 	 * Working state
 	 */
-	MemoryContext copycontext;	/* per-copy execution context */
+	MemoryContext *copycontext; /* per-copy execution context */
 
 	AttrNumber	num_defaults;	/* count of att that are missing and have
 								 * default value */

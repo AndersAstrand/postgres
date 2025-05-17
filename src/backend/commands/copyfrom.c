@@ -394,7 +394,7 @@ CopyMultiInsertBufferFlush(CopyMultiInsertInfo *miinfo,
 		int			ti_options = miinfo->ti_options;
 		bool		line_buf_valid = cstate->line_buf_valid;
 		uint64		save_cur_lineno = cstate->cur_lineno;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		Assert(buffer->bistate != NULL);
 
@@ -634,7 +634,7 @@ CopyFrom(CopyFromState cstate)
 	ModifyTableState *mtstate;
 	ExprContext *econtext;
 	TupleTableSlot *singleslot = NULL;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	PartitionTupleRouting *proute = NULL;
 	ErrorContextCallback errcallback;
@@ -1384,7 +1384,7 @@ BeginCopyFrom(ParseState *pstate,
 	Oid			in_func_oid;
 	int		   *defmap;
 	ExprState **defexprs;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	bool		volatile_defexprs;
 	const int	progress_cols[] = {
 		PROGRESS_COPY_COMMAND,

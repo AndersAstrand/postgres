@@ -156,6 +156,6 @@ extern ObjectAddress publication_add_schema(Oid pubid, Oid schemaid,
 											bool if_not_exists);
 
 extern Bitmapset *pub_collist_to_bitmapset(Bitmapset *columns, Datum pubcols,
-										   MemoryContext mcxt);
+										   MemoryContext *mcxt);
 
 #endif							/* PG_PUBLICATION_H */

@@ -44,7 +44,7 @@ typedef struct BrinOpcInfo
 typedef struct BrinDesc
 {
 	/* Containing memory context */
-	MemoryContext bd_context;
+	MemoryContext *bd_context;
 
 	/* the index relation itself */
 	Relation	bd_index;

@@ -377,7 +377,7 @@ handle this, memory allocation functions are accessed via function
 pointers, and we require all context types to obey the conventions
 given here.
 
-A memory context is represented by struct MemoryContextData (see
+A memory context is represented by struct MemoryContext (see
 memnodes.h). This struct identifies the exact type of the context, and
 contains information common between the different types of
 MemoryContext like the parent and child contexts, and the name of the

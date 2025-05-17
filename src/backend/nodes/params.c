@@ -334,8 +334,8 @@ RestoreParamList(char **start_address)
 char *
 BuildParamLogString(ParamListInfo params, char **knownTextValues, int maxlen)
 {
-	MemoryContext tmpCxt,
-				oldCxt;
+	MemoryContext *tmpCxt,
+			   *oldCxt;
 	StringInfoData buf;
 
 	/*

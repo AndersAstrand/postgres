@@ -275,7 +275,7 @@ typedef dsa_pointer RT_HANDLE;
 #endif
 
 #ifdef RT_SHMEM
-RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext ctx, dsa_area *dsa, int tranche_id);
+RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext *ctx, dsa_area *dsa, int tranche_id);
 RT_SCOPE	RT_RADIX_TREE *RT_ATTACH(dsa_area *dsa, dsa_pointer dp);
 RT_SCOPE void RT_DETACH(RT_RADIX_TREE * tree);
 RT_SCOPE	RT_HANDLE RT_GET_HANDLE(RT_RADIX_TREE * tree);
@@ -283,7 +283,7 @@ RT_SCOPE void RT_LOCK_EXCLUSIVE(RT_RADIX_TREE * tree);
 RT_SCOPE void RT_LOCK_SHARE(RT_RADIX_TREE * tree);
 RT_SCOPE void RT_UNLOCK(RT_RADIX_TREE * tree);
 #else
-RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext ctx);
+RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext *ctx);
 #endif
 RT_SCOPE void RT_FREE(RT_RADIX_TREE * tree);
 
@@ -706,7 +706,7 @@ typedef struct RT_RADIX_TREE_CONTROL
 /* Entry point for allocating and accessing the tree */
 struct RT_RADIX_TREE
 {
-	MemoryContext context;
+	MemoryContext *context;
 
 	/* pointing to either local memory or DSA */
 	RT_RADIX_TREE_CONTROL *ctl;
@@ -714,12 +714,12 @@ struct RT_RADIX_TREE
 #ifdef RT_SHMEM
 	dsa_area   *dsa;
 #else
-	MemoryContextData *node_slabs[RT_NUM_SIZE_CLASSES];
+	MemoryContext *node_slabs[RT_NUM_SIZE_CLASSES];
 
 	/* leaf_context is used only for single-value leaves */
-	MemoryContextData *leaf_context;
+	MemoryContext *leaf_context;
 #endif
-	MemoryContextData *iter_context;
+	MemoryContext *iter_context;
 };
 
 /*
@@ -1819,13 +1819,13 @@ have_slot:
  */
 RT_SCOPE	RT_RADIX_TREE *
 #ifdef RT_SHMEM
-RT_CREATE(MemoryContext ctx, dsa_area *dsa, int tranche_id)
+RT_CREATE(MemoryContext *ctx, dsa_area *dsa, int tranche_id)
 #else
-RT_CREATE(MemoryContext ctx)
+RT_CREATE(MemoryContext *ctx)
 #endif
 {
 	RT_RADIX_TREE *tree;
-	MemoryContext old_ctx;
+	MemoryContext *old_ctx;
 	RT_CHILD_PTR rootnode;
 #ifdef RT_SHMEM
 	dsa_pointer dp;

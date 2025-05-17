@@ -287,11 +287,11 @@ ApplyErrorCallbackArg apply_error_callback_arg =
 
 ErrorContextCallback *apply_error_context_stack = NULL;
 
-MemoryContext ApplyMessageContext = NULL;
-MemoryContext ApplyContext = NULL;
+MemoryContext *ApplyMessageContext = NULL;
+MemoryContext *ApplyContext = NULL;
 
 /* per stream context for streaming transactions */
-static MemoryContext LogicalStreamingContext = NULL;
+static MemoryContext *LogicalStreamingContext = NULL;
 
 WalReceiverConn *LogRepWorkerWalRcvConn = NULL;
 
@@ -1442,7 +1442,7 @@ stream_start_internal(TransactionId xid, bool first_segment)
 	 */
 	if (!MyLogicalRepWorker->stream_fileset)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		oldctx = MemoryContextSwitchTo(ApplyContext);
 
@@ -2006,7 +2006,7 @@ apply_spooled_messages(FileSet *stream_fileset, TransactionId xid,
 	int			nchanges;
 	char		path[MAXPGPATH];
 	char	   *buffer = NULL;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ResourceOwner oldowner;
 	int			fileno;
 	off_t		offset;
@@ -2379,7 +2379,7 @@ apply_handle_insert(StringInfo s)
 	ApplyExecutionData *edata;
 	EState	   *estate;
 	TupleTableSlot *remoteslot;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	bool		run_as_owner;
 
 	/*
@@ -2535,7 +2535,7 @@ apply_handle_update(StringInfo s)
 	bool		has_oldtup;
 	TupleTableSlot *remoteslot;
 	RTEPermissionInfo *target_perminfo;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	bool		run_as_owner;
 
 	/*
@@ -2652,7 +2652,7 @@ apply_handle_update_internal(ApplyExecutionData *edata,
 	EPQState	epqstate;
 	TupleTableSlot *localslot;
 	bool		found;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 
 	EvalPlanQualInit(&epqstate, estate, NULL, NIL, -1, NIL);
 	ExecOpenIndices(relinfo, false);
@@ -2716,7 +2716,7 @@ apply_handle_delete(StringInfo s)
 	ApplyExecutionData *edata;
 	EState	   *estate;
 	TupleTableSlot *remoteslot;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	bool		run_as_owner;
 
 	/*
@@ -2920,7 +2920,7 @@ apply_handle_tuple_routing(ApplyExecutionData *edata,
 	Relation	partrel;
 	TupleTableSlot *remoteslot_part;
 	TupleConversionMap *map;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	LogicalRepRelMapEntry *part_entry = NULL;
 	AttrMap    *attrmap = NULL;
 
@@ -3805,7 +3805,7 @@ send_feedback(XLogRecPtr recvpos, bool force, bool requestReply)
 
 	if (!reply_message)
 	{
-		MemoryContext oldctx = MemoryContextSwitchTo(ApplyContext);
+		MemoryContext *oldctx = MemoryContextSwitchTo(ApplyContext);
 
 		reply_message = makeStringInfo();
 		MemoryContextSwitchTo(oldctx);
@@ -3874,7 +3874,7 @@ apply_worker_exit(void)
 void
 maybe_reread_subscription(void)
 {
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	Subscription *newsub;
 	bool		started_tx = false;
 
@@ -4070,7 +4070,7 @@ subxact_info_read(Oid subid, TransactionId xid)
 	char		path[MAXPGPATH];
 	Size		len;
 	BufFile    *fd;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 
 	Assert(!subxact_data.subxacts);
 	Assert(subxact_data.nsubxacts == 0);
@@ -4159,7 +4159,7 @@ subxact_info_add(TransactionId xid)
 	/* This is a new subxact, so we need to add it to the array. */
 	if (subxact_data.nsubxacts == 0)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		subxact_data.nsubxacts_max = 128;
 
@@ -4242,7 +4242,7 @@ static void
 stream_open_file(Oid subid, TransactionId xid, bool first_segment)
 {
 	char		path[MAXPGPATH];
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	Assert(OidIsValid(subid));
 	Assert(TransactionIdIsValid(xid));
@@ -4581,7 +4581,7 @@ run_apply_worker()
 void
 InitializeLogRepWorker(void)
 {
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 
 	/* Run as replica session replication role. */
 	SetConfigOption("session_replication_role", "replica",
@@ -5033,7 +5033,7 @@ reset_apply_error_context_info(void)
 void
 LogicalRepWorkersWakeupAtCommit(Oid subid)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	oldcxt = MemoryContextSwitchTo(TopTransactionContext);
 	on_commit_wakeup_workers_subids =

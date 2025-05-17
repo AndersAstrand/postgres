@@ -76,7 +76,7 @@ struct BulkWriteState
 	/* The RedoRecPtr at the time that the bulk operation started */
 	XLogRecPtr	start_RedoRecPtr;
 
-	MemoryContext memcxt;
+	MemoryContext *memcxt;
 };
 
 static void smgr_bulk_flush(BulkWriteState *bulkstate);

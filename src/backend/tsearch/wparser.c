@@ -48,7 +48,7 @@ tt_setup_firstcall(FuncCallContext *funcctx, FunctionCallInfo fcinfo,
 				   Oid prsid)
 {
 	TupleDesc	tupdesc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TSTokenTypeStorage *st;
 	TSParserCacheEntry *prs = lookup_ts_parser_cache(prsid);
 
@@ -163,7 +163,7 @@ prs_setup_firstcall(FuncCallContext *funcctx, FunctionCallInfo fcinfo,
 					Oid prsid, text *txt)
 {
 	TupleDesc	tupdesc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	PrsStorage *st;
 	TSParserCacheEntry *prs = lookup_ts_parser_cache(prsid);
 	char	   *lex = NULL;

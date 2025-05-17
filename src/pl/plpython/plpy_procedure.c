@@ -135,8 +135,8 @@ PLy_procedure_create(HeapTuple procTup, Oid fn_oid, bool is_trigger)
 	char		procName[NAMEDATALEN + 256];
 	Form_pg_proc procStruct;
 	PLyProcedure *volatile proc;
-	MemoryContext cxt;
-	MemoryContext oldcxt;
+	MemoryContext *cxt;
+	MemoryContext *oldcxt;
 	int			rv;
 	char	   *ptr;
 

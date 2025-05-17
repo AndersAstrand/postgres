@@ -905,7 +905,7 @@ index_getprocinfo(Relation irel,
 		{
 			/* Initialize locinfo->fn_expr with opclass options Const */
 			bytea	  **attoptions = RelationGetIndexAttOptions(irel, false);
-			MemoryContext oldcxt = MemoryContextSwitchTo(irel->rd_indexcxt);
+			MemoryContext *oldcxt = MemoryContextSwitchTo(irel->rd_indexcxt);
 
 			set_fn_opclass_options(locinfo, attoptions[attnum - 1]);
 

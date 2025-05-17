@@ -787,8 +787,8 @@ ginInsertCleanup(GinState *ginstate, bool full_clean,
 	Page		metapage,
 				page;
 	GinMetaPageData *metadata;
-	MemoryContext opCtx,
-				oldCtx;
+	MemoryContext *opCtx,
+			   *oldCtx;
 	BuildAccumulator accum;
 	KeyArray	datums;
 	BlockNumber blkno,

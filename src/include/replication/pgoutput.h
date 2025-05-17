@@ -17,9 +17,9 @@
 
 typedef struct PGOutputData
 {
-	MemoryContext context;		/* private memory context for transient
+	MemoryContext *context;		/* private memory context for transient
 								 * allocations */
-	MemoryContext cachectx;		/* private memory context for cache data */
+	MemoryContext *cachectx;	/* private memory context for cache data */
 
 	bool		in_streaming;	/* true if we are streaming a chunk of
 								 * transaction */

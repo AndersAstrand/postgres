@@ -570,7 +570,7 @@ void
 register_label_provider(const char *provider_name, check_object_relabel_type hook)
 {
 	LabelProvider *provider;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 	provider = palloc(sizeof(LabelProvider));

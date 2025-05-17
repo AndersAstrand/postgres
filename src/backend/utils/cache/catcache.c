@@ -883,7 +883,7 @@ InitCatCache(int id,
 			 int nbuckets)
 {
 	CatCache   *cp;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	/*
@@ -1086,7 +1086,7 @@ static void
 CatalogCacheInitializeCache(CatCache *cache)
 {
 	Relation	relation;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	TupleDesc	tupdesc;
 	int			i;
 
@@ -1713,7 +1713,7 @@ SearchCatCacheList(CatCache *cache,
 	int			nmembers;
 	bool		ordered;
 	HeapTuple	ntp;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 	CatCInProgress *save_in_progress;
 	CatCInProgress in_progress_ent;
@@ -2114,7 +2114,7 @@ CatalogCacheCreateEntry(CatCache *cache, HeapTuple ntp, Datum *arguments,
 						uint32 hashValue, Index hashIndex)
 {
 	CatCTup    *ct;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	if (ntp)
 	{

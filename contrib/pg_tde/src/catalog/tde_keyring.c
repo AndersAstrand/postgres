@@ -366,8 +366,8 @@ pg_tde_list_all_key_providers_internal(PG_FUNCTION_ARGS, const char *fname, Oid 
 	ListCell   *lc;
 	Tuplestorestate *tupstore;
 	TupleDesc	tupdesc;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
+	MemoryContext *per_query_ctx;
+	MemoryContext *oldcontext;
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 
 	/* check to see if caller supports us returning a tuplestore */

@@ -250,7 +250,7 @@ inv_create(Oid lobjId)
  * e.g. by calling RegisterSnapshotOnOwner
  */
 LargeObjectDesc *
-inv_open(Oid lobjId, int flags, MemoryContext mcxt)
+inv_open(Oid lobjId, int flags, MemoryContext *mcxt)
 {
 	LargeObjectDesc *retval;
 	Snapshot	snapshot = NULL;

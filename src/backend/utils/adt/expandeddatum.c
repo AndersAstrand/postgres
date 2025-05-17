@@ -47,7 +47,7 @@ DatumGetEOHP(Datum d)
 void
 EOH_init_header(ExpandedObjectHeader *eohptr,
 				const ExpandedObjectMethods *methods,
-				MemoryContext obj_context)
+				MemoryContext *obj_context)
 {
 	varatt_expanded ptr;
 
@@ -115,7 +115,7 @@ MakeExpandedObjectReadOnlyInternal(Datum d)
  * in any case wouldn't provide a unique identifier if it's not that one.)
  */
 Datum
-TransferExpandedObject(Datum d, MemoryContext new_parent)
+TransferExpandedObject(Datum d, MemoryContext *new_parent)
 {
 	ExpandedObjectHeader *eohptr = DatumGetEOHP(d);
 

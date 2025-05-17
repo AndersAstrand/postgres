@@ -504,7 +504,7 @@ entryIndexByFrequencyCmp(const void *a1, const void *a2, void *arg)
 static void
 startScanKey(GinState *ginstate, GinScanOpaque so, GinScanKey key)
 {
-	MemoryContext oldCtx = CurrentMemoryContext;
+	MemoryContext *oldCtx = CurrentMemoryContext;
 	int			i;
 	int			j;
 	int		   *entryIndexes;
@@ -989,7 +989,7 @@ entryGetItem(GinState *ginstate, GinScanEntry entry,
  * logic in scanGetItem.)
  */
 static void
-keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
+keyGetItem(GinState *ginstate, MemoryContext *tempCtx, GinScanKey key,
 		   ItemPointerData advancePast)
 {
 	ItemPointerData minItem;
@@ -998,7 +998,7 @@ keyGetItem(GinState *ginstate, MemoryContext tempCtx, GinScanKey key,
 	bool		haveLossyEntry;
 	GinScanEntry entry;
 	GinTernaryValue res;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	bool		allFinished;
 
 	Assert(!key->isFinished);
@@ -1822,7 +1822,7 @@ static void
 scanPendingInsert(IndexScanDesc scan, TIDBitmap *tbm, int64 *ntids)
 {
 	GinScanOpaque so = (GinScanOpaque) scan->opaque;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	bool		recheck,
 				match;
 	int			i;

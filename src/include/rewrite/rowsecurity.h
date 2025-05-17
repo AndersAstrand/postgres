@@ -30,7 +30,7 @@ typedef struct RowSecurityPolicy
 
 typedef struct RowSecurityDesc
 {
-	MemoryContext rscxt;		/* row security memory context */
+	MemoryContext *rscxt;		/* row security memory context */
 	List	   *policies;		/* list of row security policies */
 } RowSecurityDesc;
 

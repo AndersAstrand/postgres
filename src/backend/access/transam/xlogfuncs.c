@@ -41,7 +41,7 @@ static BackupState *backup_state = NULL;
 static StringInfo tablespace_map = NULL;
 
 /* Session-level context for the SQL-callable backup functions */
-static MemoryContext backupcontext = NULL;
+static MemoryContext *backupcontext = NULL;
 
 /*
  * pg_backup_start: set up for taking an on-line backup dump
@@ -59,7 +59,7 @@ pg_backup_start(PG_FUNCTION_ARGS)
 	bool		fast = PG_GETARG_BOOL(1);
 	char	   *backupidstr;
 	SessionBackupState status = get_backup_status();
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	backupidstr = text_to_cstring(backupid);
 

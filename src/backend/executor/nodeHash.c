@@ -444,7 +444,7 @@ ExecHashTableCreate(HashState *state, List *hashOperators, List *hashCollations,
 	int			i;
 	ListCell   *ho;
 	ListCell   *hc;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * Get information about the size of the relation to be hashed (it's the
@@ -568,7 +568,7 @@ ExecHashTableCreate(HashState *state, List *hashOperators, List *hashCollations,
 
 	if (nbatch > 1 && hashtable->parallel_state == NULL)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		/*
 		 * allocate and initialize the file arrays in hashCxt (not needed for
@@ -940,7 +940,7 @@ ExecHashIncreaseNumBatches(HashJoinTable hashtable)
 
 	if (hashtable->innerBatchFile == NULL)
 	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(hashtable->spillCxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(hashtable->spillCxt);
 
 		/* we had no file arrays before */
 		hashtable->innerBatchFile = palloc0_array(BufFile *, nbatch);
@@ -1839,7 +1839,7 @@ ExecHashGetHashValue(HashJoinTable hashtable,
 	FmgrInfo   *hashfunctions;
 	ListCell   *hk;
 	int			i = 0;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * We reset the eval context each time to reclaim any memory leaked in the
@@ -2305,7 +2305,7 @@ ExecParallelScanHashTableForUnmatched(HashJoinState *hjstate,
 void
 ExecHashTableReset(HashJoinTable hashtable)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			nbuckets = hashtable->nbuckets;
 
 	/*
@@ -3105,7 +3105,7 @@ ExecParallelHashJoinSetUpBatches(HashJoinTable hashtable, int nbatch)
 {
 	ParallelHashJoinState *pstate = hashtable->parallel_state;
 	ParallelHashJoinBatch *batches;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	Assert(hashtable->batches == NULL);
@@ -3206,7 +3206,7 @@ ExecParallelHashEnsureBatchAccessors(HashJoinTable hashtable)
 {
 	ParallelHashJoinState *pstate = hashtable->parallel_state;
 	ParallelHashJoinBatch *batches;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	if (hashtable->batches != NULL)

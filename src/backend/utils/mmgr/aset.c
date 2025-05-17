@@ -151,7 +151,7 @@ typedef struct AllocFreeListLink
  */
 typedef struct AllocSetContext
 {
-	MemoryContextData header;	/* Standard memory-context fields */
+	MemoryContext header;		/* Standard memory-context fields */
 	/* Info about storage allocated in this context: */
 	AllocBlock	blocks;			/* head of list of blocks in this set */
 	MemoryChunk *freelist[ALLOCSET_NUM_FREELISTS];	/* free chunk lists */
@@ -343,8 +343,8 @@ AllocSetFreeIndex(Size size)
  * Note: don't call this directly; go through the wrapper macro
  * AllocSetContextCreate.
  */
-MemoryContext
-AllocSetContextCreateInternal(MemoryContext parent,
+MemoryContext *
+AllocSetContextCreateInternal(MemoryContext *parent,
 							  const char *name,
 							  Size minContextSize,
 							  Size initBlockSize,
@@ -416,16 +416,16 @@ AllocSetContextCreateInternal(MemoryContext parent,
 			set->maxBlockSize = maxBlockSize;
 
 			/* Reinitialize its header, installing correct name and parent */
-			MemoryContextCreate((MemoryContext) set,
+			MemoryContextCreate((MemoryContext *) set,
 								T_AllocSetContext,
 								MCTX_ASET_ID,
 								parent,
 								name);
 
-			((MemoryContext) set)->mem_allocated =
+			((MemoryContext *) set)->mem_allocated =
 				KeeperBlock(set)->endptr - ((char *) set);
 
-			return (MemoryContext) set;
+			return (MemoryContext *) set;
 		}
 	}
 
@@ -510,15 +510,15 @@ AllocSetContextCreateInternal(MemoryContext parent,
 		set->allocChunkLimit >>= 1;
 
 	/* Finally, do the type-independent part of context creation */
-	MemoryContextCreate((MemoryContext) set,
+	MemoryContextCreate((MemoryContext *) set,
 						T_AllocSetContext,
 						MCTX_ASET_ID,
 						parent,
 						name);
 
-	((MemoryContext) set)->mem_allocated = firstBlockSize;
+	((MemoryContext *) set)->mem_allocated = firstBlockSize;
 
-	return (MemoryContext) set;
+	return (MemoryContext *) set;
 }
 
 /*
@@ -534,7 +534,7 @@ AllocSetContextCreateInternal(MemoryContext parent,
  * which is typical behavior for per-tuple contexts.
  */
 void
-AllocSetReset(MemoryContext context)
+AllocSetReset(MemoryContext *context)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
@@ -604,7 +604,7 @@ AllocSetReset(MemoryContext context)
  * Unlike AllocSetReset, this *must* free all resources of the set.
  */
 void
-AllocSetDelete(MemoryContext context)
+AllocSetDelete(MemoryContext *context)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block = set->blocks;
@@ -655,7 +655,7 @@ AllocSetDelete(MemoryContext context)
 		}
 
 		/* Now add the just-deleted context to the freelist. */
-		set->header.nextchild = (MemoryContext) freelist->first_free;
+		set->header.nextchild = (MemoryContext *) freelist->first_free;
 		freelist->first_free = set;
 		freelist->num_free++;
 
@@ -693,7 +693,7 @@ AllocSetDelete(MemoryContext context)
  */
 pg_noinline
 static void *
-AllocSetAllocLarge(MemoryContext context, Size size, int flags)
+AllocSetAllocLarge(MemoryContext *context, Size size, int flags)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
@@ -771,7 +771,7 @@ AllocSetAllocLarge(MemoryContext context, Size size, int flags)
  * the code between AllocSetAlloc() and AllocSetAllocFromNewBlock().
  */
 static inline void *
-AllocSetAllocChunkFromBlock(MemoryContext context, AllocBlock block,
+AllocSetAllocChunkFromBlock(MemoryContext *context, AllocBlock block,
 							Size size, Size chunk_size, int fidx)
 {
 	MemoryChunk *chunk;
@@ -816,7 +816,7 @@ AllocSetAllocChunkFromBlock(MemoryContext context, AllocBlock block,
  */
 pg_noinline
 static void *
-AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
+AllocSetAllocFromNewBlock(MemoryContext *context, Size size, int flags,
 						  int fidx)
 {
 	AllocSet	set = (AllocSet) context;
@@ -964,7 +964,7 @@ AllocSetAllocFromNewBlock(MemoryContext context, Size size, int flags,
  * call.
  */
 void *
-AllocSetAlloc(MemoryContext context, Size size, int flags)
+AllocSetAlloc(MemoryContext *context, Size size, int flags)
 {
 	AllocSet	set = (AllocSet) context;
 	AllocBlock	block;
@@ -1200,7 +1200,7 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		set = block->aset;
 
 		/* only check size in paths where the limits could be hit */
-		MemoryContextCheckSize((MemoryContext) set, size, flags);
+		MemoryContextCheckSize((MemoryContext *) set, size, flags);
 
 		oldchksize = block->endptr - (char *) pointer;
 
@@ -1389,14 +1389,14 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 		Size		oldsize;
 
 		/* allocate new chunk (this also checks size is valid) */
-		newPointer = AllocSetAlloc((MemoryContext) set, size, flags);
+		newPointer = AllocSetAlloc((MemoryContext *) set, size, flags);
 
 		/* leave immediately if request was not completed */
 		if (newPointer == NULL)
 		{
 			/* Disallow access to the chunk header. */
 			VALGRIND_MAKE_MEM_NOACCESS(chunk, ALLOC_CHUNKHDRSZ);
-			return MemoryContextAllocationFailure((MemoryContext) set, size, flags);
+			return MemoryContextAllocationFailure((MemoryContext *) set, size, flags);
 		}
 
 		/*
@@ -1427,9 +1427,9 @@ AllocSetRealloc(void *pointer, Size size, int flags)
 
 /*
  * AllocSetGetChunkContext
- *		Return the MemoryContext that 'pointer' belongs to.
+ *		Return the MemoryContext * that 'pointer' belongs to.
  */
-MemoryContext
+MemoryContext *
 AllocSetGetChunkContext(void *pointer)
 {
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
@@ -1493,7 +1493,7 @@ AllocSetGetChunkSpace(void *pointer)
  *		Is an allocset empty of any allocated space?
  */
 bool
-AllocSetIsEmpty(MemoryContext context)
+AllocSetIsEmpty(MemoryContext *context)
 {
 	Assert(AllocSetIsValid(context));
 
@@ -1518,7 +1518,7 @@ AllocSetIsEmpty(MemoryContext context)
  * print_to_stderr: print stats to stderr if true, elog otherwise.
  */
 void
-AllocSetStats(MemoryContext context,
+AllocSetStats(MemoryContext *context,
 			  MemoryStatsPrintFunc printfunc, void *passthru,
 			  MemoryContextCounters *totals, bool print_to_stderr)
 {
@@ -1596,7 +1596,7 @@ AllocSetStats(MemoryContext context,
  * routine will be entered again when elog cleanup tries to release memory!
  */
 void
-AllocSetCheck(MemoryContext context)
+AllocSetCheck(MemoryContext *context)
 {
 	AllocSet	set = (AllocSet) context;
 	const char *name = set->header.name;

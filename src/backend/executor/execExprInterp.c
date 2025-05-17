@@ -1662,7 +1662,7 @@ ExecInterpExpr(ExprState *state, ExprContext *econtext, bool *isnull)
 		{
 			FunctionCallInfo fcinfo = op->d.agg_deserialize.fcinfo_data;
 			AggState   *aggstate = castNode(AggState, state->parent);
-			MemoryContext oldContext;
+			MemoryContext *oldContext;
 
 			/*
 			 * We run the deserialization functions in per-input-tuple memory
@@ -3412,7 +3412,7 @@ ExecEvalConvertRowtype(ExprState *state, ExprEvalStep *op, ExprContext *econtext
 	/* if first time through, or after change, initialize conversion map */
 	if (changed)
 	{
-		MemoryContext old_cxt;
+		MemoryContext *old_cxt;
 
 		/* allocate map in long-lived memory context */
 		old_cxt = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
@@ -3704,7 +3704,7 @@ ExecEvalHashedScalarArrayOp(ExprState *state, ExprEvalStep *op, ExprContext *eco
 		char	   *s;
 		bits8	   *bitmap;
 		int			bitmask;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		ArrayType  *arr;
 
 		saop = op->d.hashedscalararrayop.saop;
@@ -4773,7 +4773,7 @@ ExecEvalWholeRowVar(ExprState *state, ExprEvalStep *op, ExprContext *econtext)
 	Var		   *variable = op->d.wholerow.var;
 	TupleTableSlot *slot;
 	TupleDesc	output_tupdesc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	HeapTupleHeader dtuple;
 	HeapTuple	tuple;
 
@@ -5019,7 +5019,7 @@ ExecAggInitGroup(AggState *aggstate, AggStatePerTrans pertrans, AggStatePerGroup
 				 ExprContext *aggcontext)
 {
 	FunctionCallInfo fcinfo = pertrans->transfn_fcinfo;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * We must copy the datum into aggcontext if it is pass-by-ref. We do not
@@ -5135,7 +5135,7 @@ ExecEvalPreOrderedDistinctSingle(AggState *aggstate, AggStatePerTrans pertrans)
 		pertrans->haslast = true;
 		if (!isnull)
 		{
-			MemoryContext oldContext;
+			MemoryContext *oldContext;
 
 			oldContext = MemoryContextSwitchTo(aggstate->curaggcontext->ecxt_per_tuple_memory);
 
@@ -5240,7 +5240,7 @@ ExecAggPlainTransByVal(AggState *aggstate, AggStatePerTrans pertrans,
 					   ExprContext *aggcontext, int setno)
 {
 	FunctionCallInfo fcinfo = pertrans->transfn_fcinfo;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	Datum		newVal;
 
 	/* cf. select_current_set() */
@@ -5272,7 +5272,7 @@ ExecAggPlainTransByRef(AggState *aggstate, AggStatePerTrans pertrans,
 					   ExprContext *aggcontext, int setno)
 {
 	FunctionCallInfo fcinfo = pertrans->transfn_fcinfo;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	Datum		newVal;
 
 	/* cf. select_current_set() */

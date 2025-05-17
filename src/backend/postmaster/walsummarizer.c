@@ -211,7 +211,7 @@ void
 WalSummarizerMain(char *startup_data, size_t startup_data_len)
 {
 	sigjmp_buf	local_sigjmp_buf;
-	MemoryContext context;
+	MemoryContext *context;
 
 	/*
 	 * Within this function, 'current_lsn' and 'current_tli' refer to the

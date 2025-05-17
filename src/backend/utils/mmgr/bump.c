@@ -65,7 +65,7 @@ typedef struct BumpBlock BumpBlock; /* forward reference */
 
 typedef struct BumpContext
 {
-	MemoryContextData header;	/* Standard memory-context fields */
+	MemoryContext header;		/* Standard memory-context fields */
 
 	/* Bump context parameters */
 	uint32		initBlockSize;	/* initial block size */
@@ -127,8 +127,8 @@ static inline void BumpBlockFree(BumpContext *set, BumpBlock *block);
 * initBlockSize: initial allocation block size
 * maxBlockSize: maximum allocation block size
 */
-MemoryContext
-BumpContextCreate(MemoryContext parent, const char *name, Size minContextSize,
+MemoryContext *
+BumpContextCreate(MemoryContext *parent, const char *name, Size minContextSize,
 				  Size initBlockSize, Size maxBlockSize)
 {
 	Size		firstBlockSize;
@@ -224,12 +224,12 @@ BumpContextCreate(MemoryContext parent, const char *name, Size minContextSize,
 		set->allocChunkLimit >>= 1;
 
 	/* Finally, do the type-independent part of context creation */
-	MemoryContextCreate((MemoryContext) set, T_BumpContext, MCTX_BUMP_ID,
+	MemoryContextCreate((MemoryContext *) set, T_BumpContext, MCTX_BUMP_ID,
 						parent, name);
 
-	((MemoryContext) set)->mem_allocated = allocSize;
+	((MemoryContext *) set)->mem_allocated = allocSize;
 
-	return (MemoryContext) set;
+	return (MemoryContext *) set;
 }
 
 /*
@@ -240,7 +240,7 @@ BumpContextCreate(MemoryContext parent, const char *name, Size minContextSize,
  * block.
  */
 void
-BumpReset(MemoryContext context)
+BumpReset(MemoryContext *context)
 {
 	BumpContext *set = (BumpContext *) context;
 	dlist_mutable_iter miter;
@@ -275,7 +275,7 @@ BumpReset(MemoryContext context)
  *		Free all memory which is allocated in the given context.
  */
 void
-BumpDelete(MemoryContext context)
+BumpDelete(MemoryContext *context)
 {
 	/* Reset to release all releasable BumpBlocks */
 	BumpReset(context);
@@ -290,7 +290,7 @@ BumpDelete(MemoryContext context)
  */
 pg_noinline
 static void *
-BumpAllocLarge(MemoryContext context, Size size, int flags)
+BumpAllocLarge(MemoryContext *context, Size size, int flags)
 {
 	BumpContext *set = (BumpContext *) context;
 	BumpBlock  *block;
@@ -368,7 +368,7 @@ BumpAllocLarge(MemoryContext context, Size size, int flags)
  * the code between BumpAlloc() and BumpAllocFromNewBlock().
  */
 static inline void *
-BumpAllocChunkFromBlock(MemoryContext context, BumpBlock *block, Size size,
+BumpAllocChunkFromBlock(MemoryContext *context, BumpBlock *block, Size size,
 						Size chunk_size)
 {
 #ifdef MEMORY_CONTEXT_CHECKING
@@ -427,7 +427,7 @@ BumpAllocChunkFromBlock(MemoryContext context, BumpBlock *block, Size size,
  */
 pg_noinline
 static void *
-BumpAllocFromNewBlock(MemoryContext context, Size size, int flags,
+BumpAllocFromNewBlock(MemoryContext *context, Size size, int flags,
 					  Size chunk_size)
 {
 	BumpContext *set = (BumpContext *) context;
@@ -488,7 +488,7 @@ BumpAllocFromNewBlock(MemoryContext context, Size size, int flags,
  * call.
  */
 void *
-BumpAlloc(MemoryContext context, Size size, int flags)
+BumpAlloc(MemoryContext *context, Size size, int flags)
 {
 	BumpContext *set = (BumpContext *) context;
 	BumpBlock  *block;
@@ -600,7 +600,7 @@ BumpBlockFree(BumpContext *set, BumpBlock *block)
 	/* release the block from the list of blocks */
 	dlist_delete(&block->node);
 
-	((MemoryContext) set)->mem_allocated -= ((char *) block->endptr - (char *) block);
+	((MemoryContext *) set)->mem_allocated -= ((char *) block->endptr - (char *) block);
 
 #ifdef CLOBBER_FREED_MEMORY
 	wipe_mem(block, ((char *) block->endptr - (char *) block));
@@ -634,7 +634,7 @@ BumpRealloc(void *pointer, Size size, int flags)
  * BumpGetChunkContext
  *		Unsupported.
  */
-MemoryContext
+MemoryContext *
 BumpGetChunkContext(void *pointer)
 {
 	elog(ERROR, "%s is not supported by the bump memory allocator", "GetMemoryChunkContext");
@@ -657,7 +657,7 @@ BumpGetChunkSpace(void *pointer)
  *		Is a BumpContext empty of any allocated space?
  */
 bool
-BumpIsEmpty(MemoryContext context)
+BumpIsEmpty(MemoryContext *context)
 {
 	BumpContext *set = (BumpContext *) context;
 	dlist_iter	iter;
@@ -685,7 +685,7 @@ BumpIsEmpty(MemoryContext context)
  * print_to_stderr: print stats to stderr if true, elog otherwise.
  */
 void
-BumpStats(MemoryContext context, MemoryStatsPrintFunc printfunc,
+BumpStats(MemoryContext *context, MemoryStatsPrintFunc printfunc,
 		  void *passthru, MemoryContextCounters *totals, bool print_to_stderr)
 {
 	BumpContext *set = (BumpContext *) context;
@@ -735,7 +735,7 @@ BumpStats(MemoryContext context, MemoryStatsPrintFunc printfunc,
  * routine will be entered again when elog cleanup tries to release memory!
  */
 void
-BumpCheck(MemoryContext context)
+BumpCheck(MemoryContext *context)
 {
 	BumpContext *bump = (BumpContext *) context;
 	const char *name = context->name;

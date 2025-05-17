@@ -145,7 +145,7 @@ heap_page_items(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext mctx;
+		MemoryContext *mctx;
 
 		if (raw_page_size < SizeOfPageHeaderData)
 			ereport(ERROR,

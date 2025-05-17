@@ -147,7 +147,7 @@ struct shm_mq_handle
 	Size		mqh_expected_bytes;
 	bool		mqh_length_word_complete;
 	bool		mqh_counterparty_attached;
-	MemoryContext mqh_context;
+	MemoryContext *mqh_context;
 };
 
 static void shm_mq_detach_internal(shm_mq *mq);

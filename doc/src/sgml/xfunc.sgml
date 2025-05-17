@@ -3037,7 +3037,7 @@ typedef struct FuncCallContext
      * context for any memory that is to be reused across multiple calls
      * of the SRF.
      */
-    MemoryContext multi_call_memory_ctx;
+    MemoryContext *multi_call_memory_ctx;
 
     /*
      * OPTIONAL pointer to struct containing tuple description
@@ -3134,7 +3134,7 @@ my_set_returning_function(PG_FUNCTION_ARGS)
 
     if (SRF_IS_FIRSTCALL())
     {
-        MemoryContext oldcontext;
+        MemoryContext *oldcontext;
 
         funcctx = SRF_FIRSTCALL_INIT();
         oldcontext = MemoryContextSwitchTo(funcctx-&gt;multi_call_memory_ctx);
@@ -3188,7 +3188,7 @@ retcomposite(PG_FUNCTION_ARGS)
     /* stuff done only on the first call of the function */
     if (SRF_IS_FIRSTCALL())
     {
-        MemoryContext   oldcontext;
+        MemoryContext *oldcontext;
 
         /* create a function context for cross-call persistence */
         funcctx = SRF_FIRSTCALL_INIT();

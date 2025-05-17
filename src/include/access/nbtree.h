@@ -334,7 +334,7 @@ typedef struct BTVacState
 	IndexBulkDeleteCallback callback;
 	void	   *callback_state;
 	BTCycleId	cycleid;
-	MemoryContext pagedelcontext;
+	MemoryContext *pagedelcontext;
 
 	/*
 	 * _bt_pendingfsm_finalize() state
@@ -1050,7 +1050,7 @@ typedef struct BTScanOpaqueData
 	bool		scanBehind;		/* Last array advancement matched -inf attr? */
 	BTArrayKeyInfo *arrayKeys;	/* info about each equality-type array key */
 	FmgrInfo   *orderProcs;		/* ORDER procs for required equality keys */
-	MemoryContext arrayContext; /* scan-lifespan context for array data */
+	MemoryContext *arrayContext;	/* scan-lifespan context for array data */
 
 	/* info about killed items if any (killedItems is NULL if never used) */
 	int		   *killedItems;	/* currPos.items indexes of killed items */

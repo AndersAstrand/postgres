@@ -610,14 +610,14 @@ struct ReorderBuffer
 	/*
 	 * Private memory context.
 	 */
-	MemoryContext context;
+	MemoryContext *context;
 
 	/*
 	 * Memory contexts for specific types objects
 	 */
-	MemoryContext change_context;
-	MemoryContext txn_context;
-	MemoryContext tup_context;
+	MemoryContext *change_context;
+	MemoryContext *txn_context;
+	MemoryContext *tup_context;
 
 	XLogRecPtr	current_restart_decoding_lsn;
 

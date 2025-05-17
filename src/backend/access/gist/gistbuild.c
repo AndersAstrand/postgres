@@ -181,7 +181,7 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	IndexBuildResult *result;
 	double		reltuples;
 	GISTBuildState buildstate;
-	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext *oldcxt = CurrentMemoryContext;
 	int			fillfactor;
 	Oid			SortSupportFnOids[INDEX_MAX_KEYS];
 	GiSTOptions *options = (GiSTOptions *) index->rd_options;
@@ -371,7 +371,7 @@ gistSortedBuildCallback(Relation index,
 						void *state)
 {
 	GISTBuildState *buildstate = (GISTBuildState *) state;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	Datum		compressed_values[INDEX_MAX_KEYS];
 
 	oldCtx = MemoryContextSwitchTo(buildstate->giststate->tempCxt);
@@ -495,7 +495,7 @@ gist_indexsortbuild_levelstate_flush(GISTBuildState *state,
 {
 	GistSortedBuildLevelState *parent;
 	BlockNumber blkno;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	IndexTuple	union_tuple;
 	SplitPageLayout *dist;
 	IndexTuple *itvec;
@@ -826,7 +826,7 @@ gistBuildCallback(Relation index,
 {
 	GISTBuildState *buildstate = (GISTBuildState *) state;
 	IndexTuple	itup;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->giststate->tempCxt);
 
@@ -1370,7 +1370,7 @@ static void
 gistEmptyAllBuffers(GISTBuildState *buildstate)
 {
 	GISTBuildBuffers *gfbb = buildstate->gfbb;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	int			i;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->giststate->tempCxt);

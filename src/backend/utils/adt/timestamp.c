@@ -3926,8 +3926,8 @@ static IntervalAggState *
 makeIntervalAggState(FunctionCallInfo fcinfo)
 {
 	IntervalAggState *state;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -6515,7 +6515,7 @@ generate_series_timestamp(PG_FUNCTION_ARGS)
 		Timestamp	start = PG_GETARG_TIMESTAMP(0);
 		Timestamp	finish = PG_GETARG_TIMESTAMP(1);
 		Interval   *step = PG_GETARG_INTERVAL_P(2);
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -6600,7 +6600,7 @@ generate_series_timestamptz_internal(FunctionCallInfo fcinfo)
 		TimestampTz finish = PG_GETARG_TIMESTAMPTZ(1);
 		Interval   *step = PG_GETARG_INTERVAL_P(2);
 		text	   *zone = (PG_NARGS() == 4) ? PG_GETARG_TEXT_PP(3) : NULL;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();

@@ -2587,7 +2587,7 @@ array_set_element_expanded(Datum arraydatum,
 	 */
 	if (!eah->typbyval && !isNull)
 	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(eah->hdr.eoh_context);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(eah->hdr.eoh_context);
 
 		dataValue = datumCopy(dataValue, false, eah->typlen);
 		MemoryContextSwitchTo(oldcxt);
@@ -3583,7 +3583,7 @@ construct_empty_array(Oid elmtype)
  */
 ExpandedArrayHeader *
 construct_empty_expanded_array(Oid element_type,
-							   MemoryContext parentcontext,
+							   MemoryContext *parentcontext,
 							   ArrayMetaState *metacache)
 {
 	ArrayType  *array = construct_empty_array(element_type);
@@ -4186,7 +4186,7 @@ hash_array(PG_FUNCTION_ARGS)
 		 */
 		if (element_type == RECORDOID)
 		{
-			MemoryContext oldcontext;
+			MemoryContext *oldcontext;
 			TypeCacheEntry *record_typentry;
 
 			oldcontext = MemoryContextSwitchTo(fcinfo->flinfo->fn_mcxt);
@@ -5278,7 +5278,7 @@ array_insert_slice(ArrayType *destArray,
  * the array build states can be freed individually.
  */
 ArrayBuildState *
-initArrayResult(Oid element_type, MemoryContext rcontext, bool subcontext)
+initArrayResult(Oid element_type, MemoryContext *rcontext, bool subcontext)
 {
 	/*
 	 * When using a subcontext, we can afford to start with a somewhat larger
@@ -5295,11 +5295,11 @@ initArrayResult(Oid element_type, MemoryContext rcontext, bool subcontext)
  *		to be specified.
  */
 ArrayBuildState *
-initArrayResultWithSize(Oid element_type, MemoryContext rcontext,
+initArrayResultWithSize(Oid element_type, MemoryContext *rcontext,
 						bool subcontext, int initsize)
 {
 	ArrayBuildState *astate;
-	MemoryContext arr_context = rcontext;
+	MemoryContext *arr_context = rcontext;
 
 	/* Make a temporary context to hold all the junk */
 	if (subcontext)
@@ -5338,9 +5338,9 @@ ArrayBuildState *
 accumArrayResult(ArrayBuildState *astate,
 				 Datum dvalue, bool disnull,
 				 Oid element_type,
-				 MemoryContext rcontext)
+				 MemoryContext *rcontext)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (astate == NULL)
 	{
@@ -5406,7 +5406,7 @@ accumArrayResult(ArrayBuildState *astate,
  */
 Datum
 makeArrayResult(ArrayBuildState *astate,
-				MemoryContext rcontext)
+				MemoryContext *rcontext)
 {
 	int			ndims;
 	int			dims[1];
@@ -5441,11 +5441,11 @@ makeMdArrayResult(ArrayBuildState *astate,
 				  int ndims,
 				  int *dims,
 				  int *lbs,
-				  MemoryContext rcontext,
+				  MemoryContext *rcontext,
 				  bool release)
 {
 	ArrayType  *result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Build the final array result in rcontext */
 	oldcontext = MemoryContextSwitchTo(rcontext);
@@ -5489,11 +5489,11 @@ makeMdArrayResult(ArrayBuildState *astate,
  *	subcontext is a flag determining whether to use a separate memory context
  */
 ArrayBuildStateArr *
-initArrayResultArr(Oid array_type, Oid element_type, MemoryContext rcontext,
+initArrayResultArr(Oid array_type, Oid element_type, MemoryContext *rcontext,
 				   bool subcontext)
 {
 	ArrayBuildStateArr *astate;
-	MemoryContext arr_context = rcontext;	/* by default use the parent ctx */
+	MemoryContext *arr_context = rcontext;	/* by default use the parent ctx */
 
 	/* Lookup element type, unless element_type already provided */
 	if (!OidIsValid(element_type))
@@ -5538,10 +5538,10 @@ ArrayBuildStateArr *
 accumArrayResultArr(ArrayBuildStateArr *astate,
 					Datum dvalue, bool disnull,
 					Oid array_type,
-					MemoryContext rcontext)
+					MemoryContext *rcontext)
 {
 	ArrayType  *arg;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int		   *dims,
 			   *lbs,
 				ndims,
@@ -5689,11 +5689,11 @@ accumArrayResultArr(ArrayBuildStateArr *astate,
  */
 Datum
 makeArrayResultArr(ArrayBuildStateArr *astate,
-				   MemoryContext rcontext,
+				   MemoryContext *rcontext,
 				   bool release)
 {
 	ArrayType  *result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Build the final array result in rcontext */
 	oldcontext = MemoryContextSwitchTo(rcontext);
@@ -5767,7 +5767,7 @@ makeArrayResultArr(ArrayBuildStateArr *astate,
  *	subcontext is a flag determining whether to use a separate memory context
  */
 ArrayBuildStateAny *
-initArrayResultAny(Oid input_type, MemoryContext rcontext, bool subcontext)
+initArrayResultAny(Oid input_type, MemoryContext *rcontext, bool subcontext)
 {
 	ArrayBuildStateAny *astate;
 
@@ -5817,7 +5817,7 @@ ArrayBuildStateAny *
 accumArrayResultAny(ArrayBuildStateAny *astate,
 					Datum dvalue, bool disnull,
 					Oid input_type,
-					MemoryContext rcontext)
+					MemoryContext *rcontext)
 {
 	if (astate == NULL)
 		astate = initArrayResultAny(input_type, rcontext, true);
@@ -5843,7 +5843,7 @@ accumArrayResultAny(ArrayBuildStateAny *astate,
  */
 Datum
 makeArrayResultAny(ArrayBuildStateAny *astate,
-				   MemoryContext rcontext, bool release)
+				   MemoryContext *rcontext, bool release)
 {
 	Datum		result;
 
@@ -5905,7 +5905,7 @@ Datum
 generate_subscripts(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *funcctx;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	generate_subscripts_fctx *fctx;
 
 	/* stuff done only on the first call of the function */
@@ -6253,7 +6253,7 @@ array_unnest(PG_FUNCTION_ARGS)
 
 	FuncCallContext *funcctx;
 	array_unnest_fctx *fctx;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())

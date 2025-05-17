@@ -76,21 +76,21 @@ typedef struct
  * HBA or ident configuration files.  This is created when opening the first
  * file (depth of CONF_FILE_START_DEPTH).
  */
-static MemoryContext tokenize_context = NULL;
+static MemoryContext *tokenize_context = NULL;
 
 /*
  * pre-parsed content of HBA config file: list of HbaLine structs.
  * parsed_hba_context is the memory context where it lives.
  */
 static List *parsed_hba_lines = NIL;
-static MemoryContext parsed_hba_context = NULL;
+static MemoryContext *parsed_hba_context = NULL;
 
 /*
  * pre-parsed content of ident mapping file: list of IdentLine structs.
  * parsed_ident_context is the memory context where it lives.
  */
 static List *parsed_ident_lines = NIL;
-static MemoryContext parsed_ident_context = NULL;
+static MemoryContext *parsed_ident_context = NULL;
 
 /*
  * The following character array represents the names of the authentication
@@ -398,7 +398,7 @@ next_field_expand(const char *filename, char **lineptr,
 										  elevel, depth + 1, err_msg);
 		else
 		{
-			MemoryContext oldcxt;
+			MemoryContext *oldcxt;
 
 			/*
 			 * lappend() may do its own allocations, so move to the context
@@ -545,7 +545,7 @@ tokenize_expand_file(List *tokens,
 			foreach(inc_token, inc_tokens)
 			{
 				AuthToken  *token = lfirst(inc_token);
-				MemoryContext oldcxt;
+				MemoryContext *oldcxt;
 
 				/*
 				 * lappend() may do its own allocations, so move to the
@@ -688,8 +688,8 @@ tokenize_auth_file(const char *filename, FILE *file, List **tok_lines,
 {
 	int			line_number = 1;
 	StringInfoData buf;
-	MemoryContext linecxt;
-	MemoryContext funccxt;		/* context of this function's caller */
+	MemoryContext *linecxt;
+	MemoryContext *funccxt;		/* context of this function's caller */
 	ErrorContextCallback tokenerrcontext;
 	tokenize_error_callback_arg callback_arg;
 
@@ -720,7 +720,7 @@ tokenize_auth_file(const char *filename, FILE *file, List **tok_lines,
 	while (!feof(file) && !ferror(file))
 	{
 		TokenizedAuthLine *tok_line;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		char	   *lineptr;
 		List	   *current_line = NIL;
 		char	   *err_msg = NULL;
@@ -2587,8 +2587,8 @@ load_hba(void)
 	ListCell   *line;
 	List	   *new_parsed_lines = NIL;
 	bool		ok = true;
-	MemoryContext oldcxt;
-	MemoryContext hbacxt;
+	MemoryContext *oldcxt;
+	MemoryContext *hbacxt;
 
 	file = open_auth_file(HbaFileName, LOG, 0, NULL);
 	if (file == NULL)
@@ -2963,8 +2963,8 @@ load_ident(void)
 	ListCell   *line_cell;
 	List	   *new_parsed_lines = NIL;
 	bool		ok = true;
-	MemoryContext oldcxt;
-	MemoryContext ident_context;
+	MemoryContext *oldcxt;
+	MemoryContext *ident_context;
 	IdentLine  *newline;
 
 	/* not FATAL ... we just won't do any special ident maps */

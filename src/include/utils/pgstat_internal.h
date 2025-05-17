@@ -480,7 +480,7 @@ typedef struct PgStat_Snapshot
 	PgStat_WalStats wal;
 
 	/* to free snapshot in bulk */
-	MemoryContext context;
+	MemoryContext *context;
 	struct pgstat_snapshot_hash *stats;
 } PgStat_Snapshot;
 

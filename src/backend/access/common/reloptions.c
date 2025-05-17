@@ -703,7 +703,7 @@ add_reloption(relopt_gen *newoption)
 
 	if (num_custom_options >= max_custom_options)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 
@@ -775,7 +775,7 @@ static relopt_gen *
 allocate_reloption(bits32 kinds, int type, const char *name, const char *desc,
 				   LOCKMODE lockmode)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	size_t		size;
 	relopt_gen *newoption;
 

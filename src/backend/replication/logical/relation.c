@@ -31,7 +31,7 @@
 #include "utils/inval.h"
 
 
-static MemoryContext LogicalRepRelMapContext = NULL;
+static MemoryContext *LogicalRepRelMapContext = NULL;
 
 static HTAB *LogicalRepRelMap = NULL;
 
@@ -46,7 +46,7 @@ static HTAB *LogicalRepRelMap = NULL;
  * attribute mappings to remote relation's attributes must be maintained
  * separately for each partition.
  */
-static MemoryContext LogicalRepPartMapContext = NULL;
+static MemoryContext *LogicalRepPartMapContext = NULL;
 static HTAB *LogicalRepPartMap = NULL;
 typedef struct LogicalRepPartMapEntry
 {
@@ -163,7 +163,7 @@ logicalrep_relmap_free_entry(LogicalRepRelMapEntry *entry)
 void
 logicalrep_relmap_update(LogicalRepRelation *remoterel)
 {
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	LogicalRepRelMapEntry *entry;
 	bool		found;
 	int			i;
@@ -377,7 +377,7 @@ logicalrep_rel_open(LogicalRepRelId remoteid, LOCKMODE lockmode)
 	{
 		Oid			relid;
 		TupleDesc	desc;
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 		int			i;
 		Bitmapset  *missingatts;
 
@@ -608,7 +608,7 @@ logicalrep_partition_open(LogicalRepRelMapEntry *root,
 	Oid			partOid = RelationGetRelid(partrel);
 	AttrMap    *attrmap = root->attrmap;
 	bool		found;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 
 	if (LogicalRepPartMap == NULL)
 		logicalrep_partmap_init();

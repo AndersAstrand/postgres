@@ -402,7 +402,7 @@ brin_revmap_data(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		bytea	   *raw_page = PG_GETARG_BYTEA_P(0);
-		MemoryContext mctx;
+		MemoryContext *mctx;
 		Page		page;
 
 		/* create a function context for cross-call persistence */

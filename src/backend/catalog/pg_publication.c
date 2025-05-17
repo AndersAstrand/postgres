@@ -567,13 +567,13 @@ publication_translate_columns(Relation targetrel, List *columns,
  * If mcxt isn't NULL, build the bitmapset in that context.
  */
 Bitmapset *
-pub_collist_to_bitmapset(Bitmapset *columns, Datum pubcols, MemoryContext mcxt)
+pub_collist_to_bitmapset(Bitmapset *columns, Datum pubcols, MemoryContext *mcxt)
 {
 	Bitmapset  *result = NULL;
 	ArrayType  *arr;
 	int			nelems;
 	int16	   *elems;
-	MemoryContext oldcxt = NULL;
+	MemoryContext *oldcxt = NULL;
 
 	/*
 	 * If an existing bitmap was provided, use it. Otherwise just use NULL and
@@ -1059,7 +1059,7 @@ pg_get_publication_tables(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		ArrayType  *arr;
 		Datum	   *elems;
 		int			nelems,

@@ -128,7 +128,7 @@ typedef struct ExpandedRecordHeader
 	char	   *fendptr;		/* end+1 of its data area */
 
 	/* Some operations on the expanded record need a short-lived context */
-	MemoryContext er_short_term_cxt;	/* short-term memory context */
+	MemoryContext *er_short_term_cxt;	/* short-term memory context */
 
 	/* Working state for domain checking, used if ER_FLAG_IS_DOMAIN is set */
 	struct ExpandedRecordHeader *er_dummy_header;	/* dummy record header */
@@ -177,15 +177,15 @@ typedef struct ExpandedRecordFieldInfo
  * prototypes for functions defined in expandedrecord.c
  */
 extern ExpandedRecordHeader *make_expanded_record_from_typeid(Oid type_id, int32 typmod,
-															  MemoryContext parentcontext);
+															  MemoryContext *parentcontext);
 extern ExpandedRecordHeader *make_expanded_record_from_tupdesc(TupleDesc tupdesc,
-															   MemoryContext parentcontext);
+															   MemoryContext *parentcontext);
 extern ExpandedRecordHeader *make_expanded_record_from_exprecord(ExpandedRecordHeader *olderh,
-																 MemoryContext parentcontext);
+																 MemoryContext *parentcontext);
 extern void expanded_record_set_tuple(ExpandedRecordHeader *erh,
 									  HeapTuple tuple, bool copy, bool expand_external);
 extern Datum make_expanded_record_from_datum(Datum recorddatum,
-											 MemoryContext parentcontext);
+											 MemoryContext *parentcontext);
 extern TupleDesc expanded_record_fetch_tupdesc(ExpandedRecordHeader *erh);
 extern HeapTuple expanded_record_get_tuple(ExpandedRecordHeader *erh);
 extern ExpandedRecordHeader *DatumGetExpandedRecord(Datum d);

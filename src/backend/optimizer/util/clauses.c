@@ -4558,8 +4558,8 @@ inline_function(Oid funcid, Oid result_type, Oid result_collid,
 	char	   *src;
 	Datum		tmp;
 	bool		isNull;
-	MemoryContext oldcxt;
-	MemoryContext mycxt;
+	MemoryContext *oldcxt;
+	MemoryContext *mycxt;
 	inline_error_callback_arg callback_arg;
 	ErrorContextCallback sqlerrcontext;
 	FuncExpr   *fexpr;
@@ -4975,7 +4975,7 @@ evaluate_expr(Expr *expr, Oid result_type, int32 result_typmod,
 {
 	EState	   *estate;
 	ExprState  *exprstate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	Datum		const_val;
 	bool		const_is_null;
 	int16		resultTypLen;
@@ -5072,8 +5072,8 @@ inline_set_returning_function(PlannerInfo *root, RangeTblEntry *rte)
 	char	   *src;
 	Datum		tmp;
 	bool		isNull;
-	MemoryContext oldcxt;
-	MemoryContext mycxt;
+	MemoryContext *oldcxt;
+	MemoryContext *mycxt;
 	inline_error_callback_arg callback_arg;
 	ErrorContextCallback sqlerrcontext;
 	SQLFunctionParseInfoPtr pinfo;

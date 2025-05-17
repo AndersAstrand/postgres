@@ -49,8 +49,8 @@ ResetUnloggedRelations(int op)
 	char		temp_path[MAXPGPATH + 10 + sizeof(TABLESPACE_VERSION_DIRECTORY)];
 	DIR		   *spc_dir;
 	struct dirent *spc_de;
-	MemoryContext tmpctx,
-				oldctx;
+	MemoryContext *tmpctx,
+			   *oldctx;
 
 	/* Log it. */
 	elog(DEBUG1, "resetting unlogged relations: cleanup %d init %d",

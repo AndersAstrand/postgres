@@ -312,7 +312,7 @@ static void
 init_lwlock_stats(void)
 {
 	HASHCTL		ctl;
-	static MemoryContext lwlock_stats_cxt = NULL;
+	static MemoryContext *lwlock_stats_cxt = NULL;
 	static bool exit_registered = false;
 
 	if (lwlock_stats_cxt != NULL)

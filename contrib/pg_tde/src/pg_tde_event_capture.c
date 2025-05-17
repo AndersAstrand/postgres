@@ -131,7 +131,7 @@ verify_event_stack(void)
 static void
 push_event_stack(const TdeDdlEvent *event)
 {
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	TdeDdlEvent *e;
 
 	verify_event_stack();

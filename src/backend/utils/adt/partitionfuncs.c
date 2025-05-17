@@ -69,7 +69,7 @@ pg_partition_tree(PG_FUNCTION_ARGS)
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		TupleDesc	tupdesc;
 
 		/* create a function context for cross-call persistence */
@@ -206,7 +206,7 @@ pg_partition_ancestors(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 

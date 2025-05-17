@@ -89,7 +89,7 @@ SMgrId
 smgr_register(const f_smgr *smgr, Size smgrrelation_size)
 {
 	SMgrId		my_id;
-	MemoryContext old;
+	MemoryContext *old;
 
 	if (process_shared_preload_libraries_done)
 		elog(FATAL, "SMgrs must be registered in the shared_preload_libraries phase");

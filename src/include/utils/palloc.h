@@ -29,11 +29,11 @@
 #define PALLOC_H
 
 /*
- * Type MemoryContextData is declared in nodes/memnodes.h.  Most users
+ * Type MemoryContext is declared in nodes/memnodes.h.  Most users
  * of memory allocation should just treat it as an abstract type, so we
  * do not provide the struct contents here.
  */
-typedef struct MemoryContextData *MemoryContext;
+typedef struct MemoryContext MemoryContext;
 
 /*
  * A memory context can have callback functions registered on it.  Any such
@@ -56,7 +56,7 @@ typedef struct MemoryContextCallback
  * Avoid accessing it directly!  Instead, use MemoryContextSwitchTo()
  * to change the setting.
  */
-extern PGDLLIMPORT MemoryContext CurrentMemoryContext;
+extern PGDLLIMPORT MemoryContext *CurrentMemoryContext;
 
 /*
  * Flags for MemoryContextAllocExtended.
@@ -68,11 +68,11 @@ extern PGDLLIMPORT MemoryContext CurrentMemoryContext;
 /*
  * Fundamental memory-allocation operations (more are in utils/memutils.h)
  */
-extern void *MemoryContextAlloc(MemoryContext context, Size size);
-extern void *MemoryContextAllocZero(MemoryContext context, Size size);
-extern void *MemoryContextAllocExtended(MemoryContext context,
+extern void *MemoryContextAlloc(MemoryContext *context, Size size);
+extern void *MemoryContextAllocZero(MemoryContext *context, Size size);
+extern void *MemoryContextAllocExtended(MemoryContext *context,
 										Size size, int flags);
-extern void *MemoryContextAllocAligned(MemoryContext context,
+extern void *MemoryContextAllocAligned(MemoryContext *context,
 									   Size size, Size alignto, int flags);
 
 extern void *palloc(Size size);
@@ -109,7 +109,7 @@ extern void pfree(void *pointer);
 #define repalloc0_array(pointer, type, oldcount, count) ((type *) repalloc0(pointer, sizeof(type) * (oldcount), sizeof(type) * (count)))
 
 /* Higher-limit allocators. */
-extern void *MemoryContextAllocHuge(MemoryContext context, Size size);
+extern void *MemoryContextAllocHuge(MemoryContext *context, Size size);
 extern pg_nodiscard void *repalloc_huge(void *pointer, Size size);
 
 /*
@@ -120,10 +120,10 @@ extern pg_nodiscard void *repalloc_huge(void *pointer, Size size);
  */
 
 #ifndef FRONTEND
-static inline MemoryContext
-MemoryContextSwitchTo(MemoryContext context)
+static inline MemoryContext *
+MemoryContextSwitchTo(MemoryContext *context)
 {
-	MemoryContext old = CurrentMemoryContext;
+	MemoryContext *old = CurrentMemoryContext;
 
 	CurrentMemoryContext = context;
 	return old;
@@ -131,14 +131,14 @@ MemoryContextSwitchTo(MemoryContext context)
 #endif							/* FRONTEND */
 
 /* Registration of memory context reset/delete callbacks */
-extern void MemoryContextRegisterResetCallback(MemoryContext context,
+extern void MemoryContextRegisterResetCallback(MemoryContext *context,
 											   MemoryContextCallback *cb);
 
 /*
  * These are like standard strdup() except the copied string is
  * allocated in a context, not with malloc().
  */
-extern char *MemoryContextStrdup(MemoryContext context, const char *string);
+extern char *MemoryContextStrdup(MemoryContext *context, const char *string);
 extern char *pstrdup(const char *in);
 extern char *pnstrdup(const char *in, Size len);
 

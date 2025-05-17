@@ -43,7 +43,7 @@ ForeignNext(ForeignScanState *node)
 	TupleTableSlot *slot;
 	ForeignScan *plan = (ForeignScan *) node->ss.ps.plan;
 	ExprContext *econtext = node->ss.ps.ps_ExprContext;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Call the Iterate function in short-lived context */
 	oldcontext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);

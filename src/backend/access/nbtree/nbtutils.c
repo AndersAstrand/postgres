@@ -277,7 +277,7 @@ _bt_preprocess_array_keys(IndexScanDesc scan)
 				origarraykey = -1;
 	Oid			origelemtype = InvalidOid;
 	ScanKey		cur;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	ScanKey		arrayKeyData;	/* modified copy of scan->keyData */
 
 	Assert(numberOfKeys);

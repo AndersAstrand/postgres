@@ -550,8 +550,8 @@ publicationListToArray(List *publist)
 {
 	ArrayType  *arr;
 	Datum	   *datums;
-	MemoryContext memcxt;
-	MemoryContext oldcxt;
+	MemoryContext *memcxt;
+	MemoryContext *oldcxt;
 
 	/* Create memory context for temporary allocations. */
 	memcxt = AllocSetContextCreate(CurrentMemoryContext,

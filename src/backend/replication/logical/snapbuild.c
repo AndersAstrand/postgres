@@ -155,7 +155,7 @@ struct SnapBuild
 	SnapBuildState state;
 
 	/* private memory context used to allocate memory for this module. */
-	MemoryContext context;
+	MemoryContext *context;
 
 	/* all transactions < than this have committed/aborted */
 	TransactionId xmin;
@@ -328,8 +328,8 @@ AllocateSnapshotBuilder(ReorderBuffer *reorder,
 						bool in_slot_creation,
 						XLogRecPtr two_phase_at)
 {
-	MemoryContext context;
-	MemoryContext oldcontext;
+	MemoryContext *context;
+	MemoryContext *oldcontext;
 	SnapBuild  *builder;
 
 	/* allocate memory in own context, to have better accountability */
@@ -371,7 +371,7 @@ AllocateSnapshotBuilder(ReorderBuffer *reorder,
 void
 FreeSnapshotBuilder(SnapBuild *builder)
 {
-	MemoryContext context = builder->context;
+	MemoryContext *context = builder->context;
 
 	/* free snapshot explicitly, that contains some error checking */
 	if (builder->snapshot != NULL)
@@ -1663,7 +1663,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	Size		needed_length;
 	SnapBuildOnDisk *ondisk = NULL;
 	TransactionId *catchange_xip = NULL;
-	MemoryContext old_ctx;
+	MemoryContext *old_ctx;
 	size_t		catchange_xcnt;
 	char	   *ondisk_c;
 	int			fd;

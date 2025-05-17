@@ -218,9 +218,9 @@ typedef struct ParallelApplyWorkerInfo
 } ParallelApplyWorkerInfo;
 
 /* Main memory context for apply worker. Permanent during worker lifetime. */
-extern PGDLLIMPORT MemoryContext ApplyContext;
+extern PGDLLIMPORT MemoryContext *ApplyContext;
 
-extern PGDLLIMPORT MemoryContext ApplyMessageContext;
+extern PGDLLIMPORT MemoryContext *ApplyMessageContext;
 
 extern PGDLLIMPORT ErrorContextCallback *apply_error_context_stack;
 

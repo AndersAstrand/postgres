@@ -62,7 +62,7 @@ AlignedAllocRealloc(void *pointer, Size size, int flags)
 	MemoryChunk *redirchunk = PointerGetMemoryChunk(pointer);
 	Size		alignto;
 	void	   *unaligned;
-	MemoryContext ctx;
+	MemoryContext *ctx;
 	Size		old_size;
 	void	   *newptr;
 
@@ -117,11 +117,11 @@ AlignedAllocRealloc(void *pointer, Size size, int flags)
  * AlignedAllocGetChunkContext
  *		Return the MemoryContext that 'pointer' belongs to.
  */
-MemoryContext
+MemoryContext *
 AlignedAllocGetChunkContext(void *pointer)
 {
 	MemoryChunk *redirchunk = PointerGetMemoryChunk(pointer);
-	MemoryContext cxt;
+	MemoryContext *cxt;
 
 	VALGRIND_MAKE_MEM_DEFINED(redirchunk, sizeof(MemoryChunk));
 

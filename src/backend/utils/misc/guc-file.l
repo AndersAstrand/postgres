@@ -119,8 +119,8 @@ void
 ProcessConfigFile(GucContext context)
 {
 	int			elevel;
-	MemoryContext config_cxt;
-	MemoryContext caller_cxt;
+	MemoryContext *config_cxt;
+	MemoryContext *caller_cxt;
 
 	/*
 	 * Config files are processed on startup (by the postmaster only) and on

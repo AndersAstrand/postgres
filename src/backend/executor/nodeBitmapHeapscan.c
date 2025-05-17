@@ -200,6 +200,7 @@ BitmapHeapNext(BitmapHeapScanState *node)
 			 * invasive (and a major backpatching pain).
 			 */
 #ifdef NOT_ANYMORE
+
 			/*
 			 * We can potentially skip fetching heap pages if we do not need
 			 * any columns of the table, either for checking non-indexable

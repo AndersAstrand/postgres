@@ -303,7 +303,7 @@ spg_range_quad_inner_consistent(PG_FUNCTION_ARGS)
 	spgInnerConsistentOut *out = (spgInnerConsistentOut *) PG_GETARG_POINTER(1);
 	int			which;
 	int			i;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	/*
 	 * For adjacent search we need also previous centroid (if any) to improve

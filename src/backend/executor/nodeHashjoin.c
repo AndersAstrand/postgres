@@ -1333,7 +1333,7 @@ ExecHashJoinSaveTuple(MinimalTuple tuple, uint32 hashvalue,
 	 */
 	if (file == NULL)
 	{
-		MemoryContext oldctx = MemoryContextSwitchTo(hashtable->spillCxt);
+		MemoryContext *oldctx = MemoryContextSwitchTo(hashtable->spillCxt);
 
 		file = BufFileCreateTemp(false);
 		*fileptr = file;

@@ -114,10 +114,10 @@ typedef struct BlocktableEntry
 struct TidStore
 {
 	/* MemoryContext where the TidStore is allocated */
-	MemoryContext context;
+	MemoryContext *context;
 
 	/* MemoryContext that the radix tree uses */
-	MemoryContext rt_context;
+	MemoryContext *rt_context;
 
 	/* Storage for TIDs. Use either one depending on TidStoreIsShared() */
 	union

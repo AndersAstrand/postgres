@@ -26,7 +26,7 @@ PG_MODULE_MAGIC;
 
 typedef struct
 {
-	MemoryContext context;
+	MemoryContext *context;
 	bool		include_xids;
 	bool		include_timestamp;
 	bool		skip_empty_xacts;
@@ -604,7 +604,7 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	TestDecodingTxnData *txndata;
 	Form_pg_class class_form;
 	TupleDesc	tupdesc;
-	MemoryContext old;
+	MemoryContext *old;
 
 	data = ctx->output_plugin_private;
 	txndata = txn->output_plugin_private;
@@ -689,7 +689,7 @@ pg_decode_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	TestDecodingData *data;
 	TestDecodingTxnData *txndata;
-	MemoryContext old;
+	MemoryContext *old;
 	int			i;
 
 	data = ctx->output_plugin_private;

@@ -100,7 +100,7 @@ plsample_func_handler(PG_FUNCTION_ARGS)
 	Form_pg_type type_struct;
 	HeapTuple	type_tuple;
 	Form_pg_proc pl_struct;
-	volatile MemoryContext proc_cxt = NULL;
+	volatile MemoryContext *proc_cxt = NULL;
 	Oid		   *argtypes;
 	char	  **argnames;
 	char	   *argmodes;
@@ -158,7 +158,7 @@ plsample_func_handler(PG_FUNCTION_ARGS)
 			elog(ERROR, "cache lookup failed for type %u", argtype);
 
 		type_struct = (Form_pg_type) GETSTRUCT(type_tuple);
-		fmgr_info_cxt(type_struct->typoutput, &(arg_out_func[i]), proc_cxt);
+		fmgr_info_cxt(type_struct->typoutput, &(arg_out_func[i]), (MemoryContext *) proc_cxt);
 		ReleaseSysCache(type_tuple);
 
 		value = OutputFunctionCall(&arg_out_func[i], fcinfo->args[i].value);
@@ -189,7 +189,7 @@ plsample_func_handler(PG_FUNCTION_ARGS)
 	pg_type_entry = (Form_pg_type) GETSTRUCT(type_tuple);
 	result_typioparam = getTypeIOParam(type_tuple);
 
-	fmgr_info_cxt(pg_type_entry->typinput, &result_in_func, proc_cxt);
+	fmgr_info_cxt(pg_type_entry->typinput, &result_in_func, (MemoryContext *) proc_cxt);
 	ReleaseSysCache(type_tuple);
 
 	ret = InputFunctionCall(&result_in_func, source, result_typioparam, -1);

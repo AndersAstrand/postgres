@@ -161,7 +161,7 @@ static int	default_multixact_freeze_min_age;
 static int	default_multixact_freeze_table_age;
 
 /* Memory context for long-lived data */
-static MemoryContext AutovacMemCxt;
+static MemoryContext *AutovacMemCxt;
 
 /* struct to keep track of databases in launcher */
 typedef struct avl_dbase
@@ -303,7 +303,7 @@ static AutoVacuumShmemStruct *AutoVacuumShmem;
  * that contains it
  */
 static dlist_head DatabaseList = DLIST_STATIC_INIT(DatabaseList);
-static MemoryContext DatabaseListCxt = NULL;
+static MemoryContext *DatabaseListCxt = NULL;
 
 /* Pointer to my own WorkerInfo, valid on each worker */
 static WorkerInfo MyWorkerInfo = NULL;
@@ -877,9 +877,9 @@ rebuild_database_list(Oid newdb)
 {
 	List	   *dblist;
 	ListCell   *cell;
-	MemoryContext newcxt;
-	MemoryContext oldcxt;
-	MemoryContext tmpcxt;
+	MemoryContext *newcxt;
+	MemoryContext *oldcxt;
+	MemoryContext *tmpcxt;
 	HASHCTL		hctl;
 	int			score;
 	int			nelems;
@@ -1082,8 +1082,8 @@ do_start_worker(void)
 	TimestampTz current_time;
 	bool		skipit = false;
 	Oid			retval = InvalidOid;
-	MemoryContext tmpcxt,
-				oldcxt;
+	MemoryContext *tmpcxt,
+			   *oldcxt;
 
 	/* return quickly when there are no free workers */
 	LWLockAcquire(AutovacuumLock, LW_SHARED);
@@ -1795,7 +1795,7 @@ get_database_list(void)
 	Relation	rel;
 	TableScanDesc scan;
 	HeapTuple	tup;
-	MemoryContext resultcxt;
+	MemoryContext *resultcxt;
 
 	/* This is the context that we will allocate our output data in */
 	resultcxt = CurrentMemoryContext;
@@ -1821,7 +1821,7 @@ get_database_list(void)
 	{
 		Form_pg_database pgdatabase = (Form_pg_database) GETSTRUCT(tup);
 		avw_dbase  *avdb;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/*
 		 * If database has partially been dropped, we can't, nor need to,
@@ -3087,7 +3087,7 @@ autovacuum_do_vac_analyze(autovac_table *tab, BufferAccessStrategy bstrategy)
 	RangeVar   *rangevar;
 	VacuumRelation *rel;
 	List	   *rel_list;
-	MemoryContext vac_context;
+	MemoryContext *vac_context;
 
 	/* Let pgstat know what we're doing */
 	autovac_report_activity(tab);

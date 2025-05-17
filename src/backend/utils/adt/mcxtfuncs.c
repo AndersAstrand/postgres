@@ -33,7 +33,7 @@
  */
 static void
 PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
-								 TupleDesc tupdesc, MemoryContext context,
+								 TupleDesc tupdesc, MemoryContext *context,
 								 const char *parent, int level)
 {
 #define PG_GET_BACKEND_MEMORY_CONTEXTS_COLS	9
@@ -41,7 +41,7 @@ PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
 	Datum		values[PG_GET_BACKEND_MEMORY_CONTEXTS_COLS];
 	bool		nulls[PG_GET_BACKEND_MEMORY_CONTEXTS_COLS];
 	MemoryContextCounters stat;
-	MemoryContext child;
+	MemoryContext *child;
 	const char *name;
 	const char *ident;
 

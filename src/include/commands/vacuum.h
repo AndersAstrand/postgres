@@ -127,7 +127,7 @@ typedef struct VacAttrStats
 	int32		attrtypmod;		/* typmod of data being analyzed */
 	Form_pg_type attrtype;		/* copy of pg_type row for attrtypid */
 	Oid			attrcollid;		/* collation of data being analyzed */
-	MemoryContext anl_context;	/* where to save long-lived data */
+	MemoryContext *anl_context; /* where to save long-lived data */
 
 	/*
 	 * These fields must be filled in by the typanalyze routine, unless it
@@ -316,7 +316,7 @@ extern PGDLLIMPORT int vacuum_cost_limit;
 /* in commands/vacuum.c */
 extern void ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel);
 extern void vacuum(List *relations, VacuumParams *params,
-				   BufferAccessStrategy bstrategy, MemoryContext vac_context,
+				   BufferAccessStrategy bstrategy, MemoryContext *vac_context,
 				   bool isTopLevel);
 extern void vac_open_indexes(Relation relation, LOCKMODE lockmode,
 							 int *nindexes, Relation **Irel);

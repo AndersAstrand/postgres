@@ -105,8 +105,8 @@ int			VacuumCostBalanceLocal = 0;
 
 /* non-export function prototypes */
 static List *expand_vacuum_rel(VacuumRelation *vrel,
-							   MemoryContext vac_context, int options);
-static List *get_all_vacuum_rels(MemoryContext vac_context, int options);
+							   MemoryContext *vac_context, int options);
+static List *get_all_vacuum_rels(MemoryContext *vac_context, int options);
 static void vac_truncate_clog(TransactionId frozenXID,
 							  MultiXactId minMulti,
 							  TransactionId lastSaneFrozenXid,
@@ -159,7 +159,7 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 	int			ring_size;
 	bool		skip_database_stats = false;
 	bool		only_database_stats = false;
-	MemoryContext vac_context;
+	MemoryContext *vac_context;
 	ListCell   *lc;
 
 	/* index_cleanup and truncate values unspecified for now */
@@ -427,7 +427,7 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
 		(params.options & VACOPT_ANALYZE) != 0)
 	{
 
-		MemoryContext old_context = MemoryContextSwitchTo(vac_context);
+		MemoryContext *old_context = MemoryContextSwitchTo(vac_context);
 
 		Assert(ring_size >= -1);
 
@@ -476,7 +476,7 @@ ExecVacuum(ParseState *pstate, VacuumStmt *vacstmt, bool isTopLevel)
  */
 void
 vacuum(List *relations, VacuumParams *params, BufferAccessStrategy bstrategy,
-	   MemoryContext vac_context, bool isTopLevel)
+	   MemoryContext *vac_context, bool isTopLevel)
 {
 	static bool in_vacuum = false;
 
@@ -533,7 +533,7 @@ vacuum(List *relations, VacuumParams *params, BufferAccessStrategy bstrategy,
 		{
 			VacuumRelation *vrel = lfirst_node(VacuumRelation, lc);
 			List	   *sublist;
-			MemoryContext old_context;
+			MemoryContext *old_context;
 
 			sublist = expand_vacuum_rel(vrel, vac_context, params->options);
 			old_context = MemoryContextSwitchTo(vac_context);
@@ -869,11 +869,11 @@ vacuum_open_relation(Oid relid, RangeVar *relation, bits32 options,
  * are made in vac_context.
  */
 static List *
-expand_vacuum_rel(VacuumRelation *vrel, MemoryContext vac_context,
+expand_vacuum_rel(VacuumRelation *vrel, MemoryContext *vac_context,
 				  int options)
 {
 	List	   *vacrels = NIL;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* If caller supplied OID, there's nothing we need do here. */
 	if (OidIsValid(vrel->oid))
@@ -1009,7 +1009,7 @@ expand_vacuum_rel(VacuumRelation *vrel, MemoryContext vac_context,
  * the current database.  The list is built in vac_context.
  */
 static List *
-get_all_vacuum_rels(MemoryContext vac_context, int options)
+get_all_vacuum_rels(MemoryContext *vac_context, int options)
 {
 	List	   *vacrels = NIL;
 	Relation	pgclass;
@@ -1023,7 +1023,7 @@ get_all_vacuum_rels(MemoryContext vac_context, int options)
 	while ((tuple = heap_getnext(scan, ForwardScanDirection)) != NULL)
 	{
 		Form_pg_class classForm = (Form_pg_class) GETSTRUCT(tuple);
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		Oid			relid = classForm->oid;
 
 		/*

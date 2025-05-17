@@ -215,10 +215,11 @@ typedef struct
 	 * The subsequent fields are used in the implementations of the functions
 	 * above.
 	 */
-	MemoryContext maincontext;	/* memory context for tuple sort metadata that
+	MemoryContext *maincontext; /* memory context for tuple sort metadata that
 								 * persists across multiple batches */
-	MemoryContext sortcontext;	/* memory context holding most sort data */
-	MemoryContext tuplecontext; /* sub-context of sortcontext for tuple data */
+	MemoryContext *sortcontext; /* memory context holding most sort data */
+	MemoryContext *tuplecontext;	/* sub-context of sortcontext for tuple
+									 * data */
 
 	/*
 	 * Whether SortTuple's datum1 and isnull1 members are maintained by the

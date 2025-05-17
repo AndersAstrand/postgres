@@ -67,7 +67,7 @@ brtuple_disk_tupdesc(BrinDesc *brdesc)
 		int			j;
 		AttrNumber	attno = 1;
 		TupleDesc	tupdesc;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/* make sure it's in the bdesc's context */
 		oldcxt = MemoryContextSwitchTo(brdesc->bd_context);
@@ -560,7 +560,7 @@ brin_deform_tuple(BrinDesc *brdesc, BrinTuple *tuple, BrinMemTuple *dMemtuple)
 	bits8	   *nullbits;
 	int			keyno;
 	int			valueno;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	dtup = dMemtuple ? brin_memtuple_initialize(dMemtuple, brdesc) :
 		brin_new_memtuple(brdesc);

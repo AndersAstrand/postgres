@@ -43,7 +43,7 @@ static const ExpandedObjectMethods ER_methods =
 
 /* Other local functions */
 static void ER_mc_callback(void *arg);
-static MemoryContext get_short_term_cxt(ExpandedRecordHeader *erh);
+static MemoryContext *get_short_term_cxt(ExpandedRecordHeader *erh);
 static void build_dummy_expanded_header(ExpandedRecordHeader *main_erh);
 static pg_noinline void check_domain_for_new_field(ExpandedRecordHeader *erh,
 												   int fnumber,
@@ -67,13 +67,13 @@ static pg_noinline void check_domain_for_new_tuple(ExpandedRecordHeader *erh,
  */
 ExpandedRecordHeader *
 make_expanded_record_from_typeid(Oid type_id, int32 typmod,
-								 MemoryContext parentcontext)
+								 MemoryContext *parentcontext)
 {
 	ExpandedRecordHeader *erh;
 	int			flags = 0;
 	TupleDesc	tupdesc;
 	uint64		tupdesc_id;
-	MemoryContext objcxt;
+	MemoryContext *objcxt;
 	char	   *chunk;
 
 	if (type_id != RECORDOID)
@@ -203,12 +203,12 @@ make_expanded_record_from_typeid(Oid type_id, int32 typmod,
  */
 ExpandedRecordHeader *
 make_expanded_record_from_tupdesc(TupleDesc tupdesc,
-								  MemoryContext parentcontext)
+								  MemoryContext *parentcontext)
 {
 	ExpandedRecordHeader *erh;
 	uint64		tupdesc_id;
-	MemoryContext objcxt;
-	MemoryContext oldcxt;
+	MemoryContext *objcxt;
+	MemoryContext *oldcxt;
 	char	   *chunk;
 
 	if (tupdesc->tdtypeid != RECORDOID)
@@ -327,12 +327,12 @@ make_expanded_record_from_tupdesc(TupleDesc tupdesc,
  */
 ExpandedRecordHeader *
 make_expanded_record_from_exprecord(ExpandedRecordHeader *olderh,
-									MemoryContext parentcontext)
+									MemoryContext *parentcontext)
 {
 	ExpandedRecordHeader *erh;
 	TupleDesc	tupdesc = expanded_record_get_tupdesc(olderh);
-	MemoryContext objcxt;
-	MemoryContext oldcxt;
+	MemoryContext *objcxt;
+	MemoryContext *oldcxt;
 	char	   *chunk;
 
 	/*
@@ -448,7 +448,7 @@ expanded_record_set_tuple(ExpandedRecordHeader *erh,
 	char	   *oldfendptr;
 	int			newflags;
 	HeapTuple	newtuple;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Shouldn't ever be trying to assign new data to a dummy header */
 	Assert(!(erh->flags & ER_FLAG_IS_DUMMY));
@@ -577,14 +577,14 @@ expanded_record_set_tuple(ExpandedRecordHeader *erh,
  * so we need not consider domain cases here.
  */
 Datum
-make_expanded_record_from_datum(Datum recorddatum, MemoryContext parentcontext)
+make_expanded_record_from_datum(Datum recorddatum, MemoryContext *parentcontext)
 {
 	ExpandedRecordHeader *erh;
 	HeapTupleHeader tuphdr;
 	HeapTupleData tmptup;
 	HeapTuple	newtuple;
-	MemoryContext objcxt;
-	MemoryContext oldcxt;
+	MemoryContext *objcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * Allocate private context for expanded object.  We use a regular-size
@@ -1149,7 +1149,7 @@ expanded_record_set_field_internal(ExpandedRecordHeader *erh, int fnumber,
 	attr = TupleDescAttr(tupdesc, fnumber - 1);
 	if (!isnull && !attr->attbyval)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/* If requested, detoast any external value */
 		if (expand_external)
@@ -1254,7 +1254,7 @@ expanded_record_set_fields(ExpandedRecordHeader *erh,
 	Datum	   *dvalues;
 	bool	   *dnulls;
 	int			fnumber;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Shouldn't ever be trying to assign new data to a dummy header */
 	Assert(!(erh->flags & ER_FLAG_IS_DUMMY));
@@ -1375,7 +1375,7 @@ expanded_record_set_fields(ExpandedRecordHeader *erh,
  * whole context for this, since it will often go unused --- but it's hard to
  * avoid memory leaks otherwise.  We can make the context small, at least.)
  */
-static MemoryContext
+static MemoryContext *
 get_short_term_cxt(ExpandedRecordHeader *erh)
 {
 	if (erh->er_short_term_cxt == NULL)
@@ -1495,7 +1495,7 @@ check_domain_for_new_field(ExpandedRecordHeader *erh, int fnumber,
 						   Datum newValue, bool isnull)
 {
 	ExpandedRecordHeader *dummy_erh;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Construct dummy header to contain proposed new field set */
 	build_dummy_expanded_header(erh);
@@ -1576,7 +1576,7 @@ static pg_noinline void
 check_domain_for_new_tuple(ExpandedRecordHeader *erh, HeapTuple tuple)
 {
 	ExpandedRecordHeader *dummy_erh;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* If we're being told to set record to empty, just see if NULL is OK */
 	if (tuple == NULL)

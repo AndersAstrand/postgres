@@ -1189,7 +1189,7 @@ innerrel_is_unique(PlannerInfo *root,
 				   List *restrictlist,
 				   bool force_cache)
 {
-	MemoryContext old_context;
+	MemoryContext *old_context;
 	ListCell   *lc;
 
 	/* Certainly can't prove uniqueness when there are no joinclauses */

@@ -162,7 +162,7 @@ static bool baseSearchPathValid = true;
  * way to invalidate *all* the cache entries, not just the active one.
  */
 static bool searchPathCacheValid = false;
-static MemoryContext SearchPathCacheContext = NULL;
+static MemoryContext *SearchPathCacheContext = NULL;
 
 typedef struct SearchPathCacheKey
 {
@@ -3849,11 +3849,11 @@ SetTempNamespaceState(Oid tempNamespaceId, Oid tempToastNamespaceId)
  * junk created by revalidation calculations will be in CurrentMemoryContext.
  */
 SearchPathMatcher *
-GetSearchPathMatcher(MemoryContext context)
+GetSearchPathMatcher(MemoryContext *context)
 {
 	SearchPathMatcher *result;
 	List	   *schemas;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	recomputeNamespacePath();
 
@@ -4243,7 +4243,7 @@ finalNamespacePath(List *oidlist, Oid *firstNS)
 static const SearchPathCacheEntry *
 cachedNamespacePath(const char *searchPath, Oid roleid)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	SearchPathCacheEntry *entry;
 
 	spcache_init();
@@ -4316,7 +4316,7 @@ recomputeNamespacePath(void)
 	}
 	else
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		List	   *newpath;
 
 		pathChanged = true;
@@ -4741,7 +4741,7 @@ InitializeSearchPath(void)
 		 * In bootstrap mode, the search path must be 'pg_catalog' so that
 		 * tables are created in the proper namespace; ignore the GUC setting.
 		 */
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		oldcxt = MemoryContextSwitchTo(TopMemoryContext);
 		baseSearchPath = list_make1_oid(PG_CATALOG_NAMESPACE);

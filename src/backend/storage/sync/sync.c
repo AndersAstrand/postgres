@@ -69,7 +69,7 @@ typedef struct
 
 static HTAB *pendingOps = NULL;
 static List *pendingUnlinks = NIL;
-static MemoryContext pendingOpsCxt; /* context for the above  */
+static MemoryContext *pendingOpsCxt;	/* context for the above  */
 
 static CycleCtr sync_cycle_ctr = 0;
 static CycleCtr checkpoint_cycle_ctr = 0;
@@ -528,7 +528,7 @@ RememberSyncRequest(const FileTag *ftag, SyncRequestType type)
 	else if (type == SYNC_UNLINK_REQUEST)
 	{
 		/* Unlink request: put it in the linked list */
-		MemoryContext oldcxt = MemoryContextSwitchTo(pendingOpsCxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(pendingOpsCxt);
 		PendingUnlinkEntry *entry;
 
 		entry = palloc(sizeof(PendingUnlinkEntry));
@@ -543,7 +543,7 @@ RememberSyncRequest(const FileTag *ftag, SyncRequestType type)
 	else
 	{
 		/* Normal case: enter a request to fsync this segment */
-		MemoryContext oldcxt = MemoryContextSwitchTo(pendingOpsCxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(pendingOpsCxt);
 		PendingFsyncEntry *entry;
 		bool		found;
 

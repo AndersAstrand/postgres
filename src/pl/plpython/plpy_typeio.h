@@ -62,7 +62,7 @@ struct PLyDatumToOb
 	bool		typbyval;		/* its physical representation details */
 	int16		typlen;
 	char		typalign;
-	MemoryContext mcxt;			/* context this info is stored in */
+	MemoryContext *mcxt;		/* context this info is stored in */
 	union						/* conversion-type-specific data */
 	{
 		PLyScalarToOb scalar;
@@ -135,7 +135,7 @@ struct PLyObToDatum
 	bool		typbyval;		/* its physical representation details */
 	int16		typlen;
 	char		typalign;
-	MemoryContext mcxt;			/* context this info is stored in */
+	MemoryContext *mcxt;		/* context this info is stored in */
 	union						/* conversion-type-specific data */
 	{
 		PLyObToScalar scalar;
@@ -154,10 +154,10 @@ extern PGDLLEXPORT Datum PLy_output_convert(PLyObToDatum *arg, PyObject *val,
 extern PGDLLEXPORT PyObject *PLy_input_from_tuple(PLyDatumToOb *arg, HeapTuple tuple,
 												  TupleDesc desc, bool include_generated);
 
-extern PGDLLEXPORT void PLy_input_setup_func(PLyDatumToOb *arg, MemoryContext arg_mcxt,
+extern PGDLLEXPORT void PLy_input_setup_func(PLyDatumToOb *arg, MemoryContext *arg_mcxt,
 											 Oid typeOid, int32 typmod,
 											 struct PLyProcedure *proc);
-extern PGDLLEXPORT void PLy_output_setup_func(PLyObToDatum *arg, MemoryContext arg_mcxt,
+extern PGDLLEXPORT void PLy_output_setup_func(PLyObToDatum *arg, MemoryContext *arg_mcxt,
 											  Oid typeOid, int32 typmod,
 											  struct PLyProcedure *proc);
 

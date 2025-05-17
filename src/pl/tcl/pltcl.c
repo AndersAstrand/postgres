@@ -141,7 +141,7 @@ typedef struct pltcl_proc_desc
 {
 	char	   *user_proname;	/* user's name (from pg_proc.proname) */
 	char	   *internal_proname;	/* Tcl name (based on function OID) */
-	MemoryContext fn_cxt;		/* memory context for this procedure */
+	MemoryContext *fn_cxt;		/* memory context for this procedure */
 	unsigned long fn_refcount;	/* number of active references */
 	TransactionId fn_xmin;		/* xmin of pg_proc row */
 	ItemPointerData fn_tid;		/* TID of pg_proc row */
@@ -230,7 +230,7 @@ typedef struct pltcl_call_state
 
 	ReturnSetInfo *rsi;			/* passed-in ReturnSetInfo, if any */
 	Tuplestorestate *tuple_store;	/* SRFs accumulate result here */
-	MemoryContext tuple_store_cxt;	/* context and resowner for tuplestore */
+	MemoryContext *tuple_store_cxt; /* context and resowner for tuplestore */
 	ResourceOwner tuple_store_owner;
 } pltcl_call_state;
 
@@ -318,12 +318,12 @@ static int	pltcl_commit(ClientData cdata, Tcl_Interp *interp,
 static int	pltcl_rollback(ClientData cdata, Tcl_Interp *interp,
 						   int objc, Tcl_Obj *const objv[]);
 
-static void pltcl_subtrans_begin(MemoryContext oldcontext,
+static void pltcl_subtrans_begin(MemoryContext *oldcontext,
 								 ResourceOwner oldowner);
-static void pltcl_subtrans_commit(MemoryContext oldcontext,
+static void pltcl_subtrans_commit(MemoryContext *oldcontext,
 								  ResourceOwner oldowner);
 static void pltcl_subtrans_abort(Tcl_Interp *interp,
-								 MemoryContext oldcontext,
+								 MemoryContext *oldcontext,
 								 ResourceOwner oldowner);
 
 static void pltcl_set_tuple_values(Tcl_Interp *interp, const char *arrayname,
@@ -968,7 +968,7 @@ pltcl_func_handler(PG_FUNCTION_ARGS, pltcl_call_state *call_state,
 			rsi->setResult = call_state->tuple_store;
 			if (call_state->ret_tupdesc)
 			{
-				MemoryContext oldcxt;
+				MemoryContext *oldcxt;
 
 				oldcxt = MemoryContextSwitchTo(call_state->tuple_store_cxt);
 				rsi->setDesc = CreateTupleDescCopy(call_state->ret_tupdesc);
@@ -1407,7 +1407,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 	bool		found;
 	pltcl_proc_desc *prodesc;
 	pltcl_proc_desc *old_prodesc;
-	volatile MemoryContext proc_cxt = NULL;
+	volatile MemoryContext *proc_cxt = NULL;
 	Tcl_DString proc_internal_def;
 	Tcl_DString proc_internal_body;
 
@@ -1470,7 +1470,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 		Tcl_Interp *interp;
 		int			i;
 		int			tcl_rc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/************************************************************
 		 * Build our internal proc name from the function's Oid.  Append
@@ -1498,12 +1498,12 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 		 * Allocate and fill a new procedure description block.
 		 * struct prodesc and subsidiary data must all live in proc_cxt.
 		 ************************************************************/
-		oldcontext = MemoryContextSwitchTo(proc_cxt);
+		oldcontext = MemoryContextSwitchTo((MemoryContext *) proc_cxt);
 		prodesc = (pltcl_proc_desc *) palloc0(sizeof(pltcl_proc_desc));
 		prodesc->user_proname = pstrdup(NameStr(procStruct->proname));
-		MemoryContextSetIdentifier(proc_cxt, prodesc->user_proname);
+		MemoryContextSetIdentifier((MemoryContext *) proc_cxt, prodesc->user_proname);
 		prodesc->internal_proname = pstrdup(internal_proname);
-		prodesc->fn_cxt = proc_cxt;
+		prodesc->fn_cxt = (MemoryContext *) proc_cxt;
 		prodesc->fn_refcount = 0;
 		prodesc->fn_xmin = HeapTupleHeaderGetRawXmin(procTup->t_data);
 		prodesc->fn_tid = procTup->t_self;
@@ -1559,7 +1559,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 			prodesc->result_typid = rettype;
 			fmgr_info_cxt(typeStruct->typinput,
 						  &(prodesc->result_in_func),
-						  proc_cxt);
+						  (MemoryContext *) proc_cxt);
 			prodesc->result_typioparam = getTypeIOParam(typeTup);
 
 			prodesc->fn_retisset = procStruct->proretset;
@@ -1604,7 +1604,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 					prodesc->arg_is_rowtype[i] = false;
 					fmgr_info_cxt(typeStruct->typoutput,
 								  &(prodesc->arg_out_func[i]),
-								  proc_cxt);
+								  (MemoryContext *) proc_cxt);
 					snprintf(buf, sizeof(buf), "%d", i + 1);
 				}
 
@@ -1714,7 +1714,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 		 * should all be in the proc_cxt, except for the DStrings.
 		 */
 		if (proc_cxt)
-			MemoryContextDelete(proc_cxt);
+			MemoryContextDelete((MemoryContext *) proc_cxt);
 		Tcl_DStringFree(&proc_internal_def);
 		Tcl_DStringFree(&proc_internal_body);
 		PG_RE_THROW();
@@ -1760,7 +1760,7 @@ pltcl_elog(ClientData cdata, Tcl_Interp *interp,
 		   int objc, Tcl_Obj *const objv[])
 {
 	volatile int level;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			priIndex;
 
 	static const char *logpriorities[] = {
@@ -2158,7 +2158,7 @@ pltcl_returnnext(ClientData cdata, Tcl_Interp *interp,
 	pltcl_call_state *call_state = pltcl_current_call_state;
 	FunctionCallInfo fcinfo = call_state->fcinfo;
 	pltcl_proc_desc *prodesc = call_state->prodesc;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	volatile int result = TCL_OK;
 
@@ -2255,7 +2255,7 @@ pltcl_returnnext(ClientData cdata, Tcl_Interp *interp,
  *
  * Intended usage pattern is:
  *
- *	MemoryContext oldcontext = CurrentMemoryContext;
+ *	MemoryContext *oldcontext = CurrentMemoryContext;
  *	ResourceOwner oldowner = CurrentResourceOwner;
  *
  *	...
@@ -2275,7 +2275,7 @@ pltcl_returnnext(ClientData cdata, Tcl_Interp *interp,
  *----------
  */
 static void
-pltcl_subtrans_begin(MemoryContext oldcontext, ResourceOwner oldowner)
+pltcl_subtrans_begin(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	BeginInternalSubTransaction(NULL);
 
@@ -2284,7 +2284,7 @@ pltcl_subtrans_begin(MemoryContext oldcontext, ResourceOwner oldowner)
 }
 
 static void
-pltcl_subtrans_commit(MemoryContext oldcontext, ResourceOwner oldowner)
+pltcl_subtrans_commit(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	/* Commit the inner transaction, return to outer xact context */
 	ReleaseCurrentSubTransaction();
@@ -2294,7 +2294,7 @@ pltcl_subtrans_commit(MemoryContext oldcontext, ResourceOwner oldowner)
 
 static void
 pltcl_subtrans_abort(Tcl_Interp *interp,
-					 MemoryContext oldcontext, ResourceOwner oldowner)
+					 MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	ErrorData  *edata;
 
@@ -2333,7 +2333,7 @@ pltcl_SPI_execute(ClientData cdata, Tcl_Interp *interp,
 	int			count = 0;
 	const char *volatile arrayname = NULL;
 	Tcl_Obj    *volatile loop_body = NULL;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	enum options
@@ -2547,7 +2547,7 @@ static int
 pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 				  int objc, Tcl_Obj *const objv[])
 {
-	volatile MemoryContext plan_cxt = NULL;
+	volatile MemoryContext *plan_cxt = NULL;
 	Tcl_Size	nargs;
 	Tcl_Obj   **argsObj;
 	pltcl_query_desc *qdesc;
@@ -2555,7 +2555,7 @@ pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 	Tcl_HashEntry *hashent;
 	int			hashnew;
 	Tcl_HashTable *query_hash;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	/************************************************************
@@ -2583,7 +2583,7 @@ pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 	plan_cxt = AllocSetContextCreate(TopMemoryContext,
 									 "PL/Tcl spi_prepare query",
 									 ALLOCSET_SMALL_SIZES);
-	MemoryContextSwitchTo(plan_cxt);
+	MemoryContextSwitchTo((MemoryContext *) plan_cxt);
 	qdesc = (pltcl_query_desc *) palloc0(sizeof(pltcl_query_desc));
 	snprintf(qdesc->qname, sizeof(qdesc->qname), "%p", qdesc);
 	qdesc->nargs = nargs;
@@ -2619,7 +2619,7 @@ pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 			getTypeInputInfo(typId, &typInput, &typIOParam);
 
 			qdesc->argtypes[i] = typId;
-			fmgr_info_cxt(typInput, &(qdesc->arginfuncs[i]), plan_cxt);
+			fmgr_info_cxt(typInput, &(qdesc->arginfuncs[i]), (MemoryContext *) plan_cxt);
 			qdesc->argtypioparams[i] = typIOParam;
 		}
 
@@ -2647,7 +2647,7 @@ pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 	{
 		pltcl_subtrans_abort(interp, oldcontext, oldowner);
 
-		MemoryContextDelete(plan_cxt);
+		MemoryContextDelete((MemoryContext *) plan_cxt);
 
 		return TCL_ERROR;
 	}
@@ -2689,7 +2689,7 @@ pltcl_SPI_execute_plan(ClientData cdata, Tcl_Interp *interp,
 	Tcl_Size	callObjc;
 	Tcl_Obj   **callObjv = NULL;
 	Datum	   *argvalues;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	Tcl_HashTable *query_hash;
 
@@ -2891,7 +2891,7 @@ static int
 pltcl_subtransaction(ClientData cdata, Tcl_Interp *interp,
 					 int objc, Tcl_Obj *const objv[])
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	int			retcode;
 
@@ -2939,7 +2939,7 @@ static int
 pltcl_commit(ClientData cdata, Tcl_Interp *interp,
 			 int objc, Tcl_Obj *const objv[])
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	PG_TRY();
 	{
@@ -2978,7 +2978,7 @@ static int
 pltcl_rollback(ClientData cdata, Tcl_Interp *interp,
 			   int objc, Tcl_Obj *const objv[])
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	PG_TRY();
 	{
@@ -3264,7 +3264,7 @@ static void
 pltcl_init_tuple_store(pltcl_call_state *call_state)
 {
 	ReturnSetInfo *rsi = call_state->rsi;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ResourceOwner oldowner;
 
 	/* Should be in a SRF */

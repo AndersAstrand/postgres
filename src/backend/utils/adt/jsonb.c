@@ -1500,8 +1500,8 @@ clone_parse_state(JsonbParseState *state)
 static Datum
 jsonb_agg_transfn_worker(FunctionCallInfo fcinfo, bool absent_on_null)
 {
-	MemoryContext oldcontext,
-				aggcontext;
+	MemoryContext *oldcontext,
+			   *aggcontext;
 	JsonbAggState *state;
 	JsonbInState elem;
 	Datum		val;
@@ -1673,8 +1673,8 @@ static Datum
 jsonb_object_agg_transfn_worker(FunctionCallInfo fcinfo,
 								bool absent_on_null, bool unique_keys)
 {
-	MemoryContext oldcontext,
-				aggcontext;
+	MemoryContext *oldcontext,
+			   *aggcontext;
 	JsonbInState elem;
 	JsonbAggState *state;
 	Datum		val;

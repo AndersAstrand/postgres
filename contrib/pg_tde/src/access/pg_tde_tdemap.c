@@ -1289,7 +1289,7 @@ pg_tde_add_wal_key_to_cache(InternalKey *cached_key, XLogRecPtr start_lsn)
 {
 	WALKeyCacheRec *wal_rec;
 #ifndef FRONTEND
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	oldCtx = MemoryContextSwitchTo(TopMemoryContext);
 #endif
@@ -1325,7 +1325,7 @@ pg_tde_put_key_into_cache(const RelFileLocator *rlocator, InternalKey *key)
 {
 	static long pageSize = 0;
 	RelKeyCacheRec *rec;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	if (pageSize == 0)
 	{

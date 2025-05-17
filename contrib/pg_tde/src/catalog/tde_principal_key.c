@@ -199,7 +199,7 @@ initialize_objects_in_dsa_area(dsa_area *dsa, void *raw_dsa_area)
 static void
 principal_key_info_attach_shmem(void)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	dsa_area   *dsa;
 
 	if (principalKeyLocalState.sharedHash)

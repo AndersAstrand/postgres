@@ -171,7 +171,7 @@ static volatile sig_atomic_t RecoveryConflictPending = false;
 static volatile sig_atomic_t RecoveryConflictPendingReasons[NUM_PROCSIGNALS];
 
 /* reused buffer to pass to SendRowDescriptionMessage() */
-static MemoryContext row_description_context = NULL;
+static MemoryContext *row_description_context = NULL;
 static StringInfoData row_description_buf;
 
 /* ----------------------------------------------------------------
@@ -1017,7 +1017,7 @@ static void
 exec_simple_query(const char *query_string)
 {
 	CommandDest dest = whereToSendOutput;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	List	   *parsetree_list;
 	ListCell   *parsetree_item;
 	bool		save_log_statement_stats = log_statement_stats;
@@ -1103,7 +1103,7 @@ exec_simple_query(const char *query_string)
 		bool		snapshot_set = false;
 		CommandTag	commandTag;
 		QueryCompletion qc;
-		MemoryContext per_parsetree_context = NULL;
+		MemoryContext *per_parsetree_context = NULL;
 		List	   *querytree_list,
 				   *plantree_list;
 		Portal		portal;
@@ -1397,8 +1397,8 @@ exec_parse_message(const char *query_string,	/* string to execute */
 				   Oid *paramTypes, /* parameter types */
 				   int numParams)	/* number of parameters */
 {
-	MemoryContext unnamed_stmt_context = NULL;
-	MemoryContext oldcontext;
+	MemoryContext *unnamed_stmt_context = NULL;
+	MemoryContext *oldcontext;
 	List	   *parsetree_list;
 	RawStmt    *raw_parse_tree;
 	List	   *querytree_list;
@@ -1642,7 +1642,7 @@ exec_bind_message(StringInfo input_message)
 	char	   *query_string;
 	char	   *saved_stmt_name;
 	ParamListInfo params;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	bool		save_log_statement_stats = log_statement_stats;
 	bool		snapshot_set = false;
 	char		msec_str[32];
@@ -1894,7 +1894,7 @@ exec_bind_message(StringInfo input_message)
 				{
 					if (log_parameter_max_length_on_error != 0)
 					{
-						MemoryContext oldcxt;
+						MemoryContext *oldcxt;
 
 						oldcxt = MemoryContextSwitchTo(MessageContext);
 

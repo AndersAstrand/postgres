@@ -164,7 +164,7 @@ typedef struct TypeCacheEntry
 typedef struct DomainConstraintRef
 {
 	List	   *constraints;	/* list of DomainConstraintState nodes */
-	MemoryContext refctx;		/* context holding DomainConstraintRef */
+	MemoryContext *refctx;		/* context holding DomainConstraintRef */
 	TypeCacheEntry *tcache;		/* typcache entry for domain type */
 	bool		need_exprstate; /* does caller need check_exprstate? */
 
@@ -178,7 +178,7 @@ typedef struct SharedRecordTypmodRegistry SharedRecordTypmodRegistry;
 extern TypeCacheEntry *lookup_type_cache(Oid type_id, int flags);
 
 extern void InitDomainConstraintRef(Oid type_id, DomainConstraintRef *ref,
-									MemoryContext refctx, bool need_exprstate);
+									MemoryContext *refctx, bool need_exprstate);
 
 extern void UpdateDomainConstraintRef(DomainConstraintRef *ref);
 

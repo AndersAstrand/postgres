@@ -6099,7 +6099,7 @@ ATRewriteTable(AlteredTableInfo *tab, Oid OIDNewHeap, LOCKMODE lockmode)
 		TupleTableSlot *oldslot;
 		TupleTableSlot *newslot;
 		TableScanDesc scan;
-		MemoryContext oldCxt;
+		MemoryContext *oldCxt;
 		List	   *dropped_attrs = NIL;
 		ListCell   *lc;
 		Snapshot	snapshot;
@@ -12248,8 +12248,8 @@ validateForeignKeyConstraint(char *conname,
 	TableScanDesc scan;
 	Trigger		trig = {0};
 	Snapshot	snapshot;
-	MemoryContext oldcxt;
-	MemoryContext perTupCxt;
+	MemoryContext *oldcxt;
+	MemoryContext *perTupCxt;
 
 	ereport(DEBUG1,
 			(errmsg_internal("validating foreign key constraint \"%s\"", conname)));
@@ -17499,7 +17499,7 @@ void
 register_on_commit_action(Oid relid, OnCommitAction action)
 {
 	OnCommitItem *oc;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * We needn't bother registering the relation unless there is an ON COMMIT
@@ -18784,8 +18784,8 @@ AttachPartitionEnsureIndexes(List **wqueue, Relation rel, Relation attachrel)
 	Relation   *attachrelIdxRels;
 	IndexInfo **attachInfos;
 	ListCell   *cell;
-	MemoryContext cxt;
-	MemoryContext oldcxt;
+	MemoryContext *cxt;
+	MemoryContext *oldcxt;
 
 	cxt = AllocSetContextCreate(CurrentMemoryContext,
 								"AttachPartitionEnsureIndexes",
@@ -18964,7 +18964,7 @@ CloneRowTriggersToPartition(Relation parent, Relation partition)
 	ScanKeyData key;
 	SysScanDesc scan;
 	HeapTuple	tuple;
-	MemoryContext perTupCxt;
+	MemoryContext *perTupCxt;
 
 	ScanKeyInit(&key, Anum_pg_trigger_tgrelid, BTEqualStrategyNumber,
 				F_OIDEQ, ObjectIdGetDatum(RelationGetRelid(parent)));
@@ -18984,7 +18984,7 @@ CloneRowTriggersToPartition(Relation parent, Relation partition)
 		bool		isnull;
 		List	   *cols = NIL;
 		List	   *trigargs = NIL;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/*
 		 * Ignore statement-level triggers; those are not cloned.

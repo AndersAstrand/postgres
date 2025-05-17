@@ -113,7 +113,7 @@ typedef struct RelationData
 	Oid			rd_id;			/* relation's object id */
 	LockInfoData rd_lockInfo;	/* lock mgr's info for locking relation */
 	RuleLock   *rd_rules;		/* rewrite rules */
-	MemoryContext rd_rulescxt;	/* private memory cxt for rd_rules, if any */
+	MemoryContext *rd_rulescxt; /* private memory cxt for rd_rules, if any */
 	TriggerDesc *trigdesc;		/* Trigger info, or NULL if rel has none */
 	/* use "struct" here to avoid needing to include rowsecurity.h: */
 	struct RowSecurityDesc *rd_rsdesc;	/* row security policies, or NULL */
@@ -124,15 +124,15 @@ typedef struct RelationData
 
 	/* data managed by RelationGetPartitionKey: */
 	PartitionKey rd_partkey;	/* partition key, or NULL */
-	MemoryContext rd_partkeycxt;	/* private context for rd_partkey, if any */
+	MemoryContext *rd_partkeycxt;	/* private context for rd_partkey, if any */
 
 	/* data managed by RelationGetPartitionDesc: */
 	PartitionDesc rd_partdesc;	/* partition descriptor, or NULL */
-	MemoryContext rd_pdcxt;		/* private context for rd_partdesc, if any */
+	MemoryContext *rd_pdcxt;	/* private context for rd_partdesc, if any */
 
 	/* Same as above, for partdescs that omit detached partitions */
 	PartitionDesc rd_partdesc_nodetached;	/* partdesc w/o detached parts */
-	MemoryContext rd_pddcxt;	/* for rd_partdesc_nodetached, if any */
+	MemoryContext *rd_pddcxt;	/* for rd_partdesc_nodetached, if any */
 
 	/*
 	 * pg_inherits.xmin of the partition that was excluded in
@@ -146,7 +146,7 @@ typedef struct RelationData
 	/* data managed by RelationGetPartitionQual: */
 	List	   *rd_partcheck;	/* partition CHECK quals */
 	bool		rd_partcheckvalid;	/* true if list has been computed */
-	MemoryContext rd_partcheckcxt;	/* private cxt for rd_partcheck, if any */
+	MemoryContext *rd_partcheckcxt; /* private cxt for rd_partcheck, if any */
 
 	/* data managed by RelationGetIndexList: */
 	List	   *rd_indexlist;	/* list of OIDs of indexes on relation */
@@ -201,7 +201,7 @@ typedef struct RelationData
 	 * arrays are indexed by support function number, which is a sufficient
 	 * identifier given that restriction.
 	 */
-	MemoryContext rd_indexcxt;	/* private memory cxt for this stuff */
+	MemoryContext *rd_indexcxt; /* private memory cxt for this stuff */
 	/* use "struct" here to avoid needing to include amapi.h: */
 	struct IndexAmRoutine *rd_indam;	/* index AM's API struct */
 	Oid		   *rd_opfamily;	/* OIDs of op families for each index col */

@@ -478,7 +478,7 @@ struct PlannerInfo
 	List	   *minmax_aggs;
 
 	/* context holding PlannerInfo */
-	MemoryContext planner_cxt pg_node_attr(read_write_ignore);
+	MemoryContext *planner_cxt pg_node_attr(read_write_ignore);
 
 	/* # of pages in all non-dummy tables of query */
 	Cardinality total_table_pages;

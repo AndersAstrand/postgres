@@ -106,14 +106,14 @@ typedef struct CachedPlanSource
 	int			cursor_options; /* cursor options used for planning */
 	bool		fixed_result;	/* disallow change in result tupdesc? */
 	TupleDesc	resultDesc;		/* result type; NULL = doesn't return tuples */
-	MemoryContext context;		/* memory context holding all above */
+	MemoryContext *context;		/* memory context holding all above */
 	/* These fields describe the current analyzed-and-rewritten query tree: */
 	List	   *query_list;		/* list of Query nodes, or NIL if not valid */
 	List	   *relationOids;	/* OIDs of relations the queries depend on */
 	List	   *invalItems;		/* other dependencies, as PlanInvalItems */
 	struct SearchPathMatcher *search_path;	/* search_path used for parsing
 											 * and planning */
-	MemoryContext query_context;	/* context holding the above, or NULL */
+	MemoryContext *query_context;	/* context holding the above, or NULL */
 	Oid			rewriteRoleId;	/* Role ID we did rewriting for */
 	bool		rewriteRowSecurity; /* row_security used during rewrite */
 	bool		dependsOnRLS;	/* is rewritten query specific to the above? */
@@ -157,7 +157,7 @@ typedef struct CachedPlan
 								 * changes from this value */
 	int			generation;		/* parent's generation number for this plan */
 	int			refcount;		/* count of live references to this struct */
-	MemoryContext context;		/* context containing this CachedPlan */
+	MemoryContext *context;		/* context containing this CachedPlan */
 } CachedPlan;
 
 /*
@@ -180,7 +180,7 @@ typedef struct CachedExpression
 	/* remaining fields should be treated as private to plancache.c: */
 	List	   *relationOids;	/* OIDs of relations the expr depends on */
 	List	   *invalItems;		/* other dependencies, as PlanInvalItems */
-	MemoryContext context;		/* context containing this CachedExpression */
+	MemoryContext *context;		/* context containing this CachedExpression */
 	dlist_node	node;			/* link in global list of CachedExpressions */
 } CachedExpression;
 
@@ -198,7 +198,7 @@ extern CachedPlanSource *CreateOneShotCachedPlan(struct RawStmt *raw_parse_tree,
 												 CommandTag commandTag);
 extern void CompleteCachedPlan(CachedPlanSource *plansource,
 							   List *querytree_list,
-							   MemoryContext querytree_context,
+							   MemoryContext *querytree_context,
 							   Oid *param_types,
 							   int num_params,
 							   ParserSetupHook parserSetup,
@@ -210,7 +210,7 @@ extern void SaveCachedPlan(CachedPlanSource *plansource);
 extern void DropCachedPlan(CachedPlanSource *plansource);
 
 extern void CachedPlanSetParentContext(CachedPlanSource *plansource,
-									   MemoryContext newcontext);
+									   MemoryContext *newcontext);
 
 extern CachedPlanSource *CopyCachedPlan(CachedPlanSource *plansource);
 

@@ -594,7 +594,7 @@ Async_Notify(const char *channel, const char *payload)
 	size_t		channel_len;
 	size_t		payload_len;
 	Notification *n;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (IsParallelWorker())
 		elog(ERROR, "cannot send notifications from a parallel worker");
@@ -689,7 +689,7 @@ Async_Notify(const char *channel, const char *payload)
 static void
 queue_listen(ListenActionKind action, const char *channel)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ListenAction *actrec;
 	int			my_level = GetCurrentTransactionNestLevel();
 
@@ -1135,7 +1135,7 @@ Exec_ListenPreCommit(void)
 static void
 Exec_ListenCommit(const char *channel)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Do nothing if we are already listening on this channel */
 	if (IsListeningOn(channel))
@@ -2182,7 +2182,7 @@ asyncQueueAdvanceTail(void)
 static void
 ProcessIncomingNotify(bool flush)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* We *must* reset the flag */
 	notifyInterruptPending = false;

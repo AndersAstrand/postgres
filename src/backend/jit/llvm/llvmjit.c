@@ -733,7 +733,7 @@ static void
 llvm_compile_module(LLVMJitContext *context)
 {
 	LLVMJitHandle *handle;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	instr_time	starttime;
 	instr_time	endtime;
 #if LLVM_VERSION_MAJOR > 11
@@ -863,7 +863,7 @@ llvm_compile_module(LLVMJitContext *context)
 static void
 llvm_session_initialize(void)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	char	   *error = NULL;
 	char	   *cpu = NULL;
 	char	   *features = NULL;

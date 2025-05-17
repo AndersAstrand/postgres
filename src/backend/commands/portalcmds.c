@@ -47,7 +47,7 @@ PerformCursorOpen(ParseState *pstate, DeclareCursorStmt *cstmt, ParamListInfo pa
 	List	   *rewritten;
 	PlannedStmt *plan;
 	Portal		portal;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	char	   *queryString;
 
 	/*
@@ -318,8 +318,8 @@ PersistHoldablePortal(Portal portal)
 	QueryDesc  *queryDesc = portal->queryDesc;
 	Portal		saveActivePortal;
 	ResourceOwner saveResourceOwner;
-	MemoryContext savePortalContext;
-	MemoryContext oldcxt;
+	MemoryContext *savePortalContext;
+	MemoryContext *oldcxt;
 
 	/*
 	 * If we're preserving a holdable portal, we had better be inside the

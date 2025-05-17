@@ -78,8 +78,8 @@ InitMaterializedSRF(FunctionCallInfo fcinfo, bits32 flags)
 	bool		random_access;
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	Tuplestorestate *tupstore;
-	MemoryContext old_context,
-				per_query_ctx;
+	MemoryContext *old_context,
+			   *per_query_ctx;
 	TupleDesc	stored_tupdesc;
 
 	/* check to see if caller supports returning a tuplestore */
@@ -148,7 +148,7 @@ init_MultiFuncCall(PG_FUNCTION_ARGS)
 		 * First call
 		 */
 		ReturnSetInfo *rsi = (ReturnSetInfo *) fcinfo->resultinfo;
-		MemoryContext multi_call_ctx;
+		MemoryContext *multi_call_ctx;
 
 		/*
 		 * Create a suitably long-lived context to hold cross-call data

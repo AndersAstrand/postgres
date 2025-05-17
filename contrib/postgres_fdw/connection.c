@@ -189,7 +189,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 	bool		retry = false;
 	ConnCacheEntry *entry;
 	ConnCacheKey key;
-	MemoryContext ccxt = CurrentMemoryContext;
+	MemoryContext *ccxt = CurrentMemoryContext;
 
 	/* First time through, initialize connection cache hashtable */
 	if (ConnectionHash == NULL)
@@ -274,7 +274,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt, PgFdwConnState **state)
 	}
 	PG_CATCH();
 	{
-		MemoryContext ecxt = MemoryContextSwitchTo(ccxt);
+		MemoryContext *ecxt = MemoryContextSwitchTo(ccxt);
 		ErrorData  *errdata = CopyErrorData();
 
 		/*

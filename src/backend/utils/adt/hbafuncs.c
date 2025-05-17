@@ -377,8 +377,8 @@ fill_hba_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	List	   *hba_lines = NIL;
 	ListCell   *line;
 	int			rule_number = 0;
-	MemoryContext hbacxt;
-	MemoryContext oldcxt;
+	MemoryContext *hbacxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * In the unlikely event that we can't open pg_hba.conf, we throw an
@@ -524,8 +524,8 @@ fill_ident_view(Tuplestorestate *tuple_store, TupleDesc tupdesc)
 	List	   *ident_lines = NIL;
 	ListCell   *line;
 	int			map_number = 0;
-	MemoryContext identcxt;
-	MemoryContext oldcxt;
+	MemoryContext *identcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * In the unlikely event that we can't open pg_ident.conf, we throw an

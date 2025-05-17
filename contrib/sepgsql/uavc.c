@@ -53,7 +53,7 @@ typedef struct
 #define AVC_NUM_RECLAIM		16
 #define AVC_DEF_THRESHOLD	384
 
-static MemoryContext avc_mem_cxt;
+static MemoryContext *avc_mem_cxt;
 static List *avc_slots[AVC_NUM_SLOTS];	/* avc's hash buckets */
 static int	avc_num_caches;		/* number of caches currently used */
 static int	avc_lru_hint;		/* index of the buckets to be reclaimed next */
@@ -201,7 +201,7 @@ sepgsql_avc_compute(const char *scontext, const char *tcontext, uint16 tclass)
 {
 	char	   *ucontext = NULL;
 	char	   *ncontext = NULL;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	avc_cache  *cache;
 	uint32		hash;
 	int			index;

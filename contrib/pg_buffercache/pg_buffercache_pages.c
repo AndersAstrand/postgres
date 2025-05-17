@@ -70,7 +70,7 @@ pg_buffercache_pages(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *funcctx;
 	Datum		result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	BufferCachePagesContext *fctx;	/* User function context. */
 	TupleDesc	tupledesc;
 	TupleDesc	expected_tupledesc;

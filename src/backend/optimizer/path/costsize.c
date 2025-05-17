@@ -3999,7 +3999,7 @@ cached_scansel(PlannerInfo *root, RestrictInfo *rinfo, PathKey *pathkey)
 				leftendsel,
 				rightstartsel,
 				rightendsel;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Do we have this result already? */
 	foreach(lc, rinfo->scansel_cache)

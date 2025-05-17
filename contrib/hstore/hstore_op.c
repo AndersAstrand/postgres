@@ -850,7 +850,7 @@ static void
 setup_firstcall(FuncCallContext *funcctx, HStore *hs,
 				FunctionCallInfo fcinfo)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	HStore	   *st;
 
 	oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);

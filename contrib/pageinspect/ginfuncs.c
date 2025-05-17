@@ -193,7 +193,7 @@ gin_leafpage_items(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext mctx;
+		MemoryContext *mctx;
 		Page		page;
 		GinPageOpaque opaq;
 

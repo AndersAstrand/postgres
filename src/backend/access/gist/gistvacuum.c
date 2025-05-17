@@ -39,7 +39,7 @@ typedef struct
 	 */
 	IntegerSet *internal_page_set;
 	IntegerSet *empty_leaf_set;
-	MemoryContext page_set_context;
+	MemoryContext *page_set_context;
 } GistVacState;
 
 static void gistvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
@@ -130,7 +130,7 @@ gistvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	BlockNumber num_pages;
 	bool		needLock;
 	BlockNumber blkno;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 
 	/*
 	 * Reset fields that track information about the entire index now.  This

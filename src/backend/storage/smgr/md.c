@@ -83,7 +83,7 @@ typedef struct _MdfdVec
 	BlockNumber mdfd_segno;		/* segment number, from 0 */
 } MdfdVec;
 
-static MemoryContext MdCxt;		/* context for all MdfdVec objects */
+static MemoryContext *MdCxt;	/* context for all MdfdVec objects */
 SMgrId		MdSMgrId;
 
 typedef struct MdSMgrRelationData

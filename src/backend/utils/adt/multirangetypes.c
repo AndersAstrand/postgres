@@ -1339,7 +1339,7 @@ multirange_intersect_internal(Oid mltrngtypoid, TypeCacheEntry *rangetyp,
 Datum
 range_agg_transfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
+	MemoryContext *aggContext;
 	Oid			rngtypoid;
 	ArrayBuildState *state;
 
@@ -1371,7 +1371,7 @@ range_agg_transfn(PG_FUNCTION_ARGS)
 Datum
 range_agg_finalfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
+	MemoryContext *aggContext;
 	Oid			mltrngtypoid;
 	TypeCacheEntry *typcache;
 	ArrayBuildState *state;
@@ -1411,7 +1411,7 @@ range_agg_finalfn(PG_FUNCTION_ARGS)
 Datum
 multirange_agg_transfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
+	MemoryContext *aggContext;
 	Oid			mltrngtypoid;
 	TypeCacheEntry *typcache;
 	TypeCacheEntry *rngtypcache;
@@ -1464,7 +1464,7 @@ multirange_agg_transfn(PG_FUNCTION_ARGS)
 Datum
 multirange_intersect_agg_transfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
+	MemoryContext *aggContext;
 	Oid			mltrngtypoid;
 	TypeCacheEntry *typcache;
 	MultirangeType *result;
@@ -2721,7 +2721,7 @@ multirange_unnest(PG_FUNCTION_ARGS)
 
 	FuncCallContext *funcctx;
 	multirange_unnest_fctx *fctx;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())

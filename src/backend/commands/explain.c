@@ -463,8 +463,8 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	BufferUsage bufusage_start,
 				bufusage;
 	MemoryContextCounters mem_counters;
-	MemoryContext planner_ctx = NULL;
-	MemoryContext saved_ctx = NULL;
+	MemoryContext *planner_ctx = NULL;
+	MemoryContext *saved_ctx = NULL;
 
 	if (es->memory)
 	{
@@ -5319,7 +5319,7 @@ typedef struct SerializeDestReceiver
 	TupleDesc	attrinfo;		/* the output tuple desc */
 	int			nattrs;			/* current number of columns */
 	FmgrInfo   *finfos;			/* precomputed call info for output fns */
-	MemoryContext tmpcontext;	/* per-row temporary memory context */
+	MemoryContext *tmpcontext;	/* per-row temporary memory context */
 	StringInfoData buf;			/* buffer to hold the constructed message */
 	SerializeMetrics metrics;	/* collected metrics */
 } SerializeDestReceiver;
@@ -5388,7 +5388,7 @@ serializeAnalyzeReceive(TupleTableSlot *slot, DestReceiver *self)
 {
 	TupleDesc	typeinfo = slot->tts_tupleDescriptor;
 	SerializeDestReceiver *myState = (SerializeDestReceiver *) self;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	StringInfo	buf = &myState->buf;
 	int			natts = typeinfo->natts;
 	instr_time	start,

@@ -3708,7 +3708,7 @@ check_sql_expr(const char *stmt, RawParseMode parseMode, int location)
 {
 	sql_error_callback_arg cbarg;
 	ErrorContextCallback  syntax_errcontext;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	if (!plpgsql_check_syntax)
 		return;

@@ -217,7 +217,7 @@ typedef struct
 	 * Remaining fields are only used during dictionary construction; they are
 	 * set up by NIStartBuild and cleared by NIFinishBuild.
 	 */
-	MemoryContext buildCxt;		/* temp context for construction */
+	MemoryContext *buildCxt;	/* temp context for construction */
 
 	/* Temporary array of all words in the dict file */
 	SPELL	  **Spell;

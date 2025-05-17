@@ -35,23 +35,23 @@ typedef struct MemoryContextCounters
 } MemoryContextCounters;
 
 /*
- * MemoryContext
+ * MemoryContext *
  *		A logical context in which memory allocations occur.
  *
- * MemoryContext itself is an abstract type that can have multiple
+ * MemoryContext * itself is an abstract type that can have multiple
  * implementations.
  * The function pointers in MemoryContextMethods define one specific
- * implementation of MemoryContext --- they are a virtual function table
+ * implementation of MemoryContext * --- they are a virtual function table
  * in C++ terms.
  *
  * Node types that are actual implementations of memory contexts must
- * begin with the same fields as MemoryContextData.
+ * begin with the same fields as MemoryContext.
  *
- * Note: for largely historical reasons, typedef MemoryContext is a pointer
+ * Note: for largely historical reasons, typedef MemoryContext * is a pointer
  * to the context struct rather than the struct type itself.
  */
 
-typedef void (*MemoryStatsPrintFunc) (MemoryContext context, void *passthru,
+typedef void (*MemoryStatsPrintFunc) (MemoryContext *context, void *passthru,
 									  const char *stats_string,
 									  bool print_to_stderr);
 
@@ -63,7 +63,7 @@ typedef struct MemoryContextMethods
 	 * MCXT_ALLOC_HUGE and MCXT_ALLOC_NO_OOM.  MCXT_ALLOC_ZERO is handled by
 	 * the calling function.
 	 */
-	void	   *(*alloc) (MemoryContext context, Size size, int flags);
+	void	   *(*alloc) (MemoryContext *context, Size size, int flags);
 
 	/* call this free_p in case someone #define's free() */
 	void		(*free_p) (void *pointer);
@@ -80,13 +80,13 @@ typedef struct MemoryContextMethods
 	 * prepare the context for a new set of allocations.  Implementations may
 	 * optionally free() excess memory back to the OS during this time.
 	 */
-	void		(*reset) (MemoryContext context);
+	void		(*reset) (MemoryContext *context);
 
-	/* Free all memory consumed by the given MemoryContext. */
-	void		(*delete_context) (MemoryContext context);
+	/* Free all memory consumed by the given MemoryContext *. */
+	void		(*delete_context) (MemoryContext *context);
 
-	/* Return the MemoryContext that the given pointer belongs to. */
-	MemoryContext (*get_chunk_context) (void *pointer);
+	/* Return the MemoryContext * that the given pointer belongs to. */
+	MemoryContext *(*get_chunk_context) (void *pointer);
 
 	/*
 	 * Return the number of bytes consumed by the given pointer within its
@@ -95,11 +95,11 @@ typedef struct MemoryContextMethods
 	Size		(*get_chunk_space) (void *pointer);
 
 	/*
-	 * Return true if the given MemoryContext has not had any allocations
+	 * Return true if the given MemoryContext * has not had any allocations
 	 * since it was created or last reset.
 	 */
-	bool		(*is_empty) (MemoryContext context);
-	void		(*stats) (MemoryContext context,
+	bool		(*is_empty) (MemoryContext *context);
+	void		(*stats) (MemoryContext *context,
 						  MemoryStatsPrintFunc printfunc, void *passthru,
 						  MemoryContextCounters *totals,
 						  bool print_to_stderr);
@@ -109,12 +109,12 @@ typedef struct MemoryContextMethods
 	 * Perform validation checks on the given context and raise any discovered
 	 * anomalies as WARNINGs.
 	 */
-	void		(*check) (MemoryContext context);
+	void		(*check) (MemoryContext *context);
 #endif
 } MemoryContextMethods;
 
 
-typedef struct MemoryContextData
+typedef struct MemoryContext
 {
 	pg_node_attr(abstract)		/* there are no nodes of this type */
 
@@ -124,16 +124,16 @@ typedef struct MemoryContextData
 	bool		allowInCritSection; /* allow palloc in critical section */
 	Size		mem_allocated;	/* track memory allocated for this context */
 	const MemoryContextMethods *methods;	/* virtual function table */
-	MemoryContext parent;		/* NULL if no parent (toplevel context) */
-	MemoryContext firstchild;	/* head of linked list of children */
-	MemoryContext prevchild;	/* previous child of same parent */
-	MemoryContext nextchild;	/* next child of same parent */
+	MemoryContext *parent;		/* NULL if no parent (toplevel context) */
+	MemoryContext *firstchild;	/* head of linked list of children */
+	MemoryContext *prevchild;	/* previous child of same parent */
+	MemoryContext *nextchild;	/* next child of same parent */
 	const char *name;			/* context name (just for debugging) */
 	const char *ident;			/* context ID if any (just for debugging) */
 	MemoryContextCallback *reset_cbs;	/* list of reset/delete callbacks */
-} MemoryContextData;
+} MemoryContext;
 
-/* utils/palloc.h contains typedef struct MemoryContextData *MemoryContext */
+/* utils/palloc.h contains typedef struct MemoryContext *MemoryContext * */
 
 
 /*

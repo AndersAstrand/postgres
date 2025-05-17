@@ -665,7 +665,7 @@ gistFetchAtt(GISTSTATE *giststate, int nkey, Datum k, Relation r)
 HeapTuple
 gistFetchTuple(GISTSTATE *giststate, Relation r, IndexTuple tuple)
 {
-	MemoryContext oldcxt = MemoryContextSwitchTo(giststate->tempCxt);
+	MemoryContext *oldcxt = MemoryContextSwitchTo(giststate->tempCxt);
 	Datum		fetchatt[INDEX_MAX_KEYS];
 	bool		isnull[INDEX_MAX_KEYS];
 	int			i;

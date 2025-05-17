@@ -198,7 +198,7 @@ static const char *const map_old_guc_names[] = {
 
 
 /* Memory context holding all GUC-related data */
-static MemoryContext GUCMemoryContext;
+static MemoryContext *GUCMemoryContext;
 
 /*
  * We use a dynahash table to look up GUCs by name, or to iterate through
@@ -5284,7 +5284,7 @@ MarkGUCPrefixReserved(const char *className)
 	int			classLen = strlen(className);
 	HASH_SEQ_STATUS status;
 	GUCHashEntry *hentry;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Check for existing placeholders.  We must actually remove invalid

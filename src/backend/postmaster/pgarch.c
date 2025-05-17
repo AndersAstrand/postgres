@@ -103,7 +103,7 @@ static time_t last_sigterm_time = 0;
 static PgArchData *PgArch = NULL;
 static const ArchiveModuleCallbacks *ArchiveCallbacks;
 static ArchiveModuleState *archive_module_state;
-static MemoryContext archive_context;
+static MemoryContext *archive_context;
 
 
 /*
@@ -516,7 +516,7 @@ static bool
 pgarch_archiveXlog(char *xlog)
 {
 	sigjmp_buf	local_sigjmp_buf;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	char		pathname[MAXPGPATH];
 	char		activitymsg[MAXFNAMELEN + 16];
 	bool		ret;

@@ -55,7 +55,7 @@ typedef struct PartitionPruneContext
 	Oid		   *partcollation;
 	FmgrInfo   *partsupfunc;
 	FmgrInfo   *stepcmpfuncs;
-	MemoryContext ppccontext;
+	MemoryContext *ppccontext;
 	PlanState  *planstate;
 	ExprContext *exprcontext;
 	ExprState **exprstates;
