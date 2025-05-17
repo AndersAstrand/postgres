@@ -200,9 +200,10 @@ typedef struct TransactionStateData
 	TBlockState blockState;		/* high-level state */
 	int			nestingLevel;	/* transaction nesting depth */
 	int			gucNestLevel;	/* GUC context nesting depth */
-	MemoryContext curTransactionContext;	/* my xact-lifetime context */
+	MemoryContext *curTransactionContext;	/* my xact-lifetime context */
 	ResourceOwner curTransactionOwner;	/* my query resources */
-	MemoryContext priorContext; /* CurrentMemoryContext before xact started */
+	MemoryContext *priorContext;	/* CurrentMemoryContext before xact
+									 * started */
 	TransactionId *childXids;	/* subcommitted child XIDs, in XID order */
 	int			nChildXids;		/* # of subcommitted child XIDs */
 	int			maxChildXids;	/* allocated size of childXids[] */
@@ -300,7 +301,7 @@ bool		xact_is_sampled = false;
  * at startup to ensure that AbortTransaction and AbortSubTransaction can work
  * when we've run out of memory.
  */
-static MemoryContext TransactionAbortContext = NULL;
+static MemoryContext *TransactionAbortContext = NULL;
 
 /*
  * List of add-on start- and end-of-xact callbacks

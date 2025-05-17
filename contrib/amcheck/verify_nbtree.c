@@ -87,7 +87,7 @@ typedef struct BtreeCheckState
 	/* Also check uniqueness constraint if index is unique */
 	bool		checkunique;
 	/* Per-page context */
-	MemoryContext targetcontext;
+	MemoryContext *targetcontext;
 	/* Buffer access strategy */
 	BufferAccessStrategy checkstrategy;
 
@@ -637,7 +637,7 @@ bt_check_level_from_leftmost(BtreeCheckState *state, BtreeLevel level)
 {
 	/* State to establish early, concerning entire level */
 	BTPageOpaque opaque;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	BtreeLevel	nextleveldown;
 
 	/* Variables for iterating across level using right links */

@@ -658,7 +658,7 @@ typedef struct spgInnerConsistentIn
 
     Datum       reconstructedValue;     /* value reconstructed at parent */
     void       *traversalValue; /* opclass-specific traverse value */
-    MemoryContext traversalMemoryContext;   /* put new traverse values here */
+    MemoryContext *traversalMemoryContext;   /* put new traverse values here */
     int         level;          /* current level (counting from zero) */
     bool        returnData;     /* original data must be returned? */
 

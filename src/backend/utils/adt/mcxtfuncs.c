@@ -65,7 +65,7 @@ int_list_to_array(const List *list)
  */
 static void
 PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
-								 TupleDesc tupdesc, MemoryContext context,
+								 TupleDesc tupdesc, MemoryContext *context,
 								 HTAB *context_id_lookup)
 {
 #define PG_GET_BACKEND_MEMORY_CONTEXTS_COLS	10
@@ -84,7 +84,7 @@ PutMemoryContextsStatsTupleStore(Tuplestorestate *tupstore,
 	 * Figure out the transient context_id of this context and each of its
 	 * ancestors.
 	 */
-	for (MemoryContext cur = context; cur != NULL; cur = cur->parent)
+	for (MemoryContext *cur = context; cur != NULL; cur = cur->parent)
 	{
 		MemoryStatsContextId *entry;
 		bool		found;
@@ -226,7 +226,7 @@ pg_get_backend_memory_contexts(PG_FUNCTION_ARGS)
 	/* TopMemoryContext will always have a context_id of 1 */
 	context_id = 1;
 
-	foreach_ptr(MemoryContextData, cur, contexts)
+	foreach_ptr(MemoryContext, cur, contexts)
 	{
 		MemoryStatsContextId *entry;
 		bool		found;
@@ -250,7 +250,7 @@ pg_get_backend_memory_contexts(PG_FUNCTION_ARGS)
 		 * Append all children onto the contexts list so they're processed by
 		 * subsequent iterations.
 		 */
-		for (MemoryContext c = cur->firstchild; c != NULL; c = c->nextchild)
+		for (MemoryContext *c = cur->firstchild; c != NULL; c = c->nextchild)
 			contexts = lappend(contexts, c);
 	}
 
@@ -535,7 +535,7 @@ pg_get_process_memory_contexts(PG_FUNCTION_ARGS)
 	/* Attach to the dsa area if we have not already done so */
 	if (MemoryStatsDsaArea == NULL)
 	{
-		MemoryContext oldcontext = CurrentMemoryContext;
+		MemoryContext *oldcontext = CurrentMemoryContext;
 
 		MemoryContextSwitchTo(TopMemoryContext);
 		MemoryStatsDsaArea = dsa_attach(memCxtArea->memstats_dsa_handle);

@@ -100,7 +100,7 @@ struct PartitionTupleRouting
 	bool	   *is_borrowed_rel;
 	int			num_partitions;
 	int			max_partitions;
-	MemoryContext memcxt;
+	MemoryContext *memcxt;
 };
 
 /*-----------------------
@@ -278,7 +278,7 @@ ExecFindPartition(ModifyTableState *mtstate,
 	TupleTableSlot *ecxt_scantuple_saved = ecxt->ecxt_scantuple;
 	TupleTableSlot *rootslot = slot;
 	TupleTableSlot *myslot = NULL;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ResultRelInfo *rri = NULL;
 
 	/* use per-tuple context here to avoid leaking memory */
@@ -508,7 +508,7 @@ ExecInitPartitionInfo(ModifyTableState *mtstate, EState *estate,
 	int			firstVarno = mtstate->resultRelInfo[0].ri_RangeTableIndex;
 	Relation	firstResultRel = mtstate->resultRelInfo[0].ri_RelationDesc;
 	ResultRelInfo *leaf_part_rri;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	AttrMap    *part_attmap = NULL;
 	bool		found_whole_row;
 
@@ -995,7 +995,7 @@ ExecInitRoutingInfo(ModifyTableState *mtstate,
 					int partidx,
 					bool is_borrowed_rel)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			rri_index;
 
 	oldcxt = MemoryContextSwitchTo(proute->memcxt);
@@ -1104,7 +1104,7 @@ ExecInitPartitionDispatchInfo(EState *estate,
 	PartitionDesc partdesc;
 	PartitionDispatch pd;
 	int			dispatchidx;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * For data modification, it is better that executor does not include
@@ -2557,7 +2557,7 @@ ExecFindMatchingSubPlans(PartitionPruneState *prunestate,
 						 Bitmapset **validsubplan_rtis)
 {
 	Bitmapset  *result = NULL;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			i;
 
 	/*

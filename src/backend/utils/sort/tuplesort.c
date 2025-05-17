@@ -642,9 +642,9 @@ Tuplesortstate *
 tuplesort_begin_common(int workMem, SortCoordinate coordinate, int sortopt)
 {
 	Tuplesortstate *state;
-	MemoryContext maincontext;
-	MemoryContext sortcontext;
-	MemoryContext oldcontext;
+	MemoryContext *maincontext;
+	MemoryContext *sortcontext;
+	MemoryContext *oldcontext;
 
 	/* See leader_takeover_tapes() remarks on random access support */
 	if (coordinate && (sortopt & TUPLESORT_RANDOMACCESS))
@@ -751,7 +751,7 @@ tuplesort_begin_common(int workMem, SortCoordinate coordinate, int sortopt)
 static void
 tuplesort_begin_batch(Tuplesortstate *state)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(state->base.maincontext);
 
@@ -897,7 +897,7 @@ static void
 tuplesort_free(Tuplesortstate *state)
 {
 	/* context swap probably not needed, but let's be safe */
-	MemoryContext oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
 	int64		spaceUsed;
 
 	if (state->tapeset)
@@ -1169,7 +1169,7 @@ void
 tuplesort_puttuple_common(Tuplesortstate *state, SortTuple *tuple,
 						  bool useAbbrev, Size tuplen)
 {
-	MemoryContext oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
 
 	Assert(!LEADER(state));
 
@@ -1362,7 +1362,7 @@ consider_abort_common(Tuplesortstate *state)
 void
 tuplesort_performsort(Tuplesortstate *state)
 {
-	MemoryContext oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
 
 	if (trace_sort)
 		elog(LOG, "performsort of worker %d starting: %s",
@@ -1709,7 +1709,7 @@ tuplesort_gettuple_common(Tuplesortstate *state, bool forward,
 bool
 tuplesort_skiptuples(Tuplesortstate *state, int64 ntuples, bool forward)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * We don't actually support backwards skip yet, because no callers need
@@ -2401,7 +2401,7 @@ dumptuples(Tuplesortstate *state, bool alltuples)
 void
 tuplesort_rescan(Tuplesortstate *state)
 {
-	MemoryContext oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
 
 	Assert(state->base.sortopt & TUPLESORT_RANDOMACCESS);
 
@@ -2434,7 +2434,7 @@ tuplesort_rescan(Tuplesortstate *state)
 void
 tuplesort_markpos(Tuplesortstate *state)
 {
-	MemoryContext oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
 
 	Assert(state->base.sortopt & TUPLESORT_RANDOMACCESS);
 
@@ -2465,7 +2465,7 @@ tuplesort_markpos(Tuplesortstate *state)
 void
 tuplesort_restorepos(Tuplesortstate *state)
 {
-	MemoryContext oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(state->base.sortcontext);
 
 	Assert(state->base.sortopt & TUPLESORT_RANDOMACCESS);
 

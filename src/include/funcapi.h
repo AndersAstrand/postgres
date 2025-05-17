@@ -98,7 +98,7 @@ typedef struct FuncCallContext
 	 * context for any memory that is to be reused across multiple calls of
 	 * the SRF.
 	 */
-	MemoryContext multi_call_memory_ctx;
+	MemoryContext *multi_call_memory_ctx;
 
 	/*
 	 * OPTIONAL pointer to struct containing tuple description
@@ -246,7 +246,7 @@ HeapTupleGetDatum(const HeapTupleData *tuple)
  * {
  *	FuncCallContext    *funcctx;
  *	Datum				result;
- *	MemoryContext		oldcontext;
+ *	MemoryContext	   *oldcontext;
  *	<user defined declarations>
  *
  *	if (SRF_IS_FIRSTCALL())

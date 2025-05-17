@@ -140,9 +140,9 @@ extern TupleHashTable BuildTupleHashTable(PlanState *parent,
 										  Oid *collations,
 										  long nbuckets,
 										  Size additionalsize,
-										  MemoryContext metacxt,
-										  MemoryContext tablecxt,
-										  MemoryContext tempcxt,
+										  MemoryContext *metacxt,
+										  MemoryContext *tablecxt,
+										  MemoryContext *tempcxt,
 										  bool use_variable_hash_iv);
 extern TupleHashEntry LookupTupleHashEntry(TupleHashTable hashtable,
 										   TupleTableSlot *slot,
@@ -460,7 +460,7 @@ ExecEvalExprSwitchContext(ExprState *state,
 						  bool *isNull)
 {
 	Datum		retDatum;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 	retDatum = state->evalfunc(state, econtext, isNull);
@@ -480,7 +480,7 @@ static inline void
 ExecEvalExprNoReturnSwitchContext(ExprState *state,
 								  ExprContext *econtext)
 {
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 	ExecEvalExprNoReturn(state, econtext);
@@ -584,14 +584,14 @@ extern SetExprState *ExecInitTableFunctionResult(Expr *expr,
 												 ExprContext *econtext, PlanState *parent);
 extern Tuplestorestate *ExecMakeTableFunctionResult(SetExprState *setexpr,
 													ExprContext *econtext,
-													MemoryContext argContext,
+													MemoryContext *argContext,
 													TupleDesc expectedDesc,
 													bool randomAccess);
 extern SetExprState *ExecInitFunctionResultSet(Expr *expr,
 											   ExprContext *econtext, PlanState *parent);
 extern Datum ExecMakeFunctionResultSet(SetExprState *fcache,
 									   ExprContext *econtext,
-									   MemoryContext argContext,
+									   MemoryContext *argContext,
 									   bool *isNull,
 									   ExprDoneCond *isDone);
 

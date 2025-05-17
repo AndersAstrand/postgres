@@ -126,8 +126,8 @@ daitch_mokotoff(PG_FUNCTION_ARGS)
 	Datum		retval;
 	char	   *string;
 	ArrayBuildState *soundex;
-	MemoryContext old_ctx,
-				tmp_ctx;
+	MemoryContext *old_ctx,
+			   *tmp_ctx;
 
 	/* Work in a temporary context to simplify cleanup. */
 	tmp_ctx = AllocSetContextCreate(CurrentMemoryContext,

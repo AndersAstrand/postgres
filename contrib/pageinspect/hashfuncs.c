@@ -307,7 +307,7 @@ hash_page_items(PG_FUNCTION_ARGS)
 	uint32		hashkey;
 	HeapTuple	tuple;
 	FuncCallContext *fctx;
-	MemoryContext mctx;
+	MemoryContext *mctx;
 	struct user_args *uargs;
 
 	if (!superuser())

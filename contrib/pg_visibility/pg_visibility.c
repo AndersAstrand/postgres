@@ -185,7 +185,7 @@ pg_visibility_map_rel(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		Oid			relid = PG_GETARG_OID(0);
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -229,7 +229,7 @@ pg_visibility_rel(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		Oid			relid = PG_GETARG_OID(0);
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -329,7 +329,7 @@ pg_check_frozen(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		Oid			relid = PG_GETARG_OID(0);
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -361,7 +361,7 @@ pg_check_visible(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		Oid			relid = PG_GETARG_OID(0);
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);

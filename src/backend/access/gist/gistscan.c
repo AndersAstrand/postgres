@@ -76,7 +76,7 @@ gistbeginscan(Relation r, int nkeys, int norderbys)
 	IndexScanDesc scan;
 	GISTSTATE  *giststate;
 	GISTScanOpaque so;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	scan = RelationGetIndexScan(r, nkeys, norderbys);
 
@@ -131,7 +131,7 @@ gistrescan(IndexScanDesc scan, ScanKey key, int nkeys,
 	GISTScanOpaque so = (GISTScanOpaque) scan->opaque;
 	bool		first_time;
 	int			i;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	/* rescan an existing indexscan --- reset state */
 

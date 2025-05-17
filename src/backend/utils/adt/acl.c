@@ -1781,7 +1781,7 @@ aclexplode(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		check_acl(acl);
 
@@ -5140,7 +5140,7 @@ roles_is_member_of(Oid roleid, enum RoleRecurseType type,
 	List	   *roles_list;
 	ListCell   *l;
 	List	   *new_cached_roles;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	bloom_filter *bf = NULL;
 
 	Assert(OidIsValid(admin_of) == PointerIsValid(admin_role));

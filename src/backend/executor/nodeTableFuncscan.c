@@ -268,7 +268,7 @@ static void
 tfuncFetchRows(TableFuncScanState *tstate, ExprContext *econtext)
 {
 	const TableFuncRoutine *routine = tstate->routine;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	Datum		value;
 	bool		isnull;
 
@@ -440,7 +440,7 @@ tfuncLoadRows(TableFuncScanState *tstate, ExprContext *econtext)
 	Datum	   *values = slot->tts_values;
 	bool	   *nulls = slot->tts_isnull;
 	int			natts = tupdesc->natts;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			ordinalitycol;
 
 	ordinalitycol =

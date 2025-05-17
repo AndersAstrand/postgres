@@ -1109,7 +1109,7 @@ ExportSnapshot(Snapshot snapshot)
 	StringInfoData buf;
 	FILE	   *f;
 	int			i;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	char		path[MAXPGPATH];
 	char		pathtmp[MAXPGPATH];
 

@@ -33,7 +33,7 @@ typedef struct BrinValues
 	bool		bv_allnulls;	/* are all values nulls in the page range? */
 	Datum	   *bv_values;		/* current accumulated values */
 	Datum		bv_mem_value;	/* expanded accumulated values */
-	MemoryContext bv_context;
+	MemoryContext *bv_context;
 	brin_serialize_callback_type bv_serialize;
 } BrinValues;
 
@@ -46,7 +46,7 @@ typedef struct BrinMemTuple
 	bool		bt_placeholder; /* this is a placeholder tuple */
 	bool		bt_empty_range; /* range represents no tuples */
 	BlockNumber bt_blkno;		/* heap blkno that the tuple is for */
-	MemoryContext bt_context;	/* memcxt holding the bt_columns values */
+	MemoryContext *bt_context;	/* memcxt holding the bt_columns values */
 	/* output arrays for brin_deform_tuple: */
 	Datum	   *bt_values;		/* values array */
 	bool	   *bt_allnulls;	/* allnulls array */

@@ -213,7 +213,7 @@ static bool get_actual_variable_endpoint(Relation heapRel,
 										 int16 typLen,
 										 bool typByVal,
 										 TupleTableSlot *tableslot,
-										 MemoryContext outercontext,
+										 MemoryContext *outercontext,
 										 Datum *endpointDatum);
 static RelOptInfo *find_join_input_rel(PlannerInfo *root, Relids relids);
 static double btcost_correlation(IndexOptInfo *index,
@@ -6547,8 +6547,8 @@ get_actual_variable_range(PlannerInfo *root, VariableStatData *vardata,
 		 * can be used by both invocations of get_actual_variable_endpoint.
 		 */
 		{
-			MemoryContext tmpcontext;
-			MemoryContext oldcontext;
+			MemoryContext *tmpcontext;
+			MemoryContext *oldcontext;
 			Relation	heapRel;
 			Relation	indexRel;
 			TupleTableSlot *slot;
@@ -6658,7 +6658,7 @@ get_actual_variable_endpoint(Relation heapRel,
 							 int16 typLen,
 							 bool typByVal,
 							 TupleTableSlot *tableslot,
-							 MemoryContext outercontext,
+							 MemoryContext *outercontext,
 							 Datum *endpointDatum)
 {
 	bool		have_data = false;
@@ -6670,7 +6670,7 @@ get_actual_variable_endpoint(Relation heapRel,
 	ItemPointer tid;
 	Datum		values[INDEX_MAX_KEYS];
 	bool		isnull[INDEX_MAX_KEYS];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * We use the index-only-scan machinery for this.  With mostly-static

@@ -360,7 +360,7 @@ compute_tsvector_stats(VacAttrStats *stats,
 		/* Generate MCELEM slot entry */
 		if (num_mcelem > 0)
 		{
-			MemoryContext old_context;
+			MemoryContext *old_context;
 			Datum	   *mcelem_values;
 			float4	   *mcelem_freqs;
 

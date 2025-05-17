@@ -30,9 +30,9 @@ typedef struct
 
 	/* resources of this execution context */
 	slist_head	tuptables;		/* list of all live SPITupleTables */
-	MemoryContext procCxt;		/* procedure context */
-	MemoryContext execCxt;		/* executor context */
-	MemoryContext savedcxt;		/* context of SPI_connect's caller */
+	MemoryContext *procCxt;		/* procedure context */
+	MemoryContext *execCxt;		/* executor context */
+	MemoryContext *savedcxt;	/* context of SPI_connect's caller */
 	SubTransactionId connectSubid;	/* ID of connecting subtransaction */
 	QueryEnvironment *queryEnv; /* query environment setup for SPI level */
 
@@ -93,7 +93,7 @@ typedef struct _SPI_plan
 	bool		saved;			/* saved or unsaved plan? */
 	bool		oneshot;		/* one-shot plan? */
 	List	   *plancache_list; /* one CachedPlanSource per parsetree */
-	MemoryContext plancxt;		/* Context containing _SPI_plan and data */
+	MemoryContext *plancxt;		/* Context containing _SPI_plan and data */
 	RawParseMode parse_mode;	/* raw_parser() mode */
 	int			cursor_options; /* Cursor options used for planning */
 	int			nargs;			/* number of plan arguments */

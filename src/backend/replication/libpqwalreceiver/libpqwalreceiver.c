@@ -1054,8 +1054,8 @@ libpqrcv_processTuples(PGresult *pgres, WalRcvExecResult *walres,
 	int			nfields = PQnfields(pgres);
 	HeapTuple	tuple;
 	AttInMetadata *attinmeta;
-	MemoryContext rowcontext;
-	MemoryContext oldcontext;
+	MemoryContext *rowcontext;
+	MemoryContext *oldcontext;
 
 	/* Make sure we got expected number of fields. */
 	if (nfields != nRetTypes)

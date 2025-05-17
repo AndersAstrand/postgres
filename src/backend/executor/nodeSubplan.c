@@ -227,7 +227,7 @@ ExecScanSubPlan(SubPlanState *node,
 	SubPlan    *subplan = node->subplan;
 	PlanState  *planstate = node->planstate;
 	SubLinkType subLinkType = subplan->subLinkType;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TupleTableSlot *slot;
 	Datum		result;
 	bool		found = false;	/* true if got at least one subplan tuple */
@@ -499,7 +499,7 @@ buildSubPlanHash(SubPlanState *node, ExprContext *econtext)
 	PlanState  *planstate = node->planstate;
 	int			ncols = node->numCols;
 	ExprContext *innerecontext = node->innerecontext;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	long		nbuckets;
 	TupleTableSlot *slot;
 
@@ -677,9 +677,9 @@ execTuplesUnequal(TupleTableSlot *slot1,
 				  AttrNumber *matchColIdx,
 				  FmgrInfo *eqfunctions,
 				  const Oid *collations,
-				  MemoryContext evalContext)
+				  MemoryContext *evalContext)
 {
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	bool		result;
 	int			i;
 
@@ -1104,7 +1104,7 @@ ExecSetParamPlan(SubPlanState *node, ExprContext *econtext)
 	SubLinkType subLinkType = subplan->subLinkType;
 	EState	   *estate = planstate->state;
 	ScanDirection dir = estate->es_direction;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TupleTableSlot *slot;
 	ListCell   *l;
 	bool		found = false;

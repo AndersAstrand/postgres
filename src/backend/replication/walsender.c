@@ -150,7 +150,7 @@ static XLogReaderState *xlogreader = NULL;
  * be NULL.
  */
 static IncrementalBackupInfo *uploaded_manifest = NULL;
-static MemoryContext uploaded_manifest_mcxt = NULL;
+static MemoryContext *uploaded_manifest_mcxt = NULL;
 
 /*
  * These variables keep track of the state of the timeline we're currently
@@ -412,7 +412,7 @@ IdentifySystem(void)
 
 	if (MyDatabaseId != InvalidOid)
 	{
-		MemoryContext cur = CurrentMemoryContext;
+		MemoryContext *cur = CurrentMemoryContext;
 
 		/* syscache access needs a transaction env. */
 		StartTransactionCommand();
@@ -652,7 +652,7 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 static void
 UploadManifest(void)
 {
-	MemoryContext mcxt;
+	MemoryContext *mcxt;
 	IncrementalBackupInfo *ib;
 	off_t		offset = 0;
 	StringInfoData buf;
@@ -1973,10 +1973,10 @@ exec_replication_command(const char *cmd_string)
 	int			parse_rc;
 	Node	   *cmd_node;
 	const char *cmdtag;
-	MemoryContext old_context = CurrentMemoryContext;
+	MemoryContext *old_context = CurrentMemoryContext;
 
 	/* We save and re-use the cmd_context across calls */
-	static MemoryContext cmd_context = NULL;
+	static MemoryContext *cmd_context = NULL;
 
 	/*
 	 * If WAL sender has been told that shutdown is getting close, switch its

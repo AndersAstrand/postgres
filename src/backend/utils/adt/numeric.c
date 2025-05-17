@@ -1710,7 +1710,7 @@ generate_series_step_numeric(PG_FUNCTION_ARGS)
 {
 	generate_series_numeric_fctx *fctx;
 	FuncCallContext *funcctx;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (SRF_IS_FIRSTCALL())
 	{
@@ -2135,7 +2135,7 @@ numeric_sortsupport(PG_FUNCTION_ARGS)
 	if (ssup->abbreviate)
 	{
 		NumericSortSupport *nss;
-		MemoryContext oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
+		MemoryContext *oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
 		nss = palloc(sizeof(NumericSortSupport));
 
@@ -4912,7 +4912,7 @@ numeric_pg_lsn(PG_FUNCTION_ARGS)
 typedef struct NumericAggState
 {
 	bool		calcSumX2;		/* if true, calculate sumX2 */
-	MemoryContext agg_context;	/* context we're calculating in */
+	MemoryContext *agg_context; /* context we're calculating in */
 	int64		N;				/* count of processed numbers */
 	NumericSumAccum sumX;		/* sum of processed numbers */
 	NumericSumAccum sumX2;		/* sum of squares of processed numbers */
@@ -4935,8 +4935,8 @@ static NumericAggState *
 makeNumericAggState(FunctionCallInfo fcinfo, bool calcSumX2)
 {
 	NumericAggState *state;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -4976,7 +4976,7 @@ do_numeric_accum(NumericAggState *state, Numeric newval)
 {
 	NumericVar	X;
 	NumericVar	X2;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/* Count NaN/infinity inputs separately from all else */
 	if (NUMERIC_IS_SPECIAL(newval))
@@ -5046,7 +5046,7 @@ do_numeric_discard(NumericAggState *state, Numeric newval)
 {
 	NumericVar	X;
 	NumericVar	X2;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/* Count NaN/infinity inputs separately from all else */
 	if (NUMERIC_IS_SPECIAL(newval))
@@ -5159,8 +5159,8 @@ numeric_combine(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state1;
 	NumericAggState *state2;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -5251,8 +5251,8 @@ numeric_avg_combine(PG_FUNCTION_ARGS)
 {
 	NumericAggState *state1;
 	NumericAggState *state2;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -5598,8 +5598,8 @@ static Int128AggState *
 makeInt128AggState(FunctionCallInfo fcinfo, bool calcSumX2)
 {
 	Int128AggState *state;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -5735,8 +5735,8 @@ numeric_poly_combine(PG_FUNCTION_ARGS)
 {
 	PolyNumAggState *state1;
 	PolyNumAggState *state2;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -5938,8 +5938,8 @@ int8_avg_combine(PG_FUNCTION_ARGS)
 {
 	PolyNumAggState *state1;
 	PolyNumAggState *state2;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");

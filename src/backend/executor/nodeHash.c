@@ -454,7 +454,7 @@ ExecHashTableCreate(HashState *state)
 	double		rows;
 	int			num_skew_mcvs;
 	int			log2_nbuckets;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * Get information about the size of the relation to be hashed (it's the
@@ -551,7 +551,7 @@ ExecHashTableCreate(HashState *state)
 
 	if (nbatch > 1 && hashtable->parallel_state == NULL)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		/*
 		 * allocate and initialize the file arrays in hashCxt (not needed for
@@ -1052,7 +1052,7 @@ ExecHashIncreaseNumBatches(HashJoinTable hashtable)
 
 	if (hashtable->innerBatchFile == NULL)
 	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(hashtable->spillCxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(hashtable->spillCxt);
 
 		/* we had no file arrays before */
 		hashtable->innerBatchFile = palloc0_array(BufFile *, nbatch);
@@ -2320,7 +2320,7 @@ ExecParallelScanHashTableForUnmatched(HashJoinState *hjstate,
 void
 ExecHashTableReset(HashJoinTable hashtable)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			nbuckets = hashtable->nbuckets;
 
 	/*
@@ -3119,7 +3119,7 @@ ExecParallelHashJoinSetUpBatches(HashJoinTable hashtable, int nbatch)
 {
 	ParallelHashJoinState *pstate = hashtable->parallel_state;
 	ParallelHashJoinBatch *batches;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	Assert(hashtable->batches == NULL);
@@ -3220,7 +3220,7 @@ ExecParallelHashEnsureBatchAccessors(HashJoinTable hashtable)
 {
 	ParallelHashJoinState *pstate = hashtable->parallel_state;
 	ParallelHashJoinBatch *batches;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	if (hashtable->batches != NULL)

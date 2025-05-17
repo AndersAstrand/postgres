@@ -65,7 +65,7 @@ IndexTuple
 index_form_tuple_context(TupleDesc tupleDescriptor,
 						 const Datum *values,
 						 const bool *isnull,
-						 MemoryContext context)
+						 MemoryContext *context)
 {
 	char	   *tp;				/* tuple pointer */
 	IndexTuple	tuple;			/* return tuple */

@@ -1333,7 +1333,7 @@ innerrel_is_unique_ext(PlannerInfo *root,
 					   bool force_cache,
 					   List **extra_clauses)
 {
-	MemoryContext old_context;
+	MemoryContext *old_context;
 	ListCell   *lc;
 	UniqueRelInfo *uniqueRelInfo;
 	List	   *outer_exprs = NIL;

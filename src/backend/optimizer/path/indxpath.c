@@ -4288,7 +4288,7 @@ relation_has_unique_index_ext(PlannerInfo *root, RelOptInfo *rel,
 
 					if (bms_membership(rinfo->clause_relids) == BMS_SINGLETON)
 					{
-						MemoryContext oldMemCtx =
+						MemoryContext *oldMemCtx =
 							MemoryContextSwitchTo(root->planner_cxt);
 
 						/*

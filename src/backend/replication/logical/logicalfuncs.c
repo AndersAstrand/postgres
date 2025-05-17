@@ -102,8 +102,8 @@ pg_logical_slot_get_changes_guts(FunctionCallInfo fcinfo, bool confirm, bool bin
 	XLogRecPtr	upto_lsn;
 	int32		upto_nchanges;
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
+	MemoryContext *per_query_ctx;
+	MemoryContext *oldcontext;
 	XLogRecPtr	end_of_wal;
 	XLogRecPtr	wait_for_wal_lsn;
 	LogicalDecodingContext *ctx;

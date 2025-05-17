@@ -3079,8 +3079,8 @@ ReindexMultipleTables(const ReindexStmt *stmt, const ReindexParams *params)
 	TableScanDesc scan;
 	ScanKeyData scan_keys[1];
 	HeapTuple	tuple;
-	MemoryContext private_context;
-	MemoryContext old;
+	MemoryContext *private_context;
+	MemoryContext *old;
 	List	   *relids = NIL;
 	int			num_keys;
 	bool		concurrent_warning = false;
@@ -3317,7 +3317,7 @@ ReindexPartitions(const ReindexStmt *stmt, Oid relid, const ReindexParams *param
 	char		relkind = get_rel_relkind(relid);
 	char	   *relname = get_rel_name(relid);
 	char	   *relnamespace = get_namespace_name(get_rel_namespace(relid));
-	MemoryContext reindex_context;
+	MemoryContext *reindex_context;
 	List	   *inhoids;
 	ListCell   *lc;
 	ErrorContextCallback errcallback;
@@ -3365,7 +3365,7 @@ ReindexPartitions(const ReindexStmt *stmt, Oid relid, const ReindexParams *param
 	{
 		Oid			partoid = lfirst_oid(lc);
 		char		partkind = get_rel_relkind(partoid);
-		MemoryContext old_context;
+		MemoryContext *old_context;
 
 		/*
 		 * This discards partitioned tables, partitioned indexes and foreign
@@ -3547,8 +3547,8 @@ ReindexRelationConcurrently(const ReindexStmt *stmt, Oid relationOid, const Rein
 	List	   *lockTags = NIL;
 	ListCell   *lc,
 			   *lc2;
-	MemoryContext private_context;
-	MemoryContext oldcontext;
+	MemoryContext *private_context;
+	MemoryContext *oldcontext;
 	char		relkind;
 	char	   *relationName = NULL;
 	char	   *relationNamespace = NULL;

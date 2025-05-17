@@ -91,7 +91,7 @@ extern Datum jsonb_from_text(text *js, bool unique_keys);
 
 extern Datum json_populate_type(Datum json_val, Oid json_type,
 								Oid typid, int32 typmod,
-								void **cache, MemoryContext mcxt,
+								void **cache, MemoryContext *mcxt,
 								bool *isnull,
 								bool omit_quotes,
 								Node *escontext);

@@ -82,7 +82,7 @@ fetch_array_arg_replace_nulls(FunctionCallInfo fcinfo, int argno)
 	ExpandedArrayHeader *eah;
 	Oid			element_type;
 	ArrayMetaState *my_extra;
-	MemoryContext resultcxt;
+	MemoryContext *resultcxt;
 
 	/* If first time through, create datatype cache struct */
 	my_extra = (ArrayMetaState *) fcinfo->flinfo->fn_extra;
@@ -102,7 +102,7 @@ fetch_array_arg_replace_nulls(FunctionCallInfo fcinfo, int argno)
 	/* Now collect the array value */
 	if (!PG_ARGISNULL(argno))
 	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(resultcxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(resultcxt);
 
 		eah = PG_GETARG_EXPANDED_ARRAYX(argno, my_extra);
 		MemoryContextSwitchTo(oldcxt);
@@ -555,7 +555,7 @@ Datum
 array_agg_transfn(PG_FUNCTION_ARGS)
 {
 	Oid			arg1_typeid = get_fn_expr_argtype(fcinfo->flinfo, 1);
-	MemoryContext aggcontext;
+	MemoryContext *aggcontext;
 	ArrayBuildState *state;
 	Datum		elem;
 
@@ -602,8 +602,8 @@ array_agg_combine(PG_FUNCTION_ARGS)
 {
 	ArrayBuildState *state1;
 	ArrayBuildState *state2;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -652,7 +652,7 @@ array_agg_combine(PG_FUNCTION_ARGS)
 	{
 		/* We only need to combine the two states if state2 has any elements */
 		int			reqsize = state1->nelems + state2->nelems;
-		MemoryContext oldContext = MemoryContextSwitchTo(state1->mcontext);
+		MemoryContext *oldContext = MemoryContextSwitchTo(state1->mcontext);
 
 		Assert(state1->element_type == state2->element_type);
 
@@ -933,7 +933,7 @@ Datum
 array_agg_array_transfn(PG_FUNCTION_ARGS)
 {
 	Oid			arg1_typeid = get_fn_expr_argtype(fcinfo->flinfo, 1);
-	MemoryContext aggcontext;
+	MemoryContext *aggcontext;
 	ArrayBuildStateArr *state;
 
 	if (arg1_typeid == InvalidOid)
@@ -978,8 +978,8 @@ array_agg_array_combine(PG_FUNCTION_ARGS)
 {
 	ArrayBuildStateArr *state1;
 	ArrayBuildStateArr *state2;
-	MemoryContext agg_context;
-	MemoryContext old_context;
+	MemoryContext *agg_context;
+	MemoryContext *old_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -1035,7 +1035,7 @@ array_agg_array_combine(PG_FUNCTION_ARGS)
 	/* We only need to combine the two states if state2 has any items */
 	else if (state2->nitems > 0)
 	{
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 		int			reqsize = state1->nbytes + state2->nbytes;
 		int			i;
 

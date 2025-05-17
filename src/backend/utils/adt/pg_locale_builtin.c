@@ -23,7 +23,7 @@
 #include "utils/syscache.h"
 
 extern pg_locale_t create_pg_locale_builtin(Oid collid,
-											MemoryContext context);
+											MemoryContext *context);
 extern char *get_collation_actual_version_builtin(const char *collcollate);
 extern size_t strlower_builtin(char *dest, size_t destsize, const char *src,
 							   ssize_t srclen, pg_locale_t locale);
@@ -120,7 +120,7 @@ strfold_builtin(char *dest, size_t destsize, const char *src, ssize_t srclen,
 }
 
 pg_locale_t
-create_pg_locale_builtin(Oid collid, MemoryContext context)
+create_pg_locale_builtin(Oid collid, MemoryContext *context)
 {
 	const char *locstr;
 	pg_locale_t result;

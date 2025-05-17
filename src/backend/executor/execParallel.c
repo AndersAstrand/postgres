@@ -1040,7 +1040,7 @@ ExecParallelRetrieveInstrumentation(PlanState *planstate,
 	int			n;
 	int			ibytes;
 	int			plan_node_id = planstate->plan->plan_node_id;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Find the instrumentation for this node. */
 	for (i = 0; i < instrumentation->num_plan_nodes; ++i)

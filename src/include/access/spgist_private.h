@@ -190,8 +190,8 @@ typedef struct SpGistScanOpaqueData
 {
 	SpGistState state;			/* see above */
 	pairingheap *scanQueue;		/* queue of to be visited items */
-	MemoryContext tempCxt;		/* short-lived memory context */
-	MemoryContext traversalCxt; /* single scan lifetime memory context */
+	MemoryContext *tempCxt;		/* short-lived memory context */
+	MemoryContext *traversalCxt;	/* single scan lifetime memory context */
 
 	/* Control flags showing whether to search nulls and/or non-nulls */
 	bool		searchNulls;	/* scan matches (all) null entries */

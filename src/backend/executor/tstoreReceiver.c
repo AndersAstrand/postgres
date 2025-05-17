@@ -32,7 +32,7 @@ typedef struct
 	DestReceiver pub;
 	/* parameters: */
 	Tuplestorestate *tstore;	/* where to put the data */
-	MemoryContext cxt;			/* context containing tstore */
+	MemoryContext *cxt;			/* context containing tstore */
 	bool		detoast;		/* were we told to detoast? */
 	TupleDesc	target_tupdesc; /* target tupdesc, or NULL if none */
 	const char *map_failure_msg;	/* tupdesc mapping failure message */
@@ -140,7 +140,7 @@ tstoreReceiveSlot_detoast(TupleTableSlot *slot, DestReceiver *self)
 	int			natts = typeinfo->natts;
 	int			nfree;
 	int			i;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Make sure the tuple is fully deconstructed */
 	slot_getallattrs(slot);
@@ -265,7 +265,7 @@ CreateTuplestoreDestReceiver(void)
 void
 SetTuplestoreDestReceiverParams(DestReceiver *self,
 								Tuplestorestate *tStore,
-								MemoryContext tContext,
+								MemoryContext *tContext,
 								bool detoast,
 								TupleDesc target_tupdesc,
 								const char *map_failure_msg)

@@ -248,7 +248,7 @@ lookup_ts_dictionary_cache(Oid dictId)
 					tptmpl;
 		Form_pg_ts_dict dict;
 		Form_pg_ts_template template;
-		MemoryContext saveCtx;
+		MemoryContext *saveCtx;
 
 		tpdict = SearchSysCache1(TSDICTOID, ObjectIdGetDatum(dictId));
 		if (!HeapTupleIsValid(tpdict))
@@ -317,7 +317,7 @@ lookup_ts_dictionary_cache(Oid dictId)
 			List	   *dictoptions;
 			Datum		opt;
 			bool		isnull;
-			MemoryContext oldcontext;
+			MemoryContext *oldcontext;
 
 			/*
 			 * Init method runs in dictionary's private memory context, and we

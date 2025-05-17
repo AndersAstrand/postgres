@@ -72,7 +72,7 @@ static LargeObjectDesc **cookies = NULL;
 static int	cookies_size = 0;
 
 static bool lo_cleanup_needed = false;
-static MemoryContext fscxt = NULL;
+static MemoryContext *fscxt = NULL;
 
 static int	newLOfd(void);
 static void closeLOfd(int fd);

@@ -134,8 +134,8 @@ typedef struct SQLFunctionHashEntry
 
 	List	   *plansource_list;	/* CachedPlanSources for fn's queries */
 
-	MemoryContext pcontext;		/* memory context holding source_list */
-	MemoryContext hcontext;		/* memory context holding all else */
+	MemoryContext *pcontext;	/* memory context holding source_list */
+	MemoryContext *hcontext;	/* memory context holding all else */
 } SQLFunctionHashEntry;
 
 typedef struct SQLFunctionCache
@@ -151,7 +151,7 @@ typedef struct SQLFunctionCache
 	ParamListInfo paramLI;		/* Param list representing current args */
 
 	Tuplestorestate *tstore;	/* where we accumulate result for a SRF */
-	MemoryContext tscontext;	/* memory context that tstore should be in */
+	MemoryContext *tscontext;	/* memory context that tstore should be in */
 
 	JunkFilter *junkFilter;		/* will be NULL if function returns VOID */
 	int			jf_generation;	/* tracks whether junkFilter is up-to-date */
@@ -177,11 +177,11 @@ typedef struct SQLFunctionCache
 	/* if positive, this is the 1-based index of the query we're processing */
 	int			error_query_index;
 
-	MemoryContext fcontext;		/* memory context holding this struct and all
+	MemoryContext *fcontext;	/* memory context holding this struct and all
 								 * subsidiary data */
-	MemoryContext jfcontext;	/* subsidiary memory context holding
+	MemoryContext *jfcontext;	/* subsidiary memory context holding
 								 * junkFilter, result slot, and related data */
-	MemoryContext subcontext;	/* subsidiary memory context for sub-executor */
+	MemoryContext *subcontext;	/* subsidiary memory context for sub-executor */
 
 	/* Callback to release our use-count on the SQLFunctionHashEntry */
 	MemoryContextCallback mcb;
@@ -773,7 +773,7 @@ init_execution_state(SQLFunctionCachePtr fcache)
 	{
 		TupleTableSlot *slot;
 		List	   *resulttlist;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* Create or reset the jfcontext */
 		if (fcache->jfcontext == NULL)
@@ -879,7 +879,7 @@ prepare_next_query(SQLFunctionHashEntry *func)
 	bool		islast;
 	CachedPlanSource *plansource;
 	List	   *queryTree_list;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Which query should we process? */
 	qindex = list_length(func->plansource_list);
@@ -1022,9 +1022,9 @@ sql_compile_callback(FunctionCallInfo fcinfo,
 	SQLFunctionHashEntry *func = (SQLFunctionHashEntry *) cfunc;
 	Form_pg_proc procedureStruct = (Form_pg_proc) GETSTRUCT(procedureTuple);
 	ErrorContextCallback comperrcontext;
-	MemoryContext hcontext;
-	MemoryContext pcontext;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *hcontext;
+	MemoryContext *pcontext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	Oid			rettype;
 	TupleDesc	rettupdesc;
 	Datum		tmp;
@@ -1252,7 +1252,7 @@ static void
 postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 {
 	DestReceiver *dest;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	Assert(es->qd == NULL);
 
@@ -1378,7 +1378,7 @@ static bool
 postquel_getnext(execution_state *es, SQLFunctionCachePtr fcache)
 {
 	bool		result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Run the sub-executor in subcontext */
 	oldcontext = MemoryContextSwitchTo(fcache->subcontext);
@@ -1418,7 +1418,7 @@ postquel_getnext(execution_state *es, SQLFunctionCachePtr fcache)
 static void
 postquel_end(execution_state *es, SQLFunctionCachePtr fcache)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Run the sub-executor in subcontext */
 	oldcontext = MemoryContextSwitchTo(fcache->subcontext);
@@ -1462,7 +1462,7 @@ postquel_sub_params(SQLFunctionCachePtr fcache,
 		if (fcache->paramLI == NULL)
 		{
 			/* First time through: build a persistent ParamListInfo struct */
-			MemoryContext oldcontext;
+			MemoryContext *oldcontext;
 
 			oldcontext = MemoryContextSwitchTo(fcache->fcontext);
 			paramLI = makeParamList(nargs);
@@ -1555,7 +1555,7 @@ fmgr_sql(PG_FUNCTION_ARGS)
 {
 	SQLFunctionCachePtr fcache;
 	ErrorContextCallback sqlerrcontext;
-	MemoryContext tscontext;
+	MemoryContext *tscontext;
 	bool		randomAccess;
 	bool		lazyEvalOK;
 	bool		pushed_snapshot;

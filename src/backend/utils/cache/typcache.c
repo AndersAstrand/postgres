@@ -139,7 +139,7 @@ static TypeCacheEntry *firstDomainTypeEntry = NULL;
 struct DomainConstraintCache
 {
 	List	   *constraints;	/* list of DomainConstraintState nodes */
-	MemoryContext dccContext;	/* memory context holding all associated data */
+	MemoryContext *dccContext;	/* memory context holding all associated data */
 	long		dccRefCount;	/* number of references to this struct */
 };
 
@@ -319,7 +319,7 @@ static void load_domaintype_info(TypeCacheEntry *typentry);
 static int	dcs_cmp(const void *a, const void *b);
 static void decr_dcc_refcount(DomainConstraintCache *dcc);
 static void dccref_deletion_callback(void *arg);
-static List *prep_domain_constraints(List *constraints, MemoryContext execctx);
+static List *prep_domain_constraints(List *constraints, MemoryContext *execctx);
 static bool array_element_has_equality(TypeCacheEntry *typentry);
 static bool array_element_has_compare(TypeCacheEntry *typentry);
 static bool array_element_has_hashing(TypeCacheEntry *typentry);
@@ -1088,7 +1088,7 @@ load_domaintype_info(TypeCacheEntry *typentry)
 	DomainConstraintState **ccons;
 	int			cconslen;
 	Relation	conRel;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * If we're here, any existing constraint info is stale, so release it.
@@ -1177,7 +1177,7 @@ load_domaintype_info(TypeCacheEntry *typentry)
 			/* Create the DomainConstraintCache object and context if needed */
 			if (dcc == NULL)
 			{
-				MemoryContext cxt;
+				MemoryContext *cxt;
 
 				cxt = AllocSetContextCreate(CurrentMemoryContext,
 											"Domain constraints",
@@ -1269,7 +1269,7 @@ load_domaintype_info(TypeCacheEntry *typentry)
 		/* Create the DomainConstraintCache object and context if needed */
 		if (dcc == NULL)
 		{
-			MemoryContext cxt;
+			MemoryContext *cxt;
 
 			cxt = AllocSetContextCreate(CurrentMemoryContext,
 										"Domain constraints",
@@ -1361,10 +1361,10 @@ dccref_deletion_callback(void *arg)
  * converted to executable expression state trees stored in execctx.
  */
 static List *
-prep_domain_constraints(List *constraints, MemoryContext execctx)
+prep_domain_constraints(List *constraints, MemoryContext *execctx)
 {
 	List	   *result = NIL;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ListCell   *lc;
 
 	oldcxt = MemoryContextSwitchTo(execctx);
@@ -1400,7 +1400,7 @@ prep_domain_constraints(List *constraints, MemoryContext execctx)
  */
 void
 InitDomainConstraintRef(Oid type_id, DomainConstraintRef *ref,
-						MemoryContext refctx, bool need_exprstate)
+						MemoryContext *refctx, bool need_exprstate)
 {
 	/* Look up the typcache entry --- we assume it survives indefinitely */
 	ref->tcache = lookup_type_cache(type_id, TYPECACHE_DOMAIN_CONSTR_INFO);
@@ -2044,7 +2044,7 @@ assign_record_type_typmod(TupleDesc tupDesc)
 	RecordCacheEntry *recentry;
 	TupleDesc	entDesc;
 	bool		found;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	Assert(tupDesc->tdtypeid == RECORDOID);
 
@@ -2198,7 +2198,7 @@ SharedRecordTypmodRegistryInit(SharedRecordTypmodRegistry *registry,
 							   dsm_segment *segment,
 							   dsa_area *area)
 {
-	MemoryContext old_context;
+	MemoryContext *old_context;
 	dshash_table *record_table;
 	dshash_table *typmod_table;
 	int32		typmod;
@@ -2295,7 +2295,7 @@ SharedRecordTypmodRegistryInit(SharedRecordTypmodRegistry *registry,
 void
 SharedRecordTypmodRegistryAttach(SharedRecordTypmodRegistry *registry)
 {
-	MemoryContext old_context;
+	MemoryContext *old_context;
 	dshash_table *record_table;
 	dshash_table *typmod_table;
 
@@ -2746,7 +2746,7 @@ load_enum_cache_data(TypeCacheEntry *tcache)
 	int			maxitems;
 	Oid			bitmap_base;
 	Bitmapset  *bitmap;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			bm_size,
 				start_pos;
 

@@ -147,7 +147,7 @@ typedef struct WindowStatePerAggData
 	int			wfuncno;		/* index of associated WindowStatePerFuncData */
 
 	/* Context holding transition value and possibly other subsidiary data */
-	MemoryContext aggcontext;	/* may be private, or winstate->aggcontext */
+	MemoryContext *aggcontext;	/* may be private, or winstate->aggcontext */
 
 	/* Current transition value */
 	Datum		transValue;		/* current transition value */
@@ -208,7 +208,7 @@ initialize_windowaggregate(WindowAggState *winstate,
 						   WindowStatePerFunc perfuncstate,
 						   WindowStatePerAgg peraggstate)
 {
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * If we're using a private aggcontext, we may reset it here.  But if the
@@ -249,7 +249,7 @@ advance_windowaggregate(WindowAggState *winstate,
 	Datum		newVal;
 	ListCell   *arg;
 	int			i;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	ExprContext *econtext = winstate->tmpcontext;
 	ExprState  *filter = wfuncstate->aggfilter;
 
@@ -426,7 +426,7 @@ advance_windowaggregate_base(WindowAggState *winstate,
 	Datum		newVal;
 	ListCell   *arg;
 	int			i;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	ExprContext *econtext = winstate->tmpcontext;
 	ExprState  *filter = wfuncstate->aggfilter;
 
@@ -584,7 +584,7 @@ finalize_windowaggregate(WindowAggState *winstate,
 						 WindowStatePerAgg peraggstate,
 						 Datum *result, bool *isnull)
 {
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(winstate->ss.ps.ps_ExprContext->ecxt_per_tuple_memory);
 
@@ -668,7 +668,7 @@ eval_windowaggregates(WindowAggState *winstate)
 				numaggs_restart,
 				i;
 	int64		aggregatedupto_nonrestarted;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	ExprContext *econtext;
 	WindowObject agg_winobj;
 	TupleTableSlot *agg_row_slot;
@@ -1034,7 +1034,7 @@ eval_windowfunction(WindowAggState *winstate, WindowStatePerFunc perfuncstate,
 					Datum *result, bool *isnull)
 {
 	LOCAL_FCINFO(fcinfo, FUNC_MAX_ARGS);
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(winstate->ss.ps.ps_ExprContext->ecxt_per_tuple_memory);
 
@@ -1284,7 +1284,7 @@ spool_tuples(WindowAggState *winstate, int64 pos)
 	WindowAgg  *node = (WindowAgg *) winstate->ss.ps.plan;
 	PlanState  *outerPlan;
 	TupleTableSlot *outerslot;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (!winstate->buffer)
 		return;					/* just a safety check */
@@ -1527,7 +1527,7 @@ update_frameheadpos(WindowAggState *winstate)
 {
 	WindowAgg  *node = (WindowAgg *) winstate->ss.ps.plan;
 	int			frameOptions = winstate->frameOptions;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (winstate->framehead_valid)
 		return;					/* already known for current row */
@@ -1777,7 +1777,7 @@ update_frametailpos(WindowAggState *winstate)
 {
 	WindowAgg  *node = (WindowAgg *) winstate->ss.ps.plan;
 	int			frameOptions = winstate->frameOptions;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (winstate->frametail_valid)
 		return;					/* already known for current row */
@@ -2026,7 +2026,7 @@ static void
 update_grouptailpos(WindowAggState *winstate)
 {
 	WindowAgg  *node = (WindowAgg *) winstate->ss.ps.plan;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (winstate->grouptail_valid)
 		return;					/* already known for current row */
@@ -3132,7 +3132,7 @@ static bool
 window_gettupleslot(WindowObject winobj, int64 pos, TupleTableSlot *slot)
 {
 	WindowAggState *winstate = winobj->winstate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* often called repeatedly in a row */
 	CHECK_FOR_INTERRUPTS();

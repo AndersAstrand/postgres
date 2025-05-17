@@ -319,7 +319,7 @@ spg_kd_inner_consistent(PG_FUNCTION_ARGS)
 
 			if (in->norderbys > 0)
 			{
-				MemoryContext oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
+				MemoryContext *oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
 				BOX		   *box = box_copy(&bboxes[i - 1]);
 
 				MemoryContextSwitchTo(oldCtx);

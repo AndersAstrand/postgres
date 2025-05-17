@@ -88,8 +88,8 @@ EState *
 CreateExecutorState(void)
 {
 	EState	   *estate;
-	MemoryContext qcontext;
-	MemoryContext oldcontext;
+	MemoryContext *qcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Create the per-query context for this Executor run.
@@ -239,7 +239,7 @@ CreateExprContextInternal(EState *estate, Size minContextSize,
 						  Size initBlockSize, Size maxBlockSize)
 {
 	ExprContext *econtext;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Create the ExprContext node within the per-query memory context */
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
@@ -1021,7 +1021,7 @@ static void
 ShutdownExprContext(ExprContext *econtext, bool isCommit)
 {
 	ExprContext_CB *ecxt_callback;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Fast path in normal case where there's nothing to do. */
 	if (econtext->ecxt_callbacks == NULL)
@@ -1207,7 +1207,7 @@ ExecGetTriggerOldSlot(EState *estate, ResultRelInfo *relInfo)
 	if (relInfo->ri_TrigOldSlot == NULL)
 	{
 		Relation	rel = relInfo->ri_RelationDesc;
-		MemoryContext oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+		MemoryContext *oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
 		relInfo->ri_TrigOldSlot =
 			ExecInitExtraTupleSlot(estate,
@@ -1229,7 +1229,7 @@ ExecGetTriggerNewSlot(EState *estate, ResultRelInfo *relInfo)
 	if (relInfo->ri_TrigNewSlot == NULL)
 	{
 		Relation	rel = relInfo->ri_RelationDesc;
-		MemoryContext oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+		MemoryContext *oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
 		relInfo->ri_TrigNewSlot =
 			ExecInitExtraTupleSlot(estate,
@@ -1251,7 +1251,7 @@ ExecGetReturningSlot(EState *estate, ResultRelInfo *relInfo)
 	if (relInfo->ri_ReturningSlot == NULL)
 	{
 		Relation	rel = relInfo->ri_RelationDesc;
-		MemoryContext oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+		MemoryContext *oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
 		relInfo->ri_ReturningSlot =
 			ExecInitExtraTupleSlot(estate,
@@ -1276,7 +1276,7 @@ ExecGetAllNullSlot(EState *estate, ResultRelInfo *relInfo)
 	if (relInfo->ri_AllNullSlot == NULL)
 	{
 		Relation	rel = relInfo->ri_RelationDesc;
-		MemoryContext oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
+		MemoryContext *oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 		TupleTableSlot *slot;
 
 		slot = ExecInitExtraTupleSlot(estate,
@@ -1337,7 +1337,7 @@ ExecGetRootToChildMap(ResultRelInfo *resultRelInfo, EState *estate)
 		TupleDesc	outdesc = RelationGetDescr(resultRelInfo->ri_RelationDesc);
 		Relation	childrel = resultRelInfo->ri_RelationDesc;
 		AttrMap    *attrMap;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/*
 		 * When this child table is not a partition (!relispartition), it may
@@ -1419,7 +1419,7 @@ Bitmapset *
 ExecGetAllUpdatedCols(ResultRelInfo *relinfo, EState *estate)
 {
 	Bitmapset  *ret;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	oldcxt = MemoryContextSwitchTo(GetPerTupleMemoryContext(estate));
 

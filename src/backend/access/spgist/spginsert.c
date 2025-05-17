@@ -32,7 +32,7 @@ typedef struct
 {
 	SpGistState spgstate;		/* SPGiST's working state */
 	int64		indtuples;		/* total number of tuples indexed */
-	MemoryContext tmpCtx;		/* per-tuple temporary context */
+	MemoryContext *tmpCtx;		/* per-tuple temporary context */
 } SpGistBuildState;
 
 
@@ -42,7 +42,7 @@ spgistBuildCallback(Relation index, ItemPointer tid, Datum *values,
 					bool *isnull, bool tupleIsAlive, void *state)
 {
 	SpGistBuildState *buildstate = (SpGistBuildState *) state;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	/* Work in temp context, and reset it after each tuple */
 	oldCtx = MemoryContextSwitchTo(buildstate->tmpCtx);
@@ -187,8 +187,8 @@ spginsert(Relation index, Datum *values, bool *isnull,
 		  IndexInfo *indexInfo)
 {
 	SpGistState spgstate;
-	MemoryContext oldCtx;
-	MemoryContext insertCtx;
+	MemoryContext *oldCtx;
+	MemoryContext *insertCtx;
 
 	insertCtx = AllocSetContextCreate(CurrentMemoryContext,
 									  "SP-GiST insert temporary context",

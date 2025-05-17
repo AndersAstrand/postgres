@@ -97,7 +97,7 @@ static TrieChar *
 initTrie(const char *filename)
 {
 	TrieChar   *volatile rootTrie = NULL;
-	MemoryContext ccxt = CurrentMemoryContext;
+	MemoryContext *ccxt = CurrentMemoryContext;
 	tsearch_readline_state trst;
 	volatile bool skip;
 
@@ -278,7 +278,7 @@ initTrie(const char *filename)
 		PG_CATCH();
 		{
 			ErrorData  *errdata;
-			MemoryContext ecxt;
+			MemoryContext *ecxt;
 
 			ecxt = MemoryContextSwitchTo(ccxt);
 			errdata = CopyErrorData();

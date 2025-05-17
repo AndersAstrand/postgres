@@ -141,8 +141,8 @@ typedef struct
 	GinState	ginstate;
 	double		indtuples;
 	GinStatsData buildStats;
-	MemoryContext tmpCtx;
-	MemoryContext funcCtx;
+	MemoryContext *tmpCtx;
+	MemoryContext *funcCtx;
 	BuildAccumulator accum;
 	ItemPointerData tid;
 	int			work_mem;
@@ -420,7 +420,7 @@ ginHeapTupleBulkInsert(GinBuildState *buildstate, OffsetNumber attnum,
 	Datum	   *entries;
 	GinNullCategory *categories;
 	int32		nentries;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->funcCtx);
 	entries = ginExtractEntries(buildstate->accum.ginstate, attnum,
@@ -441,7 +441,7 @@ ginBuildCallback(Relation index, ItemPointer tid, Datum *values,
 				 bool *isnull, bool tupleIsAlive, void *state)
 {
 	GinBuildState *buildstate = (GinBuildState *) state;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	int			i;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->tmpCtx);
@@ -534,7 +534,7 @@ ginBuildCallbackParallel(Relation index, ItemPointer tid, Datum *values,
 						 bool *isnull, bool tupleIsAlive, void *state)
 {
 	GinBuildState *buildstate = (GinBuildState *) state;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	int			i;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->tmpCtx);
@@ -590,7 +590,7 @@ ginbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	Datum		key;
 	GinNullCategory category;
 	uint32		nlist;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	OffsetNumber attnum;
 
 	if (RelationGetNumberOfBlocks(index) != 0)
@@ -828,8 +828,8 @@ gininsert(Relation index, Datum *values, bool *isnull,
 		  IndexInfo *indexInfo)
 {
 	GinState   *ginstate = (GinState *) indexInfo->ii_AmCache;
-	MemoryContext oldCtx;
-	MemoryContext insertCtx;
+	MemoryContext *oldCtx;
+	MemoryContext *insertCtx;
 	int			i;
 
 	/* Initialize GinState cache if first call in this statement */
@@ -1669,7 +1669,7 @@ _gin_parallel_merge(GinBuildState *state)
 	 */
 	while ((tup = tuplesort_getgintuple(state->bs_sortstate, &tuplen, true)) != NULL)
 	{
-		MemoryContext oldCtx;
+		MemoryContext *oldCtx;
 
 		CHECK_FOR_INTERRUPTS();
 

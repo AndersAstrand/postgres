@@ -62,7 +62,7 @@ typedef struct FmgrInfo
 	bool		fn_retset;		/* function returns a set */
 	unsigned char fn_stats;		/* collect stats if track_functions > this */
 	void	   *fn_extra;		/* extra space for use by handler */
-	MemoryContext fn_mcxt;		/* memory context to store fn_extra in */
+	MemoryContext *fn_mcxt;		/* memory context to store fn_extra in */
 	fmNodePtr	fn_expr;		/* expression parse tree for call, or NULL */
 } FmgrInfo;
 
@@ -129,7 +129,7 @@ extern void fmgr_info(Oid functionId, FmgrInfo *finfo);
  * and used to hold all subsidiary data of finfo.
  */
 extern void fmgr_info_cxt(Oid functionId, FmgrInfo *finfo,
-						  MemoryContext mcxt);
+						  MemoryContext *mcxt);
 
 /* Convenience macro for setting the fn_expr field */
 #define fmgr_info_set_expr(expr, finfo) \
@@ -139,7 +139,7 @@ extern void fmgr_info_cxt(Oid functionId, FmgrInfo *finfo,
  * Copy an FmgrInfo struct
  */
 extern void fmgr_info_copy(FmgrInfo *dstinfo, FmgrInfo *srcinfo,
-						   MemoryContext destcxt);
+						   MemoryContext *destcxt);
 
 extern void fmgr_symbol(Oid functionId, char **mod, char **fn);
 
@@ -813,9 +813,9 @@ extern void RestoreLibraryState(char *start_address);
 #define AGG_CONTEXT_WINDOW		2	/* window function */
 
 extern int	AggCheckCallContext(FunctionCallInfo fcinfo,
-								MemoryContext *aggcontext);
+								MemoryContext **aggcontext);
 extern fmAggrefPtr AggGetAggref(FunctionCallInfo fcinfo);
-extern MemoryContext AggGetTempMemoryContext(FunctionCallInfo fcinfo);
+extern MemoryContext *AggGetTempMemoryContext(FunctionCallInfo fcinfo);
 extern bool AggStateIsShared(FunctionCallInfo fcinfo);
 extern void AggRegisterCallback(FunctionCallInfo fcinfo,
 								fmExprContextCallbackFunction func,

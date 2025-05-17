@@ -84,8 +84,8 @@ static SPIPlanPtr _SPI_save_plan(SPIPlanPtr plan);
 
 static int	_SPI_begin_call(bool use_exec);
 static int	_SPI_end_call(bool use_exec);
-static MemoryContext _SPI_execmem(void);
-static MemoryContext _SPI_procmem(void);
+static MemoryContext *_SPI_execmem(void);
+static MemoryContext *_SPI_procmem(void);
 static bool _SPI_checktuples(void);
 
 
@@ -227,7 +227,7 @@ SPI_start_transaction(void)
 static void
 _SPI_commit(bool chain)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	SavedTransactionCharacteristics savetc;
 
 	/*
@@ -332,7 +332,7 @@ SPI_commit_and_chain(void)
 static void
 _SPI_rollback(bool chain)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	SavedTransactionCharacteristics savetc;
 
 	/* see comments in _SPI_commit() */
@@ -1047,7 +1047,7 @@ SPI_freeplan(SPIPlanPtr plan)
 HeapTuple
 SPI_copytuple(HeapTuple tuple)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	HeapTuple	ctuple;
 
 	if (tuple == NULL)
@@ -1074,7 +1074,7 @@ SPI_copytuple(HeapTuple tuple)
 HeapTupleHeader
 SPI_returntuple(HeapTuple tuple, TupleDesc tupdesc)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	HeapTupleHeader dtup;
 
 	if (tuple == NULL || tupdesc == NULL)
@@ -1107,7 +1107,7 @@ HeapTuple
 SPI_modifytuple(Relation rel, HeapTuple tuple, int natts, int *attnum,
 				Datum *Values, const char *Nulls)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	HeapTuple	mtuple;
 	int			numberOfAttributes;
 	Datum	   *v;
@@ -1361,7 +1361,7 @@ SPI_pfree(void *pointer)
 Datum
 SPI_datumTransfer(Datum value, bool typByVal, int typLen)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	Datum		result;
 
 	if (_SPI_current == NULL)
@@ -1583,7 +1583,7 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 	List	   *stmt_list;
 	char	   *query_string;
 	Snapshot	snapshot;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	Portal		portal;
 	SPICallbackArg spicallbackarg;
 	ErrorContextCallback spierrcontext;
@@ -2125,8 +2125,8 @@ void
 spi_dest_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 {
 	SPITupleTable *tuptable;
-	MemoryContext oldcxt;
-	MemoryContext tuptabcxt;
+	MemoryContext *oldcxt;
+	MemoryContext *tuptabcxt;
 
 	if (_SPI_current == NULL)
 		elog(ERROR, "spi_dest_startup called while not connected to SPI");
@@ -2173,7 +2173,7 @@ bool
 spi_printtup(TupleTableSlot *slot, DestReceiver *self)
 {
 	SPITupleTable *tuptable;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	if (_SPI_current == NULL)
 		elog(ERROR, "spi_printtup called while not connected to SPI");
@@ -3071,13 +3071,13 @@ _SPI_cursor_operation(Portal portal, FetchDirection direction, long count,
 }
 
 
-static MemoryContext
+static MemoryContext *
 _SPI_execmem(void)
 {
 	return MemoryContextSwitchTo(_SPI_current->execCxt);
 }
 
-static MemoryContext
+static MemoryContext *
 _SPI_procmem(void)
 {
 	return MemoryContextSwitchTo(_SPI_current->procCxt);
@@ -3158,9 +3158,9 @@ static SPIPlanPtr
 _SPI_make_plan_non_temp(SPIPlanPtr plan)
 {
 	SPIPlanPtr	newplan;
-	MemoryContext parentcxt = _SPI_current->procCxt;
-	MemoryContext plancxt;
-	MemoryContext oldcxt;
+	MemoryContext *parentcxt = _SPI_current->procCxt;
+	MemoryContext *plancxt;
+	MemoryContext *oldcxt;
 	ListCell   *lc;
 
 	/* Assert the input is a temporary SPIPlan */
@@ -3226,8 +3226,8 @@ static SPIPlanPtr
 _SPI_save_plan(SPIPlanPtr plan)
 {
 	SPIPlanPtr	newplan;
-	MemoryContext plancxt;
-	MemoryContext oldcxt;
+	MemoryContext *plancxt;
+	MemoryContext *oldcxt;
 	ListCell   *lc;
 
 	/* One-shot plans can't be saved */

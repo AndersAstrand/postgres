@@ -363,7 +363,7 @@ EvalOrderByExpressions(IndexScanState *node, ExprContext *econtext)
 {
 	int			i;
 	ListCell   *l;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
 
@@ -462,7 +462,7 @@ reorderqueue_push(IndexScanState *node, TupleTableSlot *slot,
 {
 	IndexScanDesc scandesc = node->iss_ScanDesc;
 	EState	   *estate = node->ss.ps.state;
-	MemoryContext oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
+	MemoryContext *oldContext = MemoryContextSwitchTo(estate->es_query_cxt);
 	ReorderTuple *rt;
 	int			i;
 
@@ -602,7 +602,7 @@ ExecIndexEvalRuntimeKeys(ExprContext *econtext,
 						 IndexRuntimeKeyInfo *runtimeKeys, int numRuntimeKeys)
 {
 	int			j;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/* We want to keep the key values in per-tuple memory */
 	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);
@@ -665,7 +665,7 @@ ExecIndexEvalArrayKeys(ExprContext *econtext,
 {
 	bool		result = true;
 	int			j;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/* We want to keep the arrays in per-tuple memory */
 	oldContext = MemoryContextSwitchTo(econtext->ecxt_per_tuple_memory);

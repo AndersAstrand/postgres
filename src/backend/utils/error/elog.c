@@ -180,7 +180,7 @@ static void set_stack_entry_location(ErrorData *edata,
 									 const char *funcname);
 static bool matches_backtrace_functions(const char *funcname);
 static pg_noinline void set_backtrace(ErrorData *edata, int num_skip);
-static void set_errdata_field(MemoryContextData *cxt, char **ptr, const char *str);
+static void set_errdata_field(MemoryContext *cxt, char **ptr, const char *str);
 static void FreeErrorDataContents(ErrorData *edata);
 static void write_console(const char *line, int len);
 static const char *process_log_prefix_padding(const char *p, int *ppadding);
@@ -475,7 +475,7 @@ errfinish(const char *filename, int lineno, const char *funcname)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
 	int			elevel;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ErrorContextCallback *econtext;
 
 	recursion_depth++;
@@ -1071,7 +1071,7 @@ int
 errmsg(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1093,7 +1093,7 @@ int
 errbacktrace(void)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1158,7 +1158,7 @@ int
 errmsg_internal(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1182,7 +1182,7 @@ errmsg_plural(const char *fmt_singular, const char *fmt_plural,
 			  unsigned long n,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1204,7 +1204,7 @@ int
 errdetail(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1231,7 +1231,7 @@ int
 errdetail_internal(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1252,7 +1252,7 @@ int
 errdetail_log(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1274,7 +1274,7 @@ errdetail_log_plural(const char *fmt_singular, const char *fmt_plural,
 					 unsigned long n,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1297,7 +1297,7 @@ errdetail_plural(const char *fmt_singular, const char *fmt_plural,
 				 unsigned long n,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1318,7 +1318,7 @@ int
 errhint(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1340,7 +1340,7 @@ int
 errhint_internal(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1362,7 +1362,7 @@ errhint_plural(const char *fmt_singular, const char *fmt_plural,
 			   unsigned long n,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1387,7 +1387,7 @@ int
 errcontext_msg(const char *fmt,...)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1567,7 +1567,7 @@ err_generic_string(int field, const char *str)
  * set_errdata_field --- set an ErrorData string field
  */
 static void
-set_errdata_field(MemoryContextData *cxt, char **ptr, const char *str)
+set_errdata_field(MemoryContext *cxt, char **ptr, const char *str)
 {
 	Assert(*ptr == NULL);
 	*ptr = MemoryContextStrdup(cxt, str);
@@ -1660,7 +1660,7 @@ format_elog_string(const char *fmt,...)
 {
 	ErrorData	errdata;
 	ErrorData  *edata;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Initialize a mostly-dummy error frame */
 	edata = &errdata;
@@ -1692,7 +1692,7 @@ void
 EmitErrorReport(void)
 {
 	ErrorData  *edata = &errordata[errordata_stack_depth];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	recursion_depth++;
 	CHECK_STACK_DEPTH();
@@ -1900,7 +1900,7 @@ void
 ThrowErrorData(ErrorData *edata)
 {
 	ErrorData  *newedata;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (!errstart(edata->elevel, edata->domain))
 		return;					/* error is not to be reported at all */

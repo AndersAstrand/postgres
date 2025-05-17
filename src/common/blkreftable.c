@@ -145,7 +145,7 @@ struct BlockRefTable
 {
 	blockreftable_hash *hash;
 #ifndef FRONTEND
-	MemoryContext mcxt;
+	MemoryContext *mcxt;
 #endif
 };
 
@@ -303,7 +303,7 @@ BlockRefTableMarkBlockModified(BlockRefTable *brtab,
 	BlockRefTableKey key = {0}; /* make sure any padding is zero */
 	bool		found;
 #ifndef FRONTEND
-	MemoryContext oldcontext = MemoryContextSwitchTo(brtab->mcxt);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(brtab->mcxt);
 #endif
 
 	memcpy(&key.rlocator, rlocator, sizeof(RelFileLocator));

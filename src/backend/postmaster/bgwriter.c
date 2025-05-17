@@ -88,7 +88,7 @@ void
 BackgroundWriterMain(const void *startup_data, size_t startup_data_len)
 {
 	sigjmp_buf	local_sigjmp_buf;
-	MemoryContext bgwriter_context;
+	MemoryContext *bgwriter_context;
 	bool		prev_hibernate;
 	WritebackContext wb_context;
 

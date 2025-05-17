@@ -165,7 +165,7 @@ typedef struct SH_TYPE
 
 #ifndef SH_RAW_ALLOCATOR
 	/* memory context to use for allocations */
-	MemoryContext ctx;
+	MemoryContext *ctx;
 #endif
 
 	/* user defined data, useful for callbacks */
@@ -191,10 +191,10 @@ typedef struct SH_ITERATOR
 SH_SCOPE	SH_TYPE *SH_CREATE(uint32 nelements, void *private_data);
 #else
 /*
- * <prefix>_hash <prefix>_create(MemoryContext ctx, uint32 nelements,
+ * <prefix>_hash <prefix>_create(MemoryContext *ctx, uint32 nelements,
  *								 void *private_data)
  */
-SH_SCOPE	SH_TYPE *SH_CREATE(MemoryContext ctx, uint32 nelements,
+SH_SCOPE	SH_TYPE *SH_CREATE(MemoryContext *ctx, uint32 nelements,
 							   void *private_data);
 #endif
 
@@ -442,7 +442,7 @@ SH_SCOPE	SH_TYPE *
 SH_CREATE(uint32 nelements, void *private_data)
 #else
 SH_SCOPE	SH_TYPE *
-SH_CREATE(MemoryContext ctx, uint32 nelements, void *private_data)
+SH_CREATE(MemoryContext *ctx, uint32 nelements, void *private_data)
 #endif
 {
 	SH_TYPE    *tb;

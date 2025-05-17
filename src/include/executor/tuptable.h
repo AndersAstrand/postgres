@@ -125,7 +125,7 @@ typedef struct TupleTableSlot
 	Datum	   *tts_values;		/* current per-attribute values */
 #define FIELDNO_TUPLETABLESLOT_ISNULL 6
 	bool	   *tts_isnull;		/* current per-attribute isnull flags */
-	MemoryContext tts_mcxt;		/* slot itself is in this context */
+	MemoryContext *tts_mcxt;	/* slot itself is in this context */
 	ItemPointerData tts_tid;	/* stored tuple's tid */
 	Oid			tts_tableOid;	/* table oid of tuple */
 } TupleTableSlot;

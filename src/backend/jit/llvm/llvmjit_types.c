@@ -62,7 +62,7 @@ ExprState	StructExprState;
 FunctionCallInfoBaseData StructFunctionCallInfoData;
 HeapTupleData StructHeapTupleData;
 HeapTupleHeaderData StructHeapTupleHeaderData;
-MemoryContextData StructMemoryContextData;
+MemoryContext StructMemoryContext;
 TupleTableSlot StructTupleTableSlot;
 HeapTupleTableSlot StructHeapTupleTableSlot;
 MinimalTupleTableSlot StructMinimalTupleTableSlot;

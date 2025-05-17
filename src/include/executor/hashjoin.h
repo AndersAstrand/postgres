@@ -347,9 +347,9 @@ typedef struct HashJoinTableData
 	Size		spaceUsedSkew;	/* skew hash table's current space usage */
 	Size		spaceAllowedSkew;	/* upper limit for skew hashtable */
 
-	MemoryContext hashCxt;		/* context for whole-hash-join storage */
-	MemoryContext batchCxt;		/* context for this-batch-only storage */
-	MemoryContext spillCxt;		/* context for spilling to temp files */
+	MemoryContext *hashCxt;		/* context for whole-hash-join storage */
+	MemoryContext *batchCxt;	/* context for this-batch-only storage */
+	MemoryContext *spillCxt;	/* context for spilling to temp files */
 
 	/* used for dense allocation of tuples (into linked chunks) */
 	HashMemoryChunk chunks;		/* one list for the whole batch */

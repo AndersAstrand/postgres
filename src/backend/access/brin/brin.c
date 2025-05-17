@@ -167,7 +167,7 @@ typedef struct BrinBuildState
 
 	BrinTuple  *bs_emptyTuple;
 	Size		bs_emptyTupleLen;
-	MemoryContext bs_context;
+	MemoryContext *bs_context;
 
 	/*
 	 * bs_leader is only present when a parallel index build is performed, and
@@ -315,7 +315,7 @@ static BrinInsertState *
 initialize_brin_insertstate(Relation idxRel, IndexInfo *indexInfo)
 {
 	BrinInsertState *bistate;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	oldcxt = MemoryContextSwitchTo(indexInfo->ii_Context);
 	bistate = palloc0(sizeof(BrinInsertState));
@@ -354,8 +354,8 @@ brininsert(Relation idxRel, Datum *values, bool *nulls,
 	BrinRevmap *revmap;
 	BrinDesc   *bdesc;
 	Buffer		buf = InvalidBuffer;
-	MemoryContext tupcxt = NULL;
-	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext *tupcxt = NULL;
+	MemoryContext *oldcxt = CurrentMemoryContext;
 	bool		autosummarize = BrinGetAutoSummarize(idxRel);
 
 	/*
@@ -576,8 +576,8 @@ bringetbitmap(IndexScanDesc scan, TIDBitmap *tbm)
 	BlockNumber heapBlk;
 	int64		totalpages = 0;
 	FmgrInfo   *consistentFn;
-	MemoryContext oldcxt;
-	MemoryContext perRangeCxt;
+	MemoryContext *oldcxt;
+	MemoryContext *perRangeCxt;
 	BrinMemTuple *dtup;
 	BrinTuple  *btup = NULL;
 	Size		btupsz = 0;
@@ -1586,8 +1586,8 @@ brin_build_desc(Relation rel)
 	int			totalstored = 0;
 	int			keyno;
 	long		totalsize;
-	MemoryContext cxt;
-	MemoryContext oldcxt;
+	MemoryContext *cxt;
+	MemoryContext *oldcxt;
 
 	cxt = AllocSetContextCreate(CurrentMemoryContext,
 								"brin desc cxt",
@@ -2032,8 +2032,8 @@ union_tuples(BrinDesc *bdesc, BrinMemTuple *a, BrinTuple *b)
 {
 	int			keyno;
 	BrinMemTuple *db;
-	MemoryContext cxt;
-	MemoryContext oldcxt;
+	MemoryContext *cxt;
+	MemoryContext *oldcxt;
 
 	/* Use our own memory context to avoid retail pfree */
 	cxt = AllocSetContextCreate(CurrentMemoryContext,
@@ -2623,8 +2623,8 @@ _brin_parallel_merge(BrinBuildState *state)
 	BrinMemTuple *memtuple = NULL;
 	Size		tuplen;
 	BlockNumber prevblkno = InvalidBlockNumber;
-	MemoryContext rangeCxt,
-				oldCxt;
+	MemoryContext *rangeCxt,
+			   *oldCxt;
 	double		reltuples;
 
 	/* wait for workers to scan table and produce partial results */
@@ -2958,7 +2958,7 @@ brin_build_empty_tuple(BrinBuildState *state, BlockNumber blkno)
 	/* First time an empty tuple is requested? If yes, initialize it. */
 	if (state->bs_emptyTuple == NULL)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		BrinMemTuple *dtuple = brin_new_memtuple(state->bs_bdesc);
 
 		/* Allocate the tuple in context for the whole index build. */

@@ -153,7 +153,7 @@ spgAddStartItem(SpGistScanOpaque so, bool isnull)
 static void
 resetSpGistScanOpaque(SpGistScanOpaque so)
 {
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	MemoryContextReset(so->traversalCxt);
 
@@ -539,7 +539,7 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		spgLeafConsistentOut out;
 
 		/* use temp context for calling leaf_consistent */
-		MemoryContext oldCxt = MemoryContextSwitchTo(so->tempCxt);
+		MemoryContext *oldCxt = MemoryContextSwitchTo(so->tempCxt);
 
 		in.scankeys = so->keyData;
 		in.nkeys = so->numberOfKeys;
@@ -575,7 +575,7 @@ spgLeafTest(SpGistScanOpaque so, SpGistSearchItem *item,
 		if (so->numberOfNonNullOrderBys > 0)
 		{
 			/* the scan is ordered -> add the item to the queue */
-			MemoryContext oldCxt = MemoryContextSwitchTo(so->traversalCxt);
+			MemoryContext *oldCxt = MemoryContextSwitchTo(so->traversalCxt);
 			SpGistSearchItem *heapItem = spgNewHeapItem(so, item->level,
 														leafTuple,
 														leafValue,
@@ -667,7 +667,7 @@ static void
 spgInnerTest(SpGistScanOpaque so, SpGistSearchItem *item,
 			 SpGistInnerTuple innerTuple, bool isnull)
 {
-	MemoryContext oldCxt = MemoryContextSwitchTo(so->tempCxt);
+	MemoryContext *oldCxt = MemoryContextSwitchTo(so->tempCxt);
 	spgInnerConsistentOut out;
 	int			nNodes = innerTuple->nNodes;
 	int			i;

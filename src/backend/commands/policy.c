@@ -192,8 +192,8 @@ policy_role_list_to_array(List *roles, int *num_roles)
 void
 RelationBuildRowSecurity(Relation relation)
 {
-	MemoryContext rscxt;
-	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext *rscxt;
+	MemoryContext *oldcxt = CurrentMemoryContext;
 	RowSecurityDesc *rsdesc;
 	Relation	catalog;
 	ScanKeyData skey;

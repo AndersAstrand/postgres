@@ -82,7 +82,7 @@ typedef struct storeInfo
 	FunctionCallInfo fcinfo;
 	Tuplestorestate *tuplestore;
 	AttInMetadata *attinmeta;
-	MemoryContext tmpcontext;
+	MemoryContext *tmpcontext;
 	char	  **cstrs;
 	/* temp storage for results to avoid leaks on exception */
 	PGresult   *last_res;
@@ -931,7 +931,7 @@ materializeResult(FunctionCallInfo fcinfo, PGconn *conn, PGresult *res)
 			AttInMetadata *attinmeta;
 			int			nestlevel = -1;
 			Tuplestorestate *tupstore;
-			MemoryContext oldcontext;
+			MemoryContext *oldcontext;
 			int			row;
 			char	  **values;
 
@@ -1048,7 +1048,7 @@ materializeQueryResult(FunctionCallInfo fcinfo,
 			Tuplestorestate *tupstore;
 			HeapTuple	tuple;
 			char	   *values[1];
-			MemoryContext oldcontext;
+			MemoryContext *oldcontext;
 
 			/*
 			 * need a tuple descriptor representing one TEXT column to return
@@ -1186,7 +1186,7 @@ storeRow(volatile storeInfo *sinfo, PGresult *res, bool first)
 	int			nfields = PQnfields(res);
 	HeapTuple	tuple;
 	int			i;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	if (first)
 	{
@@ -1513,7 +1513,7 @@ dblink_get_pkey(PG_FUNCTION_ARGS)
 	int32		call_cntr;
 	int32		max_calls;
 	AttInMetadata *attinmeta;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())

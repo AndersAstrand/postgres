@@ -40,7 +40,7 @@ typedef struct
 	 */
 	IntegerSet *internal_page_set;
 	IntegerSet *empty_leaf_set;
-	MemoryContext page_set_context;
+	MemoryContext *page_set_context;
 } GistVacState;
 
 static void gistvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
@@ -129,7 +129,7 @@ gistvacuumscan(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 	GistVacState vstate;
 	BlockNumber num_pages;
 	bool		needLock;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	BlockRangeReadStreamPrivate p;
 	ReadStream *stream = NULL;
 

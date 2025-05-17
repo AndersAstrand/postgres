@@ -765,7 +765,7 @@ ExprState *
 ExecPrepareExpr(Expr *node, EState *estate)
 {
 	ExprState  *result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
@@ -793,7 +793,7 @@ ExprState *
 ExecPrepareQual(List *qual, EState *estate)
 {
 	ExprState  *result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
@@ -816,7 +816,7 @@ ExprState *
 ExecPrepareCheck(List *qual, EState *estate)
 {
 	ExprState  *result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(estate->es_query_cxt);
 
@@ -839,7 +839,7 @@ List *
 ExecPrepareExprList(List *nodes, EState *estate)
 {
 	List	   *result = NIL;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ListCell   *lc;
 
 	/* Ensure that the list cell nodes are in the right context too */

@@ -117,7 +117,7 @@ typedef struct PortalData
 	/* Bookkeeping data */
 	const char *name;			/* portal's name */
 	const char *prepStmtName;	/* source prepared statement (NULL if none) */
-	MemoryContext portalContext;	/* subsidiary memory for portal */
+	MemoryContext *portalContext;	/* subsidiary memory for portal */
 	ResourceOwner resowner;		/* resources owned by portal */
 	void		(*cleanup) (Portal portal); /* cleanup hook */
 
@@ -175,7 +175,7 @@ typedef struct PortalData
 	 * the end of its transaction no longer has any active executor state.)
 	 */
 	Tuplestorestate *holdStore; /* store for holdable cursors */
-	MemoryContext holdContext;	/* memory containing holdStore */
+	MemoryContext *holdContext; /* memory containing holdStore */
 
 	/*
 	 * Snapshot under which tuples in the holdStore were read.  We must keep a

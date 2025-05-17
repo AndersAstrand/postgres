@@ -23,7 +23,7 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
-static MemoryContext opCtx;		/* working memory for operations */
+static MemoryContext *opCtx;	/* working memory for operations */
 
 /*
  * Replay the clearing of F_FOLLOW_RIGHT flag on a child page.
@@ -397,7 +397,7 @@ void
 gist_redo(XLogReaderState *record)
 {
 	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	/*
 	 * GiST indexes do not require any conflict processing. NB: If we ever

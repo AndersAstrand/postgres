@@ -47,7 +47,7 @@
  */
 #define		TEXTBUFLEN			1024
 
-extern pg_locale_t create_pg_locale_icu(Oid collid, MemoryContext context);
+extern pg_locale_t create_pg_locale_icu(Oid collid, MemoryContext *context);
 extern size_t strlower_icu(char *dest, size_t destsize, const char *src,
 						   ssize_t srclen, pg_locale_t locale);
 extern size_t strtitle_icu(char *dest, size_t destsize, const char *src,
@@ -139,7 +139,7 @@ static const struct collate_methods collate_methods_icu_utf8 = {
 #endif
 
 pg_locale_t
-create_pg_locale_icu(Oid collid, MemoryContext context)
+create_pg_locale_icu(Oid collid, MemoryContext *context)
 {
 #ifdef USE_ICU
 	bool		deterministic;

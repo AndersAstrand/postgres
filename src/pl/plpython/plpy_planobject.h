@@ -16,7 +16,7 @@ typedef struct PLyPlanObject
 	int			nargs;
 	Oid		   *types;
 	PLyObToDatum *args;
-	MemoryContext mcxt;
+	MemoryContext *mcxt;
 } PLyPlanObject;
 
 extern void PLy_plan_init_type(void);

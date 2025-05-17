@@ -49,7 +49,7 @@ PG_MODULE_MAGIC_EXT(
 					.version = PG_VERSION
 );
 
-static HTAB *load_categories_hash(char *cats_sql, MemoryContext per_query_ctx);
+static HTAB *load_categories_hash(char *cats_sql, MemoryContext *per_query_ctx);
 static Tuplestorestate *get_crosstab_tuplestore(char *sql,
 												HTAB *crosstab_hash,
 												TupleDesc tupdesc,
@@ -67,7 +67,7 @@ static Tuplestorestate *connectby(char *relname,
 								  int max_depth,
 								  bool show_branch,
 								  bool show_serial,
-								  MemoryContext per_query_ctx,
+								  MemoryContext *per_query_ctx,
 								  bool randomAccess,
 								  AttInMetadata *attinmeta);
 static void build_tuplestore_recursively(char *key_fld,
@@ -82,7 +82,7 @@ static void build_tuplestore_recursively(char *key_fld,
 										 int max_depth,
 										 bool show_branch,
 										 bool show_serial,
-										 MemoryContext per_query_ctx,
+										 MemoryContext *per_query_ctx,
 										 AttInMetadata *attinmeta,
 										 Tuplestorestate *tupstore);
 
@@ -183,7 +183,7 @@ normal_rand(PG_FUNCTION_ARGS)
 	float8		stddev;
 	float8		carry_val;
 	bool		use_carry;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())
@@ -370,8 +370,8 @@ crosstab(PG_FUNCTION_ARGS)
 	char	   *lastrowid;
 	int			i;
 	int			num_categories;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
+	MemoryContext *per_query_ctx;
+	MemoryContext *oldcontext;
 	int			ret;
 	uint64		proc;
 
@@ -639,8 +639,8 @@ crosstab_hash(PG_FUNCTION_ARGS)
 	char	   *cats_sql = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
+	MemoryContext *per_query_ctx;
+	MemoryContext *oldcontext;
 	HTAB	   *crosstab_hash;
 
 	/* check to see if caller supports us returning a tuplestore */
@@ -702,13 +702,13 @@ crosstab_hash(PG_FUNCTION_ARGS)
  * load up the categories hash table
  */
 static HTAB *
-load_categories_hash(char *cats_sql, MemoryContext per_query_ctx)
+load_categories_hash(char *cats_sql, MemoryContext *per_query_ctx)
 {
 	HTAB	   *crosstab_hash;
 	HASHCTL		ctl;
 	int			ret;
 	uint64		proc;
-	MemoryContext SPIcontext;
+	MemoryContext *SPIcontext;
 
 	/* initialize the category hash table */
 	ctl.keysize = MAX_CATNAME_LEN;
@@ -987,8 +987,8 @@ connectby_text(PG_FUNCTION_ARGS)
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	AttInMetadata *attinmeta;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
+	MemoryContext *per_query_ctx;
+	MemoryContext *oldcontext;
 
 	/* check to see if caller supports us returning a tuplestore */
 	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
@@ -1066,8 +1066,8 @@ connectby_text_serial(PG_FUNCTION_ARGS)
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	TupleDesc	tupdesc;
 	AttInMetadata *attinmeta;
-	MemoryContext per_query_ctx;
-	MemoryContext oldcontext;
+	MemoryContext *per_query_ctx;
+	MemoryContext *oldcontext;
 
 	/* check to see if caller supports us returning a tuplestore */
 	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
@@ -1143,12 +1143,12 @@ connectby(char *relname,
 		  int max_depth,
 		  bool show_branch,
 		  bool show_serial,
-		  MemoryContext per_query_ctx,
+		  MemoryContext *per_query_ctx,
 		  bool randomAccess,
 		  AttInMetadata *attinmeta)
 {
 	Tuplestorestate *tupstore = NULL;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			serial = 1;
 
 	/* Connect to SPI manager */
@@ -1197,7 +1197,7 @@ build_tuplestore_recursively(char *key_fld,
 							 int max_depth,
 							 bool show_branch,
 							 bool show_serial,
-							 MemoryContext per_query_ctx,
+							 MemoryContext *per_query_ctx,
 							 AttInMetadata *attinmeta,
 							 Tuplestorestate *tupstore)
 {

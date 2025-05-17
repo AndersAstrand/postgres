@@ -65,7 +65,7 @@
 #define		MAX_L10N_DATA		80
 
 /* pg_locale_builtin.c */
-extern pg_locale_t create_pg_locale_builtin(Oid collid, MemoryContext context);
+extern pg_locale_t create_pg_locale_builtin(Oid collid, MemoryContext *context);
 extern char *get_collation_actual_version_builtin(const char *collcollate);
 
 /* pg_locale_icu.c */
@@ -73,10 +73,10 @@ extern char *get_collation_actual_version_builtin(const char *collcollate);
 extern UCollator *pg_ucol_open(const char *loc_str);
 extern char *get_collation_actual_version_icu(const char *collcollate);
 #endif
-extern pg_locale_t create_pg_locale_icu(Oid collid, MemoryContext context);
+extern pg_locale_t create_pg_locale_icu(Oid collid, MemoryContext *context);
 
 /* pg_locale_libc.c */
-extern pg_locale_t create_pg_locale_libc(Oid collid, MemoryContext context);
+extern pg_locale_t create_pg_locale_libc(Oid collid, MemoryContext *context);
 extern char *get_collation_actual_version_libc(const char *collcollate);
 
 extern size_t strlower_builtin(char *dst, size_t dstsize, const char *src,
@@ -158,7 +158,7 @@ typedef struct
 #define SH_DEFINE
 #include "lib/simplehash.h"
 
-static MemoryContext CollationCacheContext = NULL;
+static MemoryContext *CollationCacheContext = NULL;
 static collation_cache_hash *CollationCache = NULL;
 
 /*
@@ -1064,7 +1064,7 @@ IsoLocaleName(const char *winlocname)
  * Create a new pg_locale_t struct for the given collation oid.
  */
 static pg_locale_t
-create_pg_locale(Oid collid, MemoryContext context)
+create_pg_locale(Oid collid, MemoryContext *context)
 {
 	HeapTuple	tp;
 	Form_pg_collation collform;

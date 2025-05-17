@@ -140,7 +140,7 @@ PrepareClientEncoding(int encoding)
 		Oid			to_server_proc,
 					to_client_proc;
 		ConvProcInfo *convinfo;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		to_server_proc = FindDefaultConversionProc(encoding,
 												   current_server_encoding);

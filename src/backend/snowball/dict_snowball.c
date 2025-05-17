@@ -176,7 +176,7 @@ typedef struct DictSnowball
 	 * private memory context. Note, init function is executed in long lived
 	 * context, so we just remember CurrentMemoryContext
 	 */
-	MemoryContext dictCtx;
+	MemoryContext *dictCtx;
 } DictSnowball;
 
 
@@ -302,7 +302,7 @@ dsnowball_lexize(PG_FUNCTION_ARGS)
 	}
 	else
 	{
-		MemoryContext saveCtx;
+		MemoryContext *saveCtx;
 
 		/*
 		 * recode to utf8 if stemmer is utf8 and doesn't match server encoding

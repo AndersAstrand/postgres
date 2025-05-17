@@ -94,7 +94,7 @@ static PyObject *
 PLy_subtransaction_enter(PyObject *self, PyObject *unused)
 {
 	PLySubtransactionData *subxactdata;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	PLySubtransactionObject *subxact = (PLySubtransactionObject *) self;
 
 	if (subxact->started)

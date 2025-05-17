@@ -159,8 +159,8 @@ StartupDecodingContext(List *output_plugin_options,
 					   LogicalOutputPluginWriterUpdateProgress update_progress)
 {
 	ReplicationSlot *slot;
-	MemoryContext context,
-				old_context;
+	MemoryContext *context,
+			   *old_context;
 	LogicalDecodingContext *ctx;
 
 	/* shorter lines... */
@@ -340,7 +340,7 @@ CreateInitDecodingContext(const char *plugin,
 	ReplicationSlot *slot;
 	NameData	plugin_name;
 	LogicalDecodingContext *ctx;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/*
 	 * On a standby, this check is also required while creating the slot.
@@ -503,7 +503,7 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 {
 	LogicalDecodingContext *ctx;
 	ReplicationSlot *slot;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/* shorter lines... */
 	slot = MyReplicationSlot;

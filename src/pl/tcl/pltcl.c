@@ -145,7 +145,7 @@ typedef struct pltcl_proc_desc
 {
 	char	   *user_proname;	/* user's name (from format_procedure) */
 	char	   *internal_proname;	/* Tcl proc name (NULL if deleted) */
-	MemoryContext fn_cxt;		/* memory context for this procedure */
+	MemoryContext *fn_cxt;		/* memory context for this procedure */
 	unsigned long fn_refcount;	/* number of active references */
 	TransactionId fn_xmin;		/* xmin of pg_proc row */
 	ItemPointerData fn_tid;		/* TID of pg_proc row */
@@ -234,7 +234,7 @@ typedef struct pltcl_call_state
 
 	ReturnSetInfo *rsi;			/* passed-in ReturnSetInfo, if any */
 	Tuplestorestate *tuple_store;	/* SRFs accumulate result here */
-	MemoryContext tuple_store_cxt;	/* context and resowner for tuplestore */
+	MemoryContext *tuple_store_cxt; /* context and resowner for tuplestore */
 	ResourceOwner tuple_store_owner;
 } pltcl_call_state;
 
@@ -322,12 +322,12 @@ static int	pltcl_commit(ClientData cdata, Tcl_Interp *interp,
 static int	pltcl_rollback(ClientData cdata, Tcl_Interp *interp,
 						   int objc, Tcl_Obj *const objv[]);
 
-static void pltcl_subtrans_begin(MemoryContext oldcontext,
+static void pltcl_subtrans_begin(MemoryContext *oldcontext,
 								 ResourceOwner oldowner);
-static void pltcl_subtrans_commit(MemoryContext oldcontext,
+static void pltcl_subtrans_commit(MemoryContext *oldcontext,
 								  ResourceOwner oldowner);
 static void pltcl_subtrans_abort(Tcl_Interp *interp,
-								 MemoryContext oldcontext,
+								 MemoryContext *oldcontext,
 								 ResourceOwner oldowner);
 
 static void pltcl_set_tuple_values(Tcl_Interp *interp, const char *arrayname,
@@ -971,7 +971,7 @@ pltcl_func_handler(PG_FUNCTION_ARGS, pltcl_call_state *call_state,
 			rsi->setResult = call_state->tuple_store;
 			if (call_state->ret_tupdesc)
 			{
-				MemoryContext oldcxt;
+				MemoryContext *oldcxt;
 
 				oldcxt = MemoryContextSwitchTo(call_state->tuple_store_cxt);
 				rsi->setDesc = CreateTupleDescCopy(call_state->ret_tupdesc);
@@ -1424,7 +1424,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 	bool		found;
 	pltcl_proc_desc *prodesc;
 	pltcl_proc_desc *old_prodesc;
-	volatile MemoryContext proc_cxt = NULL;
+	volatile MemoryContext *proc_cxt = NULL;
 	Tcl_DString proc_internal_def;
 	Tcl_DString proc_internal_name;
 	Tcl_DString proc_internal_body;
@@ -1494,7 +1494,7 @@ compile_pltcl_function(Oid fn_oid, Oid tgreloid,
 		Tcl_Interp *interp;
 		int			i;
 		int			tcl_rc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/************************************************************
 		 * Identify the interpreter to use for the function
@@ -1844,7 +1844,7 @@ pltcl_elog(ClientData cdata, Tcl_Interp *interp,
 		   int objc, Tcl_Obj *const objv[])
 {
 	volatile int level;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			priIndex;
 
 	static const char *logpriorities[] = {
@@ -2242,7 +2242,7 @@ pltcl_returnnext(ClientData cdata, Tcl_Interp *interp,
 	pltcl_call_state *call_state = pltcl_current_call_state;
 	FunctionCallInfo fcinfo = call_state->fcinfo;
 	pltcl_proc_desc *prodesc = call_state->prodesc;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	volatile int result = TCL_OK;
 
@@ -2339,7 +2339,7 @@ pltcl_returnnext(ClientData cdata, Tcl_Interp *interp,
  *
  * Intended usage pattern is:
  *
- *	MemoryContext oldcontext = CurrentMemoryContext;
+ *	MemoryContext *oldcontext = CurrentMemoryContext;
  *	ResourceOwner oldowner = CurrentResourceOwner;
  *
  *	...
@@ -2359,7 +2359,7 @@ pltcl_returnnext(ClientData cdata, Tcl_Interp *interp,
  *----------
  */
 static void
-pltcl_subtrans_begin(MemoryContext oldcontext, ResourceOwner oldowner)
+pltcl_subtrans_begin(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	BeginInternalSubTransaction(NULL);
 
@@ -2368,7 +2368,7 @@ pltcl_subtrans_begin(MemoryContext oldcontext, ResourceOwner oldowner)
 }
 
 static void
-pltcl_subtrans_commit(MemoryContext oldcontext, ResourceOwner oldowner)
+pltcl_subtrans_commit(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	/* Commit the inner transaction, return to outer xact context */
 	ReleaseCurrentSubTransaction();
@@ -2378,7 +2378,7 @@ pltcl_subtrans_commit(MemoryContext oldcontext, ResourceOwner oldowner)
 
 static void
 pltcl_subtrans_abort(Tcl_Interp *interp,
-					 MemoryContext oldcontext, ResourceOwner oldowner)
+					 MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	ErrorData  *edata;
 
@@ -2417,7 +2417,7 @@ pltcl_SPI_execute(ClientData cdata, Tcl_Interp *interp,
 	int			count = 0;
 	const char *volatile arrayname = NULL;
 	Tcl_Obj    *volatile loop_body = NULL;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	enum options
@@ -2631,7 +2631,7 @@ static int
 pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 				  int objc, Tcl_Obj *const objv[])
 {
-	volatile MemoryContext plan_cxt = NULL;
+	volatile MemoryContext *plan_cxt = NULL;
 	Tcl_Size	nargs;
 	Tcl_Obj   **argsObj;
 	pltcl_query_desc *qdesc;
@@ -2639,7 +2639,7 @@ pltcl_SPI_prepare(ClientData cdata, Tcl_Interp *interp,
 	Tcl_HashEntry *hashent;
 	int			hashnew;
 	Tcl_HashTable *query_hash;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	/************************************************************
@@ -2773,7 +2773,7 @@ pltcl_SPI_execute_plan(ClientData cdata, Tcl_Interp *interp,
 	Tcl_Size	callObjc;
 	Tcl_Obj   **callObjv = NULL;
 	Datum	   *argvalues;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	Tcl_HashTable *query_hash;
 
@@ -2975,7 +2975,7 @@ static int
 pltcl_subtransaction(ClientData cdata, Tcl_Interp *interp,
 					 int objc, Tcl_Obj *const objv[])
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	int			retcode;
 
@@ -3023,7 +3023,7 @@ static int
 pltcl_commit(ClientData cdata, Tcl_Interp *interp,
 			 int objc, Tcl_Obj *const objv[])
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	PG_TRY();
 	{
@@ -3062,7 +3062,7 @@ static int
 pltcl_rollback(ClientData cdata, Tcl_Interp *interp,
 			   int objc, Tcl_Obj *const objv[])
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	PG_TRY();
 	{
@@ -3351,7 +3351,7 @@ static void
 pltcl_init_tuple_store(pltcl_call_state *call_state)
 {
 	ReturnSetInfo *rsi = call_state->rsi;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	ResourceOwner oldowner;
 
 	/* Should be in a SRF */

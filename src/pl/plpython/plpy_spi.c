@@ -40,7 +40,7 @@ PLy_spi_prepare(PyObject *self, PyObject *args)
 	PyObject   *volatile optr = NULL;
 	char	   *query;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	volatile int nargs;
 
@@ -173,7 +173,7 @@ PLy_spi_execute_plan(PyObject *ob, PyObject *list, long limit)
 	volatile int nargs;
 	int			rv;
 	PLyPlanObject *plan;
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	PyObject   *ret;
 
@@ -217,7 +217,7 @@ PLy_spi_execute_plan(PyObject *ob, PyObject *list, long limit)
 	PG_TRY();
 	{
 		PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-		MemoryContext tmpcontext;
+		MemoryContext *tmpcontext;
 		Datum	   *volatile values;
 		char	   *volatile nulls;
 		volatile int j;
@@ -294,7 +294,7 @@ static PyObject *
 PLy_spi_execute_query(char *query, long limit)
 {
 	int			rv;
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	PyObject   *ret = NULL;
 
@@ -337,7 +337,7 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 {
 	PLyResultObject *result;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 
 	result = (PLyResultObject *) PLy_result_new();
 	if (!result)
@@ -356,7 +356,7 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 	else if (status > 0 && tuptable != NULL)
 	{
 		PLyDatumToOb ininfo;
-		MemoryContext cxt;
+		MemoryContext *cxt;
 
 		Py_DECREF(result->nrows);
 		result->nrows = PyLong_FromUnsignedLongLong(rows);
@@ -372,7 +372,7 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 		oldcontext = CurrentMemoryContext;
 		PG_TRY();
 		{
-			MemoryContext oldcontext2;
+			MemoryContext *oldcontext2;
 
 			if (rows)
 			{
@@ -445,7 +445,7 @@ PLy_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 rows, int status)
 PyObject *
 PLy_commit(PyObject *self, PyObject *args)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
 
 	PG_TRY();
@@ -492,7 +492,7 @@ PLy_commit(PyObject *self, PyObject *args)
 PyObject *
 PLy_rollback(PyObject *self, PyObject *args)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
 
 	PG_TRY();
@@ -541,7 +541,7 @@ PLy_rollback(PyObject *self, PyObject *args)
  *
  * Usage:
  *
- *	MemoryContext oldcontext = CurrentMemoryContext;
+ *	MemoryContext *oldcontext = CurrentMemoryContext;
  *	ResourceOwner oldowner = CurrentResourceOwner;
  *
  *	PLy_spi_subtransaction_begin(oldcontext, oldowner);
@@ -562,7 +562,7 @@ PLy_rollback(PyObject *self, PyObject *args)
  * setting a Python exception in case of an abort.
  */
 void
-PLy_spi_subtransaction_begin(MemoryContext oldcontext, ResourceOwner oldowner)
+PLy_spi_subtransaction_begin(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	BeginInternalSubTransaction(NULL);
 	/* Want to run inside function's memory context */
@@ -570,7 +570,7 @@ PLy_spi_subtransaction_begin(MemoryContext oldcontext, ResourceOwner oldowner)
 }
 
 void
-PLy_spi_subtransaction_commit(MemoryContext oldcontext, ResourceOwner oldowner)
+PLy_spi_subtransaction_commit(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	/* Commit the inner transaction, return to outer xact context */
 	ReleaseCurrentSubTransaction();
@@ -579,7 +579,7 @@ PLy_spi_subtransaction_commit(MemoryContext oldcontext, ResourceOwner oldowner)
 }
 
 void
-PLy_spi_subtransaction_abort(MemoryContext oldcontext, ResourceOwner oldowner)
+PLy_spi_subtransaction_abort(MemoryContext *oldcontext, ResourceOwner oldowner)
 {
 	ErrorData  *edata;
 	PLyExceptionEntry *entry;

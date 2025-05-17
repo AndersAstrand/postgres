@@ -5135,7 +5135,7 @@ pg_timezone_abbrevs_zone(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -5222,7 +5222,7 @@ pg_timezone_abbrevs_abbrevs(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* create a function context for cross-call persistence */
 		funcctx = SRF_FIRSTCALL_INIT();

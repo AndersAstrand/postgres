@@ -32,7 +32,7 @@ struct GinVacuumState
 	void	   *callback_state;
 	GinState	ginstate;
 	BufferAccessStrategy strategy;
-	MemoryContext tmpCxt;
+	MemoryContext *tmpCxt;
 };
 
 /*
@@ -347,7 +347,7 @@ ginVacuumPostingTreeLeaves(GinVacuumState *gvs, BlockNumber blkno)
 	Buffer		buffer;
 	Page		page;
 	bool		hasVoidPage = false;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	/* Find leftmost leaf page of posting tree and lock it in exclusive mode */
 	while (true)

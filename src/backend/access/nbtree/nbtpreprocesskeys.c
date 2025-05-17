@@ -1341,7 +1341,7 @@ _bt_skiparray_strat_adjust(IndexScanDesc scan, ScanKey arraysk,
 						   BTArrayKeyInfo *array)
 {
 	BTScanOpaque so = (BTScanOpaque) scan->opaque;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * Called last among all preprocessing steps, when the skip array's final
@@ -1524,7 +1524,7 @@ _bt_preprocess_array_keys(IndexScanDesc scan, int *new_numberOfKeys)
 	int			origarrayatt = InvalidAttrNumber,
 				origarraykey = -1;
 	Oid			origelemtype = InvalidOid;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	ScanKey		arrayKeyData;	/* modified copy of scan->keyData */
 
 	/*

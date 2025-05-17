@@ -73,8 +73,8 @@ static void rebuild_relation(Relation OldHeap, Relation index, bool verbose);
 static void copy_table_data(Relation NewHeap, Relation OldHeap, Relation OldIndex,
 							bool verbose, bool *pSwapToastByContent,
 							TransactionId *pFreezeXid, MultiXactId *pCutoffMulti);
-static List *get_tables_to_cluster(MemoryContext cluster_context);
-static List *get_tables_to_cluster_partitioned(MemoryContext cluster_context,
+static List *get_tables_to_cluster(MemoryContext *cluster_context);
+static List *get_tables_to_cluster_partitioned(MemoryContext *cluster_context,
 											   Oid indexOid);
 static bool cluster_is_permitted_for_relation(Oid relid, Oid userid);
 
@@ -111,7 +111,7 @@ cluster(ParseState *pstate, ClusterStmt *stmt, bool isTopLevel)
 	bool		verbose = false;
 	Relation	rel = NULL;
 	Oid			indexOid = InvalidOid;
-	MemoryContext cluster_context;
+	MemoryContext *cluster_context;
 	List	   *rtcs;
 
 	/* Parse option list */
@@ -1640,14 +1640,14 @@ finish_heap_swap(Oid OIDOldHeap, Oid OIDNewHeap,
  * and the indexOid on which the table is already clustered.
  */
 static List *
-get_tables_to_cluster(MemoryContext cluster_context)
+get_tables_to_cluster(MemoryContext *cluster_context)
 {
 	Relation	indRelation;
 	TableScanDesc scan;
 	ScanKeyData entry;
 	HeapTuple	indexTuple;
 	Form_pg_index index;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 	List	   *rtcs = NIL;
 
 	/*
@@ -1694,12 +1694,12 @@ get_tables_to_cluster(MemoryContext cluster_context)
  * on the table containing the index.
  */
 static List *
-get_tables_to_cluster_partitioned(MemoryContext cluster_context, Oid indexOid)
+get_tables_to_cluster_partitioned(MemoryContext *cluster_context, Oid indexOid)
 {
 	List	   *inhoids;
 	ListCell   *lc;
 	List	   *rtcs = NIL;
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/* Do not lock the children until they're processed */
 	inhoids = find_all_inheritors(indexOid, NoLock, NULL);

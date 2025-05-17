@@ -35,7 +35,7 @@ typedef struct
 {
 	BloomState	blstate;		/* bloom index state */
 	int64		indtuples;		/* total number of tuples indexed */
-	MemoryContext tmpCtx;		/* temporary memory context reset after each
+	MemoryContext *tmpCtx;		/* temporary memory context reset after each
 								 * tuple */
 	PGAlignedBlock data;		/* cached page */
 	int			count;			/* number of tuples in cached page */
@@ -76,7 +76,7 @@ bloomBuildCallback(Relation index, ItemPointer tid, Datum *values,
 				   bool *isnull, bool tupleIsAlive, void *state)
 {
 	BloomBuildState *buildstate = (BloomBuildState *) state;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 	BloomTuple *itup;
 
 	oldCtx = MemoryContextSwitchTo(buildstate->tmpCtx);
@@ -180,8 +180,8 @@ blinsert(Relation index, Datum *values, bool *isnull,
 {
 	BloomState	blstate;
 	BloomTuple *itup;
-	MemoryContext oldCtx;
-	MemoryContext insertCtx;
+	MemoryContext *oldCtx;
+	MemoryContext *insertCtx;
 	BloomMetaPageData *metaData;
 	Buffer		buffer,
 				metaBuffer;

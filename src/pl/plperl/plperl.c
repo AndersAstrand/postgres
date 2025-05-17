@@ -102,7 +102,7 @@ typedef struct plperl_interp_desc
 typedef struct plperl_proc_desc
 {
 	char	   *proname;		/* user name of procedure */
-	MemoryContext fn_cxt;		/* memory context for this procedure */
+	MemoryContext *fn_cxt;		/* memory context for this procedure */
 	unsigned long fn_refcount;	/* number of active references */
 	TransactionId fn_xmin;		/* xmin/TID of procedure's pg_proc tuple */
 	ItemPointerData fn_tid;
@@ -179,7 +179,7 @@ typedef struct plperl_call_data
 	TupleDesc	ret_tdesc;
 	Oid			cdomain_oid;	/* 0 unless returning domain-over-composite */
 	void	   *cdomain_info;
-	MemoryContext tmp_cxt;
+	MemoryContext *tmp_cxt;
 } plperl_call_data;
 
 /**********************************************************************
@@ -188,7 +188,7 @@ typedef struct plperl_call_data
 typedef struct plperl_query_desc
 {
 	char		qname[24];
-	MemoryContext plan_cxt;		/* context holding this struct */
+	MemoryContext *plan_cxt;	/* context holding this struct */
 	SPIPlanPtr	plan;
 	int			nargs;
 	Oid		   *argtypes;
@@ -2720,7 +2720,7 @@ compile_plperl_function(Oid fn_oid, bool is_trigger, bool is_event_trigger)
 	plperl_proc_key proc_key;
 	plperl_proc_ptr *proc_ptr;
 	plperl_proc_desc *volatile prodesc = NULL;
-	volatile MemoryContext proc_cxt = NULL;
+	volatile MemoryContext *proc_cxt = NULL;
 	plperl_interp_desc *oldinterp = plperl_active_interp;
 	ErrorContextCallback plperl_error_context;
 
@@ -2783,7 +2783,7 @@ compile_plperl_function(Oid fn_oid, bool is_trigger, bool is_event_trigger)
 		Datum		prosrcdatum;
 		bool		isnull;
 		char	   *proc_source;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/************************************************************
 		 * Allocate a context that will hold all PG data for the procedure.
@@ -3139,7 +3139,7 @@ plperl_spi_exec(char *query, int limit)
 	 * Execute the query inside a sub-transaction, so we can cope with errors
 	 * sanely
 	 */
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	check_spi_usage_allowed();
@@ -3245,7 +3245,7 @@ plperl_spi_execute_fetch_result(SPITupleTable *tuptable, uint64 processed,
 void
 plperl_return_next(SV *sv)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	check_spi_usage_allowed();
 
@@ -3278,7 +3278,7 @@ plperl_return_next_internal(SV *sv)
 	plperl_proc_desc *prodesc;
 	FunctionCallInfo fcinfo;
 	ReturnSetInfo *rsi;
-	MemoryContext old_cxt;
+	MemoryContext *old_cxt;
 
 	if (!sv)
 		return;
@@ -3410,7 +3410,7 @@ plperl_spi_query(char *query)
 	 * Execute the query inside a sub-transaction, so we can cope with errors
 	 * sanely
 	 */
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	check_spi_usage_allowed();
@@ -3482,7 +3482,7 @@ plperl_spi_fetchrow(char *cursor)
 	 * Execute the FETCH inside a sub-transaction, so we can cope with errors
 	 * sanely
 	 */
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	check_spi_usage_allowed();
@@ -3568,12 +3568,12 @@ SV *
 plperl_spi_prepare(char *query, int argc, SV **argv)
 {
 	volatile SPIPlanPtr plan = NULL;
-	volatile MemoryContext plan_cxt = NULL;
+	volatile MemoryContext *plan_cxt = NULL;
 	plperl_query_desc *volatile qdesc = NULL;
 	plperl_query_entry *volatile hash_entry = NULL;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
-	MemoryContext work_cxt;
+	MemoryContext *work_cxt;
 	bool		found;
 	int			i;
 
@@ -3729,7 +3729,7 @@ plperl_spi_exec_prepared(char *query, HV *attr, int argc, SV **argv)
 	 * Execute the query inside a sub-transaction, so we can cope with errors
 	 * sanely
 	 */
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	check_spi_usage_allowed();
@@ -3854,7 +3854,7 @@ plperl_spi_query_prepared(char *query, int argc, SV **argv)
 	 * Execute the query inside a sub-transaction, so we can cope with errors
 	 * sanely
 	 */
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	ResourceOwner oldowner = CurrentResourceOwner;
 
 	check_spi_usage_allowed();
@@ -3991,7 +3991,7 @@ plperl_spi_freeplan(char *query)
 void
 plperl_spi_commit(void)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	check_spi_usage_allowed();
 
@@ -4017,7 +4017,7 @@ plperl_spi_commit(void)
 void
 plperl_spi_rollback(void)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 
 	check_spi_usage_allowed();
 
@@ -4054,7 +4054,7 @@ plperl_spi_rollback(void)
 void
 plperl_util_elog(int level, SV *msg)
 {
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	char	   *volatile cmsg = NULL;
 
 	/*

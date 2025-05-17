@@ -73,7 +73,7 @@ struct SharedTuplestoreAccessor
 	int			participant;	/* My participant number. */
 	SharedTuplestore *sts;		/* The shared state. */
 	SharedFileSet *fileset;		/* The SharedFileSet holding files. */
-	MemoryContext context;		/* Memory context for buffers. */
+	MemoryContext *context;		/* Memory context for buffers. */
 
 	/* State for reading. */
 	int			read_participant;	/* The current participant to read from. */
@@ -307,7 +307,7 @@ sts_puttuple(SharedTuplestoreAccessor *accessor, void *meta_data,
 	{
 		SharedTuplestoreParticipant *participant;
 		char		name[MAXPGPATH];
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/* Create one.  Only this backend will write into it. */
 		sts_filename(name, accessor, accessor->participant);
@@ -530,7 +530,7 @@ sts_parallel_scan_next(SharedTuplestoreAccessor *accessor, void *meta_data)
 			if (accessor->read_file == NULL)
 			{
 				char		name[MAXPGPATH];
-				MemoryContext oldcxt;
+				MemoryContext *oldcxt;
 
 				sts_filename(name, accessor, accessor->read_participant);
 

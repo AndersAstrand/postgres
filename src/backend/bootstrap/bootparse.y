@@ -43,7 +43,7 @@
 #define YYMALLOC palloc
 #define YYFREE   pfree
 
-static MemoryContext per_line_ctx = NULL;
+static MemoryContext *per_line_ctx = NULL;
 
 static void
 do_start(void)

@@ -324,7 +324,7 @@ static BoolAggState *
 makeBoolAggState(FunctionCallInfo fcinfo)
 {
 	BoolAggState *state;
-	MemoryContext agg_context;
+	MemoryContext *agg_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");

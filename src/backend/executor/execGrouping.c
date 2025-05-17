@@ -168,15 +168,15 @@ BuildTupleHashTable(PlanState *parent,
 					Oid *collations,
 					long nbuckets,
 					Size additionalsize,
-					MemoryContext metacxt,
-					MemoryContext tablecxt,
-					MemoryContext tempcxt,
+					MemoryContext *metacxt,
+					MemoryContext *tablecxt,
+					MemoryContext *tempcxt,
 					bool use_variable_hash_iv)
 {
 	TupleHashTable hashtable;
 	Size		entrysize;
 	Size		hash_mem_limit;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	bool		allow_jit;
 	uint32		hash_iv = 0;
 
@@ -296,7 +296,7 @@ LookupTupleHashEntry(TupleHashTable hashtable, TupleTableSlot *slot,
 					 bool *isnew, uint32 *hash)
 {
 	TupleHashEntry entry;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	uint32		local_hash;
 
 	/* Need to run the hash functions in short-lived context */
@@ -326,7 +326,7 @@ LookupTupleHashEntry(TupleHashTable hashtable, TupleTableSlot *slot,
 uint32
 TupleHashTableHash(TupleHashTable hashtable, TupleTableSlot *slot)
 {
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	uint32		hash;
 
 	hashtable->inputslot = slot;
@@ -351,7 +351,7 @@ LookupTupleHashEntryHash(TupleHashTable hashtable, TupleTableSlot *slot,
 						 bool *isnew, uint32 hash)
 {
 	TupleHashEntry entry;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/* Need to run the hash functions in short-lived context */
 	oldContext = MemoryContextSwitchTo(hashtable->tempcxt);
@@ -384,7 +384,7 @@ FindTupleHashEntry(TupleHashTable hashtable, TupleTableSlot *slot,
 				   ExprState *hashexpr)
 {
 	TupleHashEntry entry;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	MinimalTuple key;
 
 	/* Need to run the hash functions in short-lived context */

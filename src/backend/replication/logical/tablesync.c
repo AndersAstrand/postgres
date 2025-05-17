@@ -1584,7 +1584,7 @@ FetchTableStates(bool *started_tx)
 
 	if (table_states_validity != SYNC_TABLE_STATE_VALID)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 		List	   *rstates;
 		ListCell   *lc;
 		SubscriptionRelState *rstate;

@@ -100,7 +100,7 @@ plsample_func_handler(PG_FUNCTION_ARGS)
 	Form_pg_type type_struct;
 	HeapTuple	type_tuple;
 	Form_pg_proc pl_struct;
-	volatile MemoryContext proc_cxt = NULL;
+	volatile MemoryContext *proc_cxt = NULL;
 	Oid		   *argtypes;
 	char	  **argnames;
 	char	   *argmodes;

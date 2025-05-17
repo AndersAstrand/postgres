@@ -98,7 +98,7 @@ PLy_cursor_query(const char *query)
 {
 	PLyCursorObject *cursor;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 
 	if ((cursor = PyObject_New(PLyCursorObject, PLy_CursorType)) == NULL)
@@ -167,7 +167,7 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 	volatile int nargs;
 	PLyPlanObject *plan;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 
 	if (args)
@@ -227,7 +227,7 @@ PLy_cursor_plan(PyObject *ob, PyObject *args)
 	PG_TRY();
 	{
 		Portal		portal;
-		MemoryContext tmpcontext;
+		MemoryContext *tmpcontext;
 		Datum	   *volatile values;
 		char	   *volatile nulls;
 		volatile int j;
@@ -338,7 +338,7 @@ PLy_cursor_iternext(PyObject *self)
 	PLyCursorObject *cursor;
 	PyObject   *ret;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	Portal		portal;
 
@@ -401,7 +401,7 @@ PLy_cursor_fetch(PyObject *self, PyObject *args)
 	int			count;
 	PLyResultObject *ret;
 	PLyExecutionContext *exec_ctx = PLy_current_execution_context();
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	volatile ResourceOwner oldowner;
 	Portal		portal;
 

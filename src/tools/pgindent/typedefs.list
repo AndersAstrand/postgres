@@ -1671,7 +1671,6 @@ MemoryContext
 MemoryContextCallback
 MemoryContextCallbackFunction
 MemoryContextCounters
-MemoryContextData
 MemoryContextMethodID
 MemoryContextMethods
 MemoryStatsBackendState

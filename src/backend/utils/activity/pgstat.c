@@ -227,7 +227,7 @@ PgStat_LocalState pgStatLocal;
  * easier to track / attribute memory usage.
  */
 
-static MemoryContext pgStatPendingContext = NULL;
+static MemoryContext *pgStatPendingContext = NULL;
 
 /*
  * Backend local list of PgStat_EntryRef with unflushed pending stats.

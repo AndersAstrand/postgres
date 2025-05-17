@@ -630,7 +630,7 @@ initialize_aggregate(AggState *aggstate, AggStatePerTrans pertrans,
 		pergroupstate->transValue = pertrans->initValue;
 	else
 	{
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 
 		oldContext = MemoryContextSwitchTo(aggstate->curaggcontext->ecxt_per_tuple_memory);
 		pergroupstate->transValue = datumCopy(pertrans->initValue,
@@ -710,7 +710,7 @@ advance_transition_function(AggState *aggstate,
 							AggStatePerGroup pergroupstate)
 {
 	FunctionCallInfo fcinfo = pertrans->transfn_fcinfo;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	Datum		newVal;
 
 	if (pertrans->transfn.fn_strict)
@@ -851,8 +851,8 @@ process_ordered_aggregate_single(AggState *aggstate,
 	Datum		oldVal = (Datum) 0;
 	bool		oldIsNull = true;
 	bool		haveOldVal = false;
-	MemoryContext workcontext = aggstate->tmpcontext->ecxt_per_tuple_memory;
-	MemoryContext oldContext;
+	MemoryContext *workcontext = aggstate->tmpcontext->ecxt_per_tuple_memory;
+	MemoryContext *oldContext;
 	bool		isDistinct = (pertrans->numDistinctCols > 0);
 	Datum		newAbbrevVal = (Datum) 0;
 	Datum		oldAbbrevVal = (Datum) 0;
@@ -1049,7 +1049,7 @@ finalize_aggregate(AggState *aggstate,
 {
 	LOCAL_FCINFO(fcinfo, FUNC_MAX_ARGS);
 	bool		anynull = false;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	int			i;
 	ListCell   *lc;
 	AggStatePerTrans pertrans = &aggstate->pertrans[peragg->transno];
@@ -1148,7 +1148,7 @@ finalize_partialaggregate(AggState *aggstate,
 						  Datum *resultVal, bool *resultIsNull)
 {
 	AggStatePerTrans pertrans = &aggstate->pertrans[peragg->transno];
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	oldContext = MemoryContextSwitchTo(aggstate->ss.ps.ps_ExprContext->ecxt_per_tuple_memory);
 
@@ -1509,9 +1509,9 @@ static void
 build_hash_table(AggState *aggstate, int setno, long nbuckets)
 {
 	AggStatePerHash perhash = &aggstate->perhash[setno];
-	MemoryContext metacxt = aggstate->hash_metacxt;
-	MemoryContext tablecxt = aggstate->hash_tablecxt;
-	MemoryContext tmpcxt = aggstate->tmpcontext->ecxt_per_tuple_memory;
+	MemoryContext *metacxt = aggstate->hash_metacxt;
+	MemoryContext *tablecxt = aggstate->hash_tablecxt;
+	MemoryContext *tmpcxt = aggstate->tmpcontext->ecxt_per_tuple_memory;
 	Size		additionalsize;
 
 	Assert(aggstate->aggstrategy == AGG_HASHED ||
@@ -4611,7 +4611,7 @@ ExecReScanAgg(AggState *node)
  * cache it in the transvalue itself (for internal-type transvalues).
  */
 int
-AggCheckCallContext(FunctionCallInfo fcinfo, MemoryContext *aggcontext)
+AggCheckCallContext(FunctionCallInfo fcinfo, MemoryContext **aggcontext)
 {
 	if (fcinfo->context && IsA(fcinfo->context, AggState))
 	{
@@ -4688,7 +4688,7 @@ AggGetAggref(FunctionCallInfo fcinfo)
  *
  * As above, this is currently not useful for aggs called as window functions.
  */
-MemoryContext
+MemoryContext *
 AggGetTempMemoryContext(FunctionCallInfo fcinfo)
 {
 	if (fcinfo->context && IsA(fcinfo->context, AggState))

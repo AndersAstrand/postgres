@@ -369,7 +369,7 @@ typedef struct mXactCacheEnt
 
 #define MAX_CACHE_ENTRIES	256
 static dclist_head MXactCache = DCLIST_STATIC_INIT(MXactCache);
-static MemoryContext MXactContext = NULL;
+static MemoryContext *MXactContext = NULL;
 
 #ifdef MULTIXACT_DEBUG
 #define debug_elog2(a,b) elog(a,b)
@@ -3526,7 +3526,7 @@ pg_get_multixact_members(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 		TupleDesc	tupdesc;
 
 		funccxt = SRF_FIRSTCALL_INIT();

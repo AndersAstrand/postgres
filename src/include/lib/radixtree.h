@@ -283,7 +283,7 @@ RT_SCOPE void RT_LOCK_EXCLUSIVE(RT_RADIX_TREE * tree);
 RT_SCOPE void RT_LOCK_SHARE(RT_RADIX_TREE * tree);
 RT_SCOPE void RT_UNLOCK(RT_RADIX_TREE * tree);
 #else
-RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext ctx);
+RT_SCOPE	RT_RADIX_TREE *RT_CREATE(MemoryContext *ctx);
 #endif
 RT_SCOPE void RT_FREE(RT_RADIX_TREE * tree);
 
@@ -712,10 +712,10 @@ struct RT_RADIX_TREE
 #ifdef RT_SHMEM
 	dsa_area   *dsa;
 #else
-	MemoryContextData *node_slabs[RT_NUM_SIZE_CLASSES];
+	MemoryContext *node_slabs[RT_NUM_SIZE_CLASSES];
 
 	/* leaf_context is used only for single-value leaves */
-	MemoryContextData *leaf_context;
+	MemoryContext *leaf_context;
 #endif
 };
 
@@ -1816,7 +1816,7 @@ RT_SCOPE	RT_RADIX_TREE *
 #ifdef RT_SHMEM
 RT_CREATE(dsa_area *dsa, int tranche_id)
 #else
-RT_CREATE(MemoryContext ctx)
+RT_CREATE(MemoryContext *ctx)
 #endif
 {
 	RT_RADIX_TREE *tree;

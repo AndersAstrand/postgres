@@ -175,7 +175,7 @@ cpstrdup(IspellDict *Conf, const char *str)
 static char *
 lowerstr_ctx(IspellDict *Conf, const char *src)
 {
-	MemoryContext saveCtx;
+	MemoryContext *saveCtx;
 	char	   *dst;
 
 	saveCtx = MemoryContextSwitchTo(Conf->buildCxt);

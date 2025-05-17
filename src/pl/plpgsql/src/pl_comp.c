@@ -50,7 +50,7 @@ bool		plpgsql_check_syntax = false;
 PLpgSQL_function *plpgsql_curr_compile;
 
 /* A context appropriate for short-term allocs during compilation */
-MemoryContext plpgsql_compile_tmp_cxt;
+MemoryContext *plpgsql_compile_tmp_cxt;
 
 /* ----------
  * Lookup table for EXCEPTION condition names
@@ -194,7 +194,7 @@ plpgsql_compile_callback(FunctionCallInfo fcinfo,
 	char	   *argmodes;
 	int		   *in_arg_varnos = NULL;
 	PLpgSQL_variable **out_arg_variables;
-	MemoryContext func_cxt;
+	MemoryContext *func_cxt;
 
 	/*
 	 * Setup the scanner input and error info.
@@ -735,7 +735,7 @@ plpgsql_compile_inline(char *proc_source)
 	ErrorContextCallback plerrcontext;
 	PLpgSQL_variable *var;
 	int			parse_rc;
-	MemoryContext func_cxt;
+	MemoryContext *func_cxt;
 
 	/*
 	 * Setup the scanner input and error info.
@@ -1233,7 +1233,7 @@ make_datum_param(PLpgSQL_expr *expr, int dno, int location)
 	PLpgSQL_execstate *estate;
 	PLpgSQL_datum *datum;
 	Param	   *param;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* see comment in resolve_column_ref */
 	estate = expr->func->cur_estate;
@@ -1553,7 +1553,7 @@ plpgsql_parse_cwordtype(List *idents)
 	HeapTuple	attrtup = NULL;
 	HeapTuple	typetup = NULL;
 	Form_pg_attribute attrStruct;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	/* Avoid memory leaks in the long-term function context */
 	oldCxt = MemoryContextSwitchTo(plpgsql_compile_tmp_cxt);
@@ -1696,7 +1696,7 @@ plpgsql_parse_cwordrowtype(List *idents)
 	Oid			classOid;
 	Oid			typOid;
 	RangeVar   *relvar;
-	MemoryContext oldCxt;
+	MemoryContext *oldCxt;
 
 	/*
 	 * As above, this is a relation lookup but could be a type lookup if we

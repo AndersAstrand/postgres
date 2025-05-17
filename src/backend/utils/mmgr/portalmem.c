@@ -88,7 +88,7 @@ do { \
 		elog(WARNING, "trying to delete portal name that does not exist"); \
 } while(0)
 
-static MemoryContext TopPortalContext = NULL;
+static MemoryContext *TopPortalContext = NULL;
 
 
 /* ----------------------------------------------------------------
@@ -332,7 +332,7 @@ PortalReleaseCachedPlan(Portal portal)
 void
 PortalCreateHoldStore(Portal portal)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	Assert(portal->holdContext == NULL);
 	Assert(portal->holdStore == NULL);
@@ -581,7 +581,7 @@ PortalDrop(Portal portal, bool isTopCommit)
 	 */
 	if (portal->holdStore)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(portal->holdContext);
 		tuplestore_end(portal->holdStore);

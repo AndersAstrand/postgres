@@ -186,8 +186,8 @@ CreateCachedPlan(RawStmt *raw_parse_tree,
 				 CommandTag commandTag)
 {
 	CachedPlanSource *plansource;
-	MemoryContext source_context;
-	MemoryContext oldcxt;
+	MemoryContext *source_context;
+	MemoryContext *oldcxt;
 
 	Assert(query_string != NULL);	/* required as of 8.4 */
 
@@ -266,7 +266,7 @@ CreateCachedPlanForQuery(Query *analyzed_parse_tree,
 						 CommandTag commandTag)
 {
 	CachedPlanSource *plansource;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Rather than duplicating CreateCachedPlan, just do this: */
 	plansource = CreateCachedPlan(NULL, query_string, commandTag);
@@ -391,7 +391,7 @@ CreateOneShotCachedPlan(RawStmt *raw_parse_tree,
 void
 CompleteCachedPlan(CachedPlanSource *plansource,
 				   List *querytree_list,
-				   MemoryContext querytree_context,
+				   MemoryContext *querytree_context,
 				   Oid *param_types,
 				   int num_params,
 				   ParserSetupHook parserSetup,
@@ -399,8 +399,8 @@ CompleteCachedPlan(CachedPlanSource *plansource,
 				   int cursor_options,
 				   bool fixed_result)
 {
-	MemoryContext source_context = plansource->context;
-	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext *source_context = plansource->context;
+	MemoryContext *oldcxt = CurrentMemoryContext;
 
 	/* Assert caller is doing things in a sane order */
 	Assert(plansource->magic == CACHEDPLANSOURCE_MAGIC);
@@ -679,8 +679,8 @@ RevalidateCachedQuery(CachedPlanSource *plansource,
 	List	   *tlist;			/* transient query-tree list */
 	List	   *qlist;			/* permanent query-tree list */
 	TupleDesc	resultDesc;
-	MemoryContext querytree_context;
-	MemoryContext oldcxt;
+	MemoryContext *querytree_context;
+	MemoryContext *oldcxt;
 
 	/*
 	 * For one-shot plans, we do not support revalidation checking; it's
@@ -766,7 +766,7 @@ RevalidateCachedQuery(CachedPlanSource *plansource,
 	 */
 	if (plansource->query_context)
 	{
-		MemoryContext qcxt = plansource->query_context;
+		MemoryContext *qcxt = plansource->query_context;
 
 		plansource->query_context = NULL;
 		MemoryContextDelete(qcxt);
@@ -1036,9 +1036,9 @@ BuildCachedPlan(CachedPlanSource *plansource, List *qlist,
 	List	   *plist;
 	bool		snapshot_set;
 	bool		is_transient;
-	MemoryContext plan_context;
-	MemoryContext stmt_context = NULL;
-	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext *plan_context;
+	MemoryContext *stmt_context = NULL;
+	MemoryContext *oldcxt = CurrentMemoryContext;
 	ListCell   *lc;
 
 	/*
@@ -1210,7 +1210,7 @@ UpdateCachedPlan(CachedPlanSource *plansource, int query_index,
 	ListCell   *l1,
 			   *l2;
 	CachedPlan *plan = plansource->gplan;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	Assert(ActiveSnapshotSet());
 
@@ -1752,7 +1752,7 @@ CachedPlanIsSimplyValid(CachedPlanSource *plansource, CachedPlan *plan,
  */
 void
 CachedPlanSetParentContext(CachedPlanSource *plansource,
-						   MemoryContext newcontext)
+						   MemoryContext *newcontext)
 {
 	/* Assert caller is doing things in a sane order */
 	Assert(plansource->magic == CACHEDPLANSOURCE_MAGIC);
@@ -1792,9 +1792,9 @@ CachedPlanSource *
 CopyCachedPlan(CachedPlanSource *plansource)
 {
 	CachedPlanSource *newsource;
-	MemoryContext source_context;
-	MemoryContext querytree_context;
-	MemoryContext oldcxt;
+	MemoryContext *source_context;
+	MemoryContext *querytree_context;
+	MemoryContext *oldcxt;
 
 	Assert(plansource->magic == CACHEDPLANSOURCE_MAGIC);
 	Assert(plansource->is_complete);
@@ -1938,8 +1938,8 @@ GetCachedExpression(Node *expr)
 	CachedExpression *cexpr;
 	List	   *relationOids;
 	List	   *invalItems;
-	MemoryContext cexpr_context;
-	MemoryContext oldcxt;
+	MemoryContext *cexpr_context;
+	MemoryContext *oldcxt;
 
 	/*
 	 * Pass the expression through the planner, and collect dependencies.

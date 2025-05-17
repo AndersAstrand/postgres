@@ -173,7 +173,7 @@ setup_dynamic_shared_memory(int64 queue_size, int nworkers,
 static worker_state *
 setup_background_workers(int nworkers, dsm_segment *seg)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	BackgroundWorker worker;
 	worker_state *wstate;
 	int			i;

@@ -136,8 +136,8 @@ gin_check_posting_tree_parent_keys_consistency(Relation rel, BlockNumber posting
 {
 	BufferAccessStrategy strategy = GetAccessStrategy(BAS_BULKREAD);
 	GinPostingTreeScanItem *stack;
-	MemoryContext mctx;
-	MemoryContext oldcontext;
+	MemoryContext *mctx;
+	MemoryContext *oldcontext;
 
 	int			leafdepth;
 
@@ -399,8 +399,8 @@ gin_check_parent_keys_consistency(Relation rel,
 {
 	BufferAccessStrategy strategy = GetAccessStrategy(BAS_BULKREAD);
 	GinScanItem *stack;
-	MemoryContext mctx;
-	MemoryContext oldcontext;
+	MemoryContext *mctx;
+	MemoryContext *oldcontext;
 	GinState	state;
 	int			leafdepth;
 

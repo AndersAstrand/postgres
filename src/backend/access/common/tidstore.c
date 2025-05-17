@@ -117,7 +117,7 @@ struct TidStore
 	 * MemoryContext for the radix tree when using local memory, NULL for
 	 * shared memory
 	 */
-	MemoryContext rt_context;
+	MemoryContext *rt_context;
 
 	/* Storage for TIDs. Use either one depending on TidStoreIsShared() */
 	union

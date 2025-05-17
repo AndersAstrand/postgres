@@ -373,7 +373,7 @@ PLy_current_execution_context(void)
 	return PLy_execution_contexts;
 }
 
-MemoryContext
+MemoryContext *
 PLy_get_scratch_context(PLyExecutionContext *context)
 {
 	/*

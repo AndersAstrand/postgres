@@ -87,8 +87,8 @@ static int	pgStatSharedRefAge = 0; /* cache age of pgStatLocal.shmem */
  * pgStatSharedRef entries respectively. Kept separate to make it easier to
  * track / attribute memory usage.
  */
-static MemoryContext pgStatSharedRefContext = NULL;
-static MemoryContext pgStatEntryRefHashContext = NULL;
+static MemoryContext *pgStatSharedRefContext = NULL;
+static MemoryContext *pgStatEntryRefHashContext = NULL;
 
 
 /* ------------------------------------------------------------
@@ -243,7 +243,7 @@ StatsShmemInit(void)
 void
 pgstat_attach_shmem(void)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	Assert(pgStatLocal.dsa == NULL);
 

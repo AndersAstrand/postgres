@@ -1608,7 +1608,7 @@ backtrack:
 
 	if (attempt_pagedel)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		/* Run pagedel in a temp context to avoid memory leakage */
 		MemoryContextReset(vstate->pagedelcontext);

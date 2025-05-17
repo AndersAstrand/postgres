@@ -403,7 +403,7 @@ pa_setup_dsm(ParallelApplyWorkerInfo *winfo)
 static ParallelApplyWorkerInfo *
 pa_launch_parallel_worker(void)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	bool		launched;
 	ParallelApplyWorkerInfo *winfo;
 	ListCell   *lc;
@@ -735,7 +735,7 @@ LogicalParallelApplyLoop(shm_mq_handle *mqh)
 {
 	shm_mq_result shmq_res;
 	ErrorContextCallback errcallback;
-	MemoryContext oldcxt = CurrentMemoryContext;
+	MemoryContext *oldcxt = CurrentMemoryContext;
 
 	/*
 	 * Init the ApplyMessageContext which we clean up after each replication
@@ -1063,9 +1063,9 @@ void
 ProcessParallelApplyMessages(void)
 {
 	ListCell   *lc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
-	static MemoryContext hpam_context = NULL;
+	static MemoryContext *hpam_context = NULL;
 
 	/*
 	 * This is invoked from ProcessInterrupts(), and since some of the
@@ -1364,7 +1364,7 @@ pa_start_subtrans(TransactionId current_xid, TransactionId top_xid)
 	if (current_xid != top_xid &&
 		!list_member_xid(subxactlist, current_xid))
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 		char		spname[NAMEDATALEN];
 
 		pa_savepoint_name(MySubscription->oid, current_xid,

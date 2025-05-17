@@ -59,7 +59,7 @@
 typedef struct EventTriggerQueryState
 {
 	/* memory context for this state's objects */
-	MemoryContext cxt;
+	MemoryContext *cxt;
 
 	/* sql_drop */
 	slist_head	SQLDropList;
@@ -1063,8 +1063,8 @@ EventTriggerTableRewrite(Node *parsetree, Oid tableOid, int reason)
 static void
 EventTriggerInvoke(List *fn_oid_list, EventTriggerData *trigdata)
 {
-	MemoryContext context;
-	MemoryContext oldcontext;
+	MemoryContext *context;
+	MemoryContext *oldcontext;
 	ListCell   *lc;
 	bool		first = true;
 
@@ -1179,7 +1179,7 @@ bool
 EventTriggerBeginCompleteQuery(void)
 {
 	EventTriggerQueryState *state;
-	MemoryContext cxt;
+	MemoryContext *cxt;
 
 	/*
 	 * Currently, sql_drop, table_rewrite, ddl_command_end events are the only
@@ -1273,7 +1273,7 @@ void
 EventTriggerSQLDropAddObject(const ObjectAddress *object, bool original, bool normal)
 {
 	SQLDropObject *obj;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	if (!currentEventTriggerState)
 		return;
@@ -1584,7 +1584,7 @@ EventTriggerCollectSimpleCommand(ObjectAddress address,
 								 ObjectAddress secondaryObject,
 								 Node *parsetree)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 
 	/* ignore if event trigger context not set, or collection disabled */
@@ -1620,7 +1620,7 @@ EventTriggerCollectSimpleCommand(ObjectAddress address,
 void
 EventTriggerAlterTableStart(Node *parsetree)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 
 	/* ignore if event trigger context not set, or collection disabled */
@@ -1672,7 +1672,7 @@ EventTriggerAlterTableRelid(Oid objectId)
 void
 EventTriggerCollectAlterTableSubcmd(Node *subcmd, ObjectAddress address)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedATSubcmd *newsub;
 
 	/* ignore if event trigger context not set, or collection disabled */
@@ -1719,7 +1719,7 @@ EventTriggerAlterTableEnd(void)
 	/* If no subcommands, don't collect */
 	if (currentEventTriggerState->currentCommand->d.alterTable.subcmds != NIL)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		oldcxt = MemoryContextSwitchTo(currentEventTriggerState->cxt);
 
@@ -1745,7 +1745,7 @@ EventTriggerAlterTableEnd(void)
 void
 EventTriggerCollectGrant(InternalGrant *istmt)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 	InternalGrant *icopy;
 	ListCell   *cell;
@@ -1790,7 +1790,7 @@ void
 EventTriggerCollectAlterOpFam(AlterOpFamilyStmt *stmt, Oid opfamoid,
 							  List *operators, List *procedures)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 
 	/* ignore if event trigger context not set, or collection disabled */
@@ -1823,7 +1823,7 @@ void
 EventTriggerCollectCreateOpClass(CreateOpClassStmt *stmt, Oid opcoid,
 								 List *operators, List *procedures)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 
 	/* ignore if event trigger context not set, or collection disabled */
@@ -1857,7 +1857,7 @@ void
 EventTriggerCollectAlterTSConfig(AlterTSConfigurationStmt *stmt, Oid cfgId,
 								 Oid *dictIds, int ndicts)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 
 	/* ignore if event trigger context not set, or collection disabled */
@@ -1891,7 +1891,7 @@ EventTriggerCollectAlterTSConfig(AlterTSConfigurationStmt *stmt, Oid cfgId,
 void
 EventTriggerCollectAlterDefPrivs(AlterDefaultPrivilegesStmt *stmt)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	CollectedCommand *command;
 
 	/* ignore if event trigger context not set, or collection disabled */

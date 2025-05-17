@@ -23,7 +23,7 @@ typedef struct PLySubtransactionObject
 /* explicit subtransaction data */
 typedef struct PLySubtransactionData
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ResourceOwner oldowner;
 } PLySubtransactionData;
 

@@ -457,8 +457,8 @@ PortalStart(Portal portal, ParamListInfo params,
 {
 	Portal		saveActivePortal;
 	ResourceOwner saveResourceOwner;
-	MemoryContext savePortalContext;
-	MemoryContext oldContext;
+	MemoryContext *savePortalContext;
+	MemoryContext *oldContext;
 	QueryDesc  *queryDesc;
 	int			myeflags;
 
@@ -721,11 +721,11 @@ PortalRun(Portal portal, long count, bool isTopLevel,
 	bool		result;
 	uint64		nprocessed;
 	ResourceOwner saveTopTransactionResourceOwner;
-	MemoryContext saveTopTransactionContext;
+	MemoryContext *saveTopTransactionContext;
 	Portal		saveActivePortal;
 	ResourceOwner saveResourceOwner;
-	MemoryContext savePortalContext;
-	MemoryContext saveMemoryContext;
+	MemoryContext *savePortalContext;
+	MemoryContext *saveMemoryContext;
 
 	Assert(PortalIsValid(portal));
 
@@ -1105,7 +1105,7 @@ RunFromStore(Portal portal, ScanDirection direction, uint64 count,
 
 		for (;;)
 		{
-			MemoryContext oldcontext;
+			MemoryContext *oldcontext;
 			bool		ok;
 
 			oldcontext = MemoryContextSwitchTo(portal->holdContext);
@@ -1432,8 +1432,8 @@ PortalRunFetch(Portal portal,
 	uint64		result;
 	Portal		saveActivePortal;
 	ResourceOwner saveResourceOwner;
-	MemoryContext savePortalContext;
-	MemoryContext oldContext;
+	MemoryContext *savePortalContext;
+	MemoryContext *oldContext;
 
 	Assert(PortalIsValid(portal));
 
@@ -1737,7 +1737,7 @@ DoPortalRewind(Portal portal)
 	/* Rewind holdStore, if we have one */
 	if (portal->holdStore)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(portal->holdContext);
 		tuplestore_rescan(portal->holdStore);

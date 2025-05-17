@@ -184,7 +184,7 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
 												   sortopt);
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			i;
 
 	oldcontext = MemoryContextSwitchTo(base->maincontext);
@@ -257,7 +257,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 												   sortopt);
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
 	BTScanInsert indexScanKey;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TuplesortClusterArg *arg;
 	int			i;
 
@@ -367,7 +367,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
 	BTScanInsert indexScanKey;
 	TuplesortIndexBTreeArg *arg;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			i;
 
 	oldcontext = MemoryContextSwitchTo(base->maincontext);
@@ -448,7 +448,7 @@ tuplesort_begin_index_hash(Relation heapRel,
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
 												   sortopt);
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TuplesortIndexHashArg *arg;
 
 	oldcontext = MemoryContextSwitchTo(base->maincontext);
@@ -496,7 +496,7 @@ tuplesort_begin_index_gist(Relation heapRel,
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
 												   sortopt);
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TuplesortIndexBTreeArg *arg;
 	int			i;
 
@@ -585,7 +585,7 @@ tuplesort_begin_index_gin(Relation heapRel,
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
 												   sortopt);
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			i;
 	TupleDesc	desc = RelationGetDescr(indexRel);
 
@@ -656,7 +656,7 @@ tuplesort_begin_datum(Oid datumType, Oid sortOperator, Oid sortCollation,
 												   sortopt);
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
 	TuplesortDatumArg *arg;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int16		typlen;
 	bool		typbyval;
 
@@ -734,7 +734,7 @@ void
 tuplesort_puttupleslot(Tuplesortstate *state, TupleTableSlot *slot)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->tuplecontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->tuplecontext);
 	TupleDesc	tupDesc = (TupleDesc) base->arg;
 	SortTuple	stup;
 	MinimalTuple tuple;
@@ -775,7 +775,7 @@ tuplesort_putheaptuple(Tuplesortstate *state, HeapTuple tup)
 {
 	SortTuple	stup;
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->tuplecontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->tuplecontext);
 	TuplesortClusterArg *arg = (TuplesortClusterArg *) base->arg;
 	Size		tuplen;
 
@@ -855,7 +855,7 @@ tuplesort_putbrintuple(Tuplesortstate *state, BrinTuple *tuple, Size size)
 	SortTuple	stup;
 	BrinSortTuple *bstup;
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->tuplecontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->tuplecontext);
 	Size		tuplen;
 
 	/* allocate space for the whole BRIN sort tuple */
@@ -888,7 +888,7 @@ tuplesort_putgintuple(Tuplesortstate *state, GinTuple *tuple, Size size)
 	SortTuple	stup;
 	GinTuple   *ctup;
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->tuplecontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->tuplecontext);
 	Size		tuplen;
 
 	/* copy the GinTuple into the right memory context */
@@ -922,7 +922,7 @@ void
 tuplesort_putdatum(Tuplesortstate *state, Datum val, bool isNull)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->tuplecontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->tuplecontext);
 	TuplesortDatumArg *arg = (TuplesortDatumArg *) base->arg;
 	SortTuple	stup;
 
@@ -987,7 +987,7 @@ tuplesort_gettupleslot(Tuplesortstate *state, bool forward, bool copy,
 					   TupleTableSlot *slot, Datum *abbrev)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->sortcontext);
 	SortTuple	stup;
 
 	if (!tuplesort_gettuple_common(state, forward, &stup))
@@ -1024,7 +1024,7 @@ HeapTuple
 tuplesort_getheaptuple(Tuplesortstate *state, bool forward)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->sortcontext);
 	SortTuple	stup;
 
 	if (!tuplesort_gettuple_common(state, forward, &stup))
@@ -1045,7 +1045,7 @@ IndexTuple
 tuplesort_getindextuple(Tuplesortstate *state, bool forward)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->sortcontext);
 	SortTuple	stup;
 
 	if (!tuplesort_gettuple_common(state, forward, &stup))
@@ -1066,7 +1066,7 @@ BrinTuple *
 tuplesort_getbrintuple(Tuplesortstate *state, Size *len, bool forward)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->sortcontext);
 	SortTuple	stup;
 	BrinSortTuple *btup;
 
@@ -1089,7 +1089,7 @@ GinTuple *
 tuplesort_getgintuple(Tuplesortstate *state, Size *len, bool forward)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->sortcontext);
 	SortTuple	stup;
 	GinTuple   *tup;
 
@@ -1138,7 +1138,7 @@ tuplesort_getdatum(Tuplesortstate *state, bool forward, bool copy,
 				   Datum *val, bool *isNull, Datum *abbrev)
 {
 	TuplesortPublic *base = TuplesortstateGetPublic(state);
-	MemoryContext oldcontext = MemoryContextSwitchTo(base->sortcontext);
+	MemoryContext *oldcontext = MemoryContextSwitchTo(base->sortcontext);
 	TuplesortDatumArg *arg = (TuplesortDatumArg *) base->arg;
 	SortTuple	stup;
 

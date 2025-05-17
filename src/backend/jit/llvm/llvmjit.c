@@ -65,7 +65,7 @@ LLVMTypeRef StructTupleTableSlot;
 LLVMTypeRef StructHeapTupleHeaderData;
 LLVMTypeRef StructHeapTupleTableSlot;
 LLVMTypeRef StructMinimalTupleTableSlot;
-LLVMTypeRef StructMemoryContextData;
+LLVMTypeRef StructMemoryContext;
 LLVMTypeRef StructFunctionCallInfoData;
 LLVMTypeRef StructExprContext;
 LLVMTypeRef StructExprEvalStep;
@@ -705,7 +705,7 @@ static void
 llvm_compile_module(LLVMJitContext *context)
 {
 	LLVMJitHandle *handle;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	instr_time	starttime;
 	instr_time	endtime;
 	LLVMOrcLLJITRef compile_orc;
@@ -820,7 +820,7 @@ llvm_compile_module(LLVMJitContext *context)
 static void
 llvm_session_initialize(void)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	char	   *error = NULL;
 	char	   *cpu = NULL;
 	char	   *features = NULL;
@@ -1019,7 +1019,7 @@ llvm_create_types(void)
 	StructExprEvalStep = llvm_pg_var_type("StructExprEvalStep");
 	StructExprState = llvm_pg_var_type("StructExprState");
 	StructFunctionCallInfoData = llvm_pg_var_type("StructFunctionCallInfoData");
-	StructMemoryContextData = llvm_pg_var_type("StructMemoryContextData");
+	StructMemoryContext = llvm_pg_var_type("StructMemoryContext");
 	StructTupleTableSlot = llvm_pg_var_type("StructTupleTableSlot");
 	StructHeapTupleTableSlot = llvm_pg_var_type("StructHeapTupleTableSlot");
 	StructMinimalTupleTableSlot = llvm_pg_var_type("StructMinimalTupleTableSlot");

@@ -511,7 +511,7 @@ compute_array_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		/* Generate MCELEM slot entry */
 		if (num_mcelem > 0)
 		{
-			MemoryContext old_context;
+			MemoryContext *old_context;
 			Datum	   *mcelem_values;
 			float4	   *mcelem_freqs;
 

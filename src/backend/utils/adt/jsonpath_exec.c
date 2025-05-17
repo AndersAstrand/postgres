@@ -187,7 +187,7 @@ typedef struct JsonTablePlanState
 	/*
 	 * Memory context to use when evaluating the row pattern from the jsonpath
 	 */
-	MemoryContext mcxt;
+	MemoryContext *mcxt;
 
 	/* PASSING arguments passed to jsonpath executor */
 	List	   *args;
@@ -355,7 +355,7 @@ static JsonTablePlanState *JsonTableInitPlan(JsonTableExecContext *cxt,
 											 JsonTablePlan *plan,
 											 JsonTablePlanState *parentstate,
 											 List *args,
-											 MemoryContext mcxt);
+											 MemoryContext *mcxt);
 static void JsonTableSetDocument(TableFuncScanState *state, Datum value);
 static void JsonTableResetRowPattern(JsonTablePlanState *planstate, Datum item);
 static bool JsonTableFetchRow(TableFuncScanState *state);
@@ -532,7 +532,7 @@ jsonb_path_query_internal(FunctionCallInfo fcinfo, bool tz)
 	{
 		JsonPath   *jp;
 		Jsonb	   *jb;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		Jsonb	   *vars;
 		bool		silent;
 		JsonValueList found = {0};
@@ -2457,7 +2457,7 @@ executeDateTimeMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 			if (!fmt_txt[i])
 			{
-				MemoryContext oldcxt =
+				MemoryContext *oldcxt =
 					MemoryContextSwitchTo(TopMemoryContext);
 
 				fmt_txt[i] = cstring_to_text(fmt_str[i]);
@@ -4191,7 +4191,7 @@ JsonTableDestroyOpaque(TableFuncScanState *state)
 static JsonTablePlanState *
 JsonTableInitPlan(JsonTableExecContext *cxt, JsonTablePlan *plan,
 				  JsonTablePlanState *parentstate,
-				  List *args, MemoryContext mcxt)
+				  List *args, MemoryContext *mcxt)
 {
 	JsonTablePlanState *planstate = palloc0(sizeof(*planstate));
 
@@ -4252,7 +4252,7 @@ static void
 JsonTableResetRowPattern(JsonTablePlanState *planstate, Datum item)
 {
 	JsonTablePathScan *scan = castNode(JsonTablePathScan, planstate->plan);
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	JsonPathExecResult res;
 	Jsonb	   *js = (Jsonb *) DatumGetJsonbP(item);
 
@@ -4319,7 +4319,7 @@ static bool
 JsonTablePlanScanNextRow(JsonTablePlanState *planstate)
 {
 	JsonbValue *jbv;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * If planstate already has an active row and there is a nested plan,

@@ -636,7 +636,7 @@ tsvector_unnest(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		TupleDesc	tupdesc;
 
 		funcctx = SRF_FIRSTCALL_INIT();
@@ -2313,7 +2313,7 @@ check_weight(TSVector txt, WordEntry *wptr, int8 weight)
 					false)
 
 static void
-insertStatEntry(MemoryContext persistentContext, TSVectorStat *stat, TSVector txt, uint32 off)
+insertStatEntry(MemoryContext *persistentContext, TSVectorStat *stat, TSVector txt, uint32 off)
 {
 	WordEntry  *we = ARRPTR(txt) + off;
 	StatEntry  *node = stat->root,
@@ -2378,7 +2378,7 @@ insertStatEntry(MemoryContext persistentContext, TSVectorStat *stat, TSVector tx
 }
 
 static void
-chooseNextStatEntry(MemoryContext persistentContext, TSVectorStat *stat, TSVector txt,
+chooseNextStatEntry(MemoryContext *persistentContext, TSVectorStat *stat, TSVector txt,
 					uint32 low, uint32 high, uint32 offset)
 {
 	uint32		pos;
@@ -2410,7 +2410,7 @@ chooseNextStatEntry(MemoryContext persistentContext, TSVectorStat *stat, TSVecto
  */
 
 static TSVectorStat *
-ts_accum(MemoryContext persistentContext, TSVectorStat *stat, Datum data)
+ts_accum(MemoryContext *persistentContext, TSVectorStat *stat, Datum data)
 {
 	TSVector	txt = DatumGetTSVector(data);
 	uint32		i,
@@ -2449,7 +2449,7 @@ ts_setup_firstcall(FunctionCallInfo fcinfo, FuncCallContext *funcctx,
 				   TSVectorStat *stat)
 {
 	TupleDesc	tupdesc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	StatEntry  *node;
 
 	funcctx->user_fctx = stat;
@@ -2572,7 +2572,7 @@ ts_process_call(FuncCallContext *funcctx)
 }
 
 static TSVectorStat *
-ts_stat_sql(MemoryContext persistentContext, text *txt, text *ws)
+ts_stat_sql(MemoryContext *persistentContext, text *txt, text *ws)
 {
 	char	   *query = text_to_cstring(txt);
 	TSVectorStat *stat;

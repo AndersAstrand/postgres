@@ -265,7 +265,7 @@ is_schema_publication(Oid pubid)
  * memory context (mcxt).
  */
 bool
-check_and_fetch_column_list(Publication *pub, Oid relid, MemoryContext mcxt,
+check_and_fetch_column_list(Publication *pub, Oid relid, MemoryContext *mcxt,
 							Bitmapset **cols)
 {
 	HeapTuple	cftuple;
@@ -602,13 +602,13 @@ pub_collist_validate(Relation targetrel, List *columns)
  * If mcxt isn't NULL, build the bitmapset in that context.
  */
 Bitmapset *
-pub_collist_to_bitmapset(Bitmapset *columns, Datum pubcols, MemoryContext mcxt)
+pub_collist_to_bitmapset(Bitmapset *columns, Datum pubcols, MemoryContext *mcxt)
 {
 	Bitmapset  *result = columns;
 	ArrayType  *arr;
 	int			nelems;
 	int16	   *elems;
-	MemoryContext oldcxt = NULL;
+	MemoryContext *oldcxt = NULL;
 
 	arr = DatumGetArrayTypeP(pubcols);
 	nelems = ARR_DIMS(arr)[0];
@@ -1124,7 +1124,7 @@ pg_get_publication_tables(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		ArrayType  *arr;
 		Datum	   *elems;
 		int			nelems,

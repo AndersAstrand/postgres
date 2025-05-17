@@ -187,7 +187,7 @@ cfunc_hashtable_insert(CachedFunction *function,
 	 */
 	if (func_key->callResultType)
 	{
-		MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+		MemoryContext *oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 
 		hentry->key.callResultType = NULL;
 		hentry->key.callResultType = CreateTupleDescCopy(func_key->callResultType);

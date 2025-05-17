@@ -184,7 +184,7 @@ typedef struct RelationSyncEntry
 	 * Private context to store additional data for this entry - state for the
 	 * row filter expressions, column list, etc.
 	 */
-	MemoryContext entry_cxt;
+	MemoryContext *entry_cxt;
 } RelationSyncEntry;
 
 /*
@@ -219,7 +219,7 @@ typedef struct PGOutputTxnData
 /* Map used to remember which relation schemas we sent. */
 static HTAB *RelationSyncCache = NULL;
 
-static void init_rel_sync_cache(MemoryContext cachectx);
+static void init_rel_sync_cache(MemoryContext *cachectx);
 static void cleanup_rel_sync_cache(TransactionId xid, bool is_commit);
 static RelationSyncEntry *get_rel_sync_entry(PGOutputData *data,
 											 Relation relation);
@@ -892,7 +892,7 @@ pgoutput_row_filter_init(PGOutputData *data, List *publications,
 	ListCell   *lc;
 	List	   *rfnodes[] = {NIL, NIL, NIL};	/* One per pubaction */
 	bool		no_filter[] = {false, false, false};	/* One per pubaction */
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	int			idx;
 	bool		has_filter = true;
 	Oid			schemaid = get_rel_namespace(entry->publish_as_relid);
@@ -1141,7 +1141,7 @@ pgoutput_column_list_init(PGOutputData *data, List *publications,
 			 */
 			if (!relcols && (list_length(publications) > 1))
 			{
-				MemoryContext oldcxt = MemoryContextSwitchTo(entry->entry_cxt);
+				MemoryContext *oldcxt = MemoryContextSwitchTo(entry->entry_cxt);
 
 				relcols = pub_form_cols_map(relation,
 											entry->include_gencols_type);
@@ -1182,7 +1182,7 @@ static void
 init_tuple_slot(PGOutputData *data, Relation relation,
 				RelationSyncEntry *entry)
 {
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	TupleDesc	oldtupdesc;
 	TupleDesc	newtupdesc;
 
@@ -1457,7 +1457,7 @@ pgoutput_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
 	PGOutputTxnData *txndata = (PGOutputTxnData *) txn->output_plugin_private;
-	MemoryContext old;
+	MemoryContext *old;
 	RelationSyncEntry *relentry;
 	TransactionId xid = InvalidTransactionId;
 	Relation	ancestor = NULL;
@@ -1629,7 +1629,7 @@ pgoutput_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
 	PGOutputTxnData *txndata = (PGOutputTxnData *) txn->output_plugin_private;
-	MemoryContext old;
+	MemoryContext *old;
 	RelationSyncEntry *relentry;
 	int			i;
 	int			nrelids;
@@ -1946,7 +1946,7 @@ pgoutput_stream_prepare_txn(LogicalDecodingContext *ctx,
  * will just see the null hash table global and take no action.
  */
 static void
-init_rel_sync_cache(MemoryContext cachectx)
+init_rel_sync_cache(MemoryContext *cachectx)
 {
 	HASHCTL		ctl;
 	static bool relation_callbacks_registered = false;
@@ -2007,7 +2007,7 @@ get_schema_sent_in_streamed_txn(RelationSyncEntry *entry, TransactionId xid)
 static void
 set_schema_sent_in_streamed_txn(RelationSyncEntry *entry, TransactionId xid)
 {
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 
 	oldctx = MemoryContextSwitchTo(CacheMemoryContext);
 
@@ -2030,7 +2030,7 @@ get_rel_sync_entry(PGOutputData *data, Relation relation)
 {
 	RelationSyncEntry *entry;
 	bool		found;
-	MemoryContext oldctx;
+	MemoryContext *oldctx;
 	Oid			relid = RelationGetRelid(relation);
 
 	Assert(RelationSyncCache != NULL);

@@ -36,7 +36,7 @@
 
 static void BogusFree(void *pointer);
 static void *BogusRealloc(void *pointer, Size size, int flags);
-static MemoryContext BogusGetChunkContext(void *pointer);
+static MemoryContext *BogusGetChunkContext(void *pointer);
 static Size BogusGetChunkSpace(void *pointer);
 
 /*****************************************************************************
@@ -156,36 +156,36 @@ typedef enum PrintDestination
  * CurrentMemoryContext
  *		Default memory context for allocations.
  */
-MemoryContext CurrentMemoryContext = NULL;
+MemoryContext *CurrentMemoryContext = NULL;
 
 /*
  * Standard top-level contexts. For a description of the purpose of each
  * of these contexts, refer to src/backend/utils/mmgr/README
  */
-MemoryContext TopMemoryContext = NULL;
-MemoryContext ErrorContext = NULL;
-MemoryContext PostmasterContext = NULL;
-MemoryContext CacheMemoryContext = NULL;
-MemoryContext MessageContext = NULL;
-MemoryContext TopTransactionContext = NULL;
-MemoryContext CurTransactionContext = NULL;
+MemoryContext *TopMemoryContext = NULL;
+MemoryContext *ErrorContext = NULL;
+MemoryContext *PostmasterContext = NULL;
+MemoryContext *CacheMemoryContext = NULL;
+MemoryContext *MessageContext = NULL;
+MemoryContext *TopTransactionContext = NULL;
+MemoryContext *CurTransactionContext = NULL;
 
 /* This is a transient link to the active portal's memory context: */
-MemoryContext PortalContext = NULL;
+MemoryContext *PortalContext = NULL;
 dsa_area   *MemoryStatsDsaArea = NULL;
 
-static void MemoryContextDeleteOnly(MemoryContext context);
-static void MemoryContextCallResetCallbacks(MemoryContext context);
-static void MemoryContextStatsInternal(MemoryContext context, int level,
+static void MemoryContextDeleteOnly(MemoryContext *context);
+static void MemoryContextCallResetCallbacks(MemoryContext *context);
+static void MemoryContextStatsInternal(MemoryContext *context, int level,
 									   int max_level, int max_children,
 									   MemoryContextCounters *totals,
 									   PrintDestination print_location,
 									   int *num_contexts);
-static void MemoryContextStatsPrint(MemoryContext context, void *passthru,
+static void MemoryContextStatsPrint(MemoryContext *context, void *passthru,
 									const char *stats_string,
 									bool print_to_stderr);
 static void PublishMemoryContext(MemoryStatsEntry *memcxt_info,
-								 int curr_id, MemoryContext context,
+								 int curr_id, MemoryContext *context,
 								 List *path,
 								 MemoryContextCounters stat,
 								 int num_contexts, dsa_area *area,
@@ -193,7 +193,7 @@ static void PublishMemoryContext(MemoryStatsEntry *memcxt_info,
 static void compute_contexts_count_and_ids(List *contexts, HTAB *context_id_lookup,
 										   int *stats_count,
 										   bool summary);
-static List *compute_context_path(MemoryContext c, HTAB *context_id_lookup);
+static List *compute_context_path(MemoryContext *c, HTAB *context_id_lookup);
 static void free_memorycontextstate_dsa(dsa_area *area, int total_stats,
 										dsa_pointer prev_dsa_pointer);
 static void end_memorycontext_reporting(void);
@@ -274,7 +274,7 @@ GetMemoryChunkHeader(const void *pointer)
  * To process 'context' and all its descendants, use a loop like this:
  *
  *     <process 'context'>
- *     for (MemoryContext curr = context->firstchild;
+ *     for (MemoryContext *curr = context->firstchild;
  *          curr != NULL;
  *          curr = MemoryContextTraverseNext(curr, context))
  *     {
@@ -284,8 +284,8 @@ GetMemoryChunkHeader(const void *pointer)
  * This visits all the contexts in pre-order, that is a node is visited
  * before its children.
  */
-static MemoryContext
-MemoryContextTraverseNext(MemoryContext curr, MemoryContext top)
+static MemoryContext *
+MemoryContextTraverseNext(MemoryContext *curr, MemoryContext *top)
 {
 	/* After processing a node, traverse to its first child if any */
 	if (curr->firstchild != NULL)
@@ -328,7 +328,7 @@ BogusRealloc(void *pointer, Size size, int flags)
 	return NULL;				/* keep compiler quiet */
 }
 
-static MemoryContext
+static MemoryContext *
 BogusGetChunkContext(void *pointer)
 {
 	elog(ERROR, "GetMemoryChunkContext called with invalid pointer %p (header 0x%016" PRIx64 ")",
@@ -374,7 +374,7 @@ MemoryContextInit(void)
 	/*
 	 * First, initialize TopMemoryContext, which is the parent of all others.
 	 */
-	TopMemoryContext = AllocSetContextCreate((MemoryContext) NULL,
+	TopMemoryContext = AllocSetContextCreate((MemoryContext *) NULL,
 											 "TopMemoryContext",
 											 ALLOCSET_DEFAULT_SIZES);
 
@@ -411,7 +411,7 @@ MemoryContextInit(void)
  *		descendant contexts (but not the named context itself).
  */
 void
-MemoryContextReset(MemoryContext context)
+MemoryContextReset(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 
@@ -430,7 +430,7 @@ MemoryContextReset(MemoryContext context)
  *		Nothing is done to the context's descendant contexts.
  */
 void
-MemoryContextResetOnly(MemoryContext context)
+MemoryContextResetOnly(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 
@@ -461,11 +461,11 @@ MemoryContextResetOnly(MemoryContext context)
  *		itself is not touched.
  */
 void
-MemoryContextResetChildren(MemoryContext context)
+MemoryContextResetChildren(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 
-	for (MemoryContext curr = context->firstchild;
+	for (MemoryContext *curr = context->firstchild;
 		 curr != NULL;
 		 curr = MemoryContextTraverseNext(curr, context))
 	{
@@ -482,9 +482,9 @@ MemoryContextResetChildren(MemoryContext context)
  * but we have to deal with descendant nodes here.
  */
 void
-MemoryContextDelete(MemoryContext context)
+MemoryContextDelete(MemoryContext *context)
 {
-	MemoryContext curr;
+	MemoryContext *curr;
 
 	Assert(MemoryContextIsValid(context));
 
@@ -499,7 +499,7 @@ MemoryContextDelete(MemoryContext context)
 	curr = context;
 	for (;;)
 	{
-		MemoryContext parent;
+		MemoryContext *parent;
 
 		/* Descend down until we find a leaf context with no children */
 		while (curr->firstchild != NULL)
@@ -524,7 +524,7 @@ MemoryContextDelete(MemoryContext context)
  * We must also delink the context from its parent, if it has one.
  */
 static void
-MemoryContextDeleteOnly(MemoryContext context)
+MemoryContextDeleteOnly(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 	/* We had better not be deleting TopMemoryContext ... */
@@ -567,7 +567,7 @@ MemoryContextDeleteOnly(MemoryContext context)
  *		space allocated therein.  The named context itself is not touched.
  */
 void
-MemoryContextDeleteChildren(MemoryContext context)
+MemoryContextDeleteChildren(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 
@@ -596,7 +596,7 @@ MemoryContextDeleteChildren(MemoryContext context)
  * "arg" to indicate that.
  */
 void
-MemoryContextRegisterResetCallback(MemoryContext context,
+MemoryContextRegisterResetCallback(MemoryContext *context,
 								   MemoryContextCallback *cb)
 {
 	Assert(MemoryContextIsValid(context));
@@ -613,7 +613,7 @@ MemoryContextRegisterResetCallback(MemoryContext context,
  *		Internal function to call all registered callbacks for context.
  */
 static void
-MemoryContextCallResetCallbacks(MemoryContext context)
+MemoryContextCallResetCallbacks(MemoryContext *context)
 {
 	MemoryContextCallback *cb;
 
@@ -640,7 +640,7 @@ MemoryContextCallResetCallbacks(MemoryContext context)
  * context deletion.  Pass id = NULL to forget any old identifier.
  */
 void
-MemoryContextSetIdentifier(MemoryContext context, const char *id)
+MemoryContextSetIdentifier(MemoryContext *context, const char *id)
 {
 	Assert(MemoryContextIsValid(context));
 	context->ident = id;
@@ -665,7 +665,7 @@ MemoryContextSetIdentifier(MemoryContext context, const char *id)
  * but checking for multi-level loops seems more trouble than it's worth.
  */
 void
-MemoryContextSetParent(MemoryContext context, MemoryContext new_parent)
+MemoryContextSetParent(MemoryContext *context, MemoryContext *new_parent)
 {
 	Assert(MemoryContextIsValid(context));
 	Assert(context != new_parent);
@@ -677,7 +677,7 @@ MemoryContextSetParent(MemoryContext context, MemoryContext new_parent)
 	/* Delink from existing parent, if any */
 	if (context->parent)
 	{
-		MemoryContext parent = context->parent;
+		MemoryContext *parent = context->parent;
 
 		if (context->prevchild != NULL)
 			context->prevchild->nextchild = context->nextchild;
@@ -722,7 +722,7 @@ MemoryContextSetParent(MemoryContext context, MemoryContext new_parent)
  * memory contexts from the assertion in palloc().
  */
 void
-MemoryContextAllowInCriticalSection(MemoryContext context, bool allow)
+MemoryContextAllowInCriticalSection(MemoryContext *context, bool allow)
 {
 	Assert(MemoryContextIsValid(context));
 
@@ -734,7 +734,7 @@ MemoryContextAllowInCriticalSection(MemoryContext context, bool allow)
  *		Given a currently-allocated chunk, determine the MemoryContext that
  *		the chunk belongs to.
  */
-MemoryContext
+MemoryContext *
 GetMemoryChunkContext(void *pointer)
 {
 	return MCXT_METHOD(pointer, get_chunk_context) (pointer);
@@ -758,8 +758,8 @@ GetMemoryChunkSpace(void *pointer)
  * MemoryContextGetParent
  *		Get the parent context (if any) of the specified context
  */
-MemoryContext
-MemoryContextGetParent(MemoryContext context)
+MemoryContext *
+MemoryContextGetParent(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 
@@ -771,7 +771,7 @@ MemoryContextGetParent(MemoryContext context)
  *		Is a memory context empty of any allocated space?
  */
 bool
-MemoryContextIsEmpty(MemoryContext context)
+MemoryContextIsEmpty(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 
@@ -790,7 +790,7 @@ MemoryContextIsEmpty(MemoryContext context)
  * true, also include children.
  */
 Size
-MemoryContextMemAllocated(MemoryContext context, bool recurse)
+MemoryContextMemAllocated(MemoryContext *context, bool recurse)
 {
 	Size		total = context->mem_allocated;
 
@@ -798,7 +798,7 @@ MemoryContextMemAllocated(MemoryContext context, bool recurse)
 
 	if (recurse)
 	{
-		for (MemoryContext curr = context->firstchild;
+		for (MemoryContext *curr = context->firstchild;
 			 curr != NULL;
 			 curr = MemoryContextTraverseNext(curr, context))
 		{
@@ -814,7 +814,7 @@ MemoryContextMemAllocated(MemoryContext context, bool recurse)
  * children.
  */
 void
-MemoryContextMemConsumed(MemoryContext context,
+MemoryContextMemConsumed(MemoryContext *context,
 						 MemoryContextCounters *consumed)
 {
 	Assert(MemoryContextIsValid(context));
@@ -825,7 +825,7 @@ MemoryContextMemConsumed(MemoryContext context,
 	context->methods->stats(context, NULL, NULL, consumed, false);
 
 	/* Examine children, using iteration not recursion */
-	for (MemoryContext curr = context->firstchild;
+	for (MemoryContext *curr = context->firstchild;
 		 curr != NULL;
 		 curr = MemoryContextTraverseNext(curr, context))
 	{
@@ -842,7 +842,7 @@ MemoryContextMemConsumed(MemoryContext context,
  * The statistics are sent to stderr.
  */
 void
-MemoryContextStats(MemoryContext context)
+MemoryContextStats(MemoryContext *context)
 {
 	/* Hard-wired limits are usually good enough */
 	MemoryContextStatsDetail(context, 100, 100, true);
@@ -857,7 +857,7 @@ MemoryContextStats(MemoryContext context)
  * with fprintf(stderr), otherwise use ereport().
  */
 void
-MemoryContextStatsDetail(MemoryContext context,
+MemoryContextStatsDetail(MemoryContext *context,
 						 int max_level, int max_children,
 						 bool print_to_stderr)
 {
@@ -913,12 +913,12 @@ MemoryContextStatsDetail(MemoryContext context,
  * is set to PRINT_STATS_TO_STDERR or PRINT_STATS_TO_LOGS or PRINT_STATS_NONE.
  */
 static void
-MemoryContextStatsInternal(MemoryContext context, int level,
+MemoryContextStatsInternal(MemoryContext *context, int level,
 						   int max_level, int max_children,
 						   MemoryContextCounters *totals,
 						   PrintDestination print_location, int *num_contexts)
 {
-	MemoryContext child;
+	MemoryContext *child;
 	int			ichild;
 
 	Assert(MemoryContextIsValid(context));
@@ -1045,7 +1045,7 @@ MemoryContextStatsInternal(MemoryContext context, int level,
  * make that more complicated.
  */
 static void
-MemoryContextStatsPrint(MemoryContext context, void *passthru,
+MemoryContextStatsPrint(MemoryContext *context, void *passthru,
 						const char *stats_string,
 						bool print_to_stderr)
 {
@@ -1124,12 +1124,12 @@ MemoryContextStatsPrint(MemoryContext context, void *passthru,
  */
 #ifdef MEMORY_CONTEXT_CHECKING
 void
-MemoryContextCheck(MemoryContext context)
+MemoryContextCheck(MemoryContext *context)
 {
 	Assert(MemoryContextIsValid(context));
 	context->methods->check(context);
 
-	for (MemoryContext curr = context->firstchild;
+	for (MemoryContext *curr = context->firstchild;
 		 curr != NULL;
 		 curr = MemoryContextTraverseNext(curr, context))
 	{
@@ -1151,7 +1151,7 @@ MemoryContextCheck(MemoryContext context)
  *		including enough space for the context header.  If it fails,
  *		it can ereport() with no damage done.
  *	2.	Context-type-specific routine sets up all type-specific fields of
- *		the header (those beyond MemoryContextData proper), as well as any
+ *		the header (those beyond MemoryContext proper), as well as any
  *		other management fields it needs to have a fully valid context.
  *		Usually, failure in this step is impossible, but if it's possible
  *		the initial space allocation should be freed before ereport'ing.
@@ -1172,10 +1172,10 @@ MemoryContextCheck(MemoryContext context)
  * so this can contain Assert but not elog/ereport.
  */
 void
-MemoryContextCreate(MemoryContext node,
+MemoryContextCreate(MemoryContext *node,
 					NodeTag tag,
 					MemoryContextMethodID method_id,
-					MemoryContext parent,
+					MemoryContext *parent,
 					const char *name)
 {
 	/* Creating new memory contexts is not allowed in a critical section */
@@ -1223,7 +1223,7 @@ MemoryContextCreate(MemoryContext node,
  *		is in 'flags'.
  */
 void *
-MemoryContextAllocationFailure(MemoryContext context, Size size, int flags)
+MemoryContextAllocationFailure(MemoryContext *context, Size size, int flags)
 {
 	if ((flags & MCXT_ALLOC_NO_OOM) == 0)
 	{
@@ -1244,7 +1244,7 @@ MemoryContextAllocationFailure(MemoryContext context, Size size, int flags)
  *		memory allocation request sizes.
  */
 void
-MemoryContextSizeFailure(MemoryContext context, Size size, int flags)
+MemoryContextSizeFailure(MemoryContext *context, Size size, int flags)
 {
 	elog(ERROR, "invalid memory alloc request size %zu", size);
 }
@@ -1257,7 +1257,7 @@ MemoryContextSizeFailure(MemoryContext context, Size size, int flags)
  * nodes/memnodes.h into postgres.h which seems a bad idea.
  */
 void *
-MemoryContextAlloc(MemoryContext context, Size size)
+MemoryContextAlloc(MemoryContext *context, Size size)
 {
 	void	   *ret;
 
@@ -1291,7 +1291,7 @@ MemoryContextAlloc(MemoryContext context, Size size)
  *	is a very common combination, so we provide the combined operation.
  */
 void *
-MemoryContextAllocZero(MemoryContext context, Size size)
+MemoryContextAllocZero(MemoryContext *context, Size size)
 {
 	void	   *ret;
 
@@ -1314,7 +1314,7 @@ MemoryContextAllocZero(MemoryContext context, Size size)
  *		Allocate space within the specified context using the given flags.
  */
 void *
-MemoryContextAllocExtended(MemoryContext context, Size size, int flags)
+MemoryContextAllocExtended(MemoryContext *context, Size size, int flags)
 {
 	void	   *ret;
 
@@ -1498,7 +1498,7 @@ ProcessGetMemoryContextInterrupt(void)
 	 */
 	if (memCxtArea->memstats_dsa_handle == DSA_HANDLE_INVALID)
 	{
-		MemoryContext oldcontext = CurrentMemoryContext;
+		MemoryContext *oldcontext = CurrentMemoryContext;
 		dsa_handle	handle;
 
 		MemoryContextSwitchTo(TopMemoryContext);
@@ -1529,7 +1529,7 @@ ProcessGetMemoryContextInterrupt(void)
 	 */
 	else if (MemoryStatsDsaArea == NULL)
 	{
-		MemoryContext oldcontext = CurrentMemoryContext;
+		MemoryContext *oldcontext = CurrentMemoryContext;
 
 		MemoryContextSwitchTo(TopMemoryContext);
 		MemoryStatsDsaArea = dsa_attach(memCxtArea->memstats_dsa_handle);
@@ -1586,7 +1586,7 @@ ProcessGetMemoryContextInterrupt(void)
 		 * includes statistics of at most 100 children per node, with each
 		 * child node limited to a depth of 100 in its subtree.
 		 */
-		for (MemoryContext c = TopMemoryContext->firstchild; c != NULL;
+		for (MemoryContext *c = TopMemoryContext->firstchild; c != NULL;
 			 c = c->nextchild)
 		{
 			MemoryContextCounters grand_totals;
@@ -1619,7 +1619,7 @@ ProcessGetMemoryContextInterrupt(void)
 		return;
 	}
 
-	foreach_ptr(MemoryContextData, cur, contexts)
+	foreach_ptr(MemoryContext, cur, contexts)
 	{
 		List	   *path = NIL;
 
@@ -1718,11 +1718,11 @@ end_memorycontext_reporting(void)
  * to a list, in order to compute a path.
  */
 static List *
-compute_context_path(MemoryContext c, HTAB *context_id_lookup)
+compute_context_path(MemoryContext *c, HTAB *context_id_lookup)
 {
 	bool		found;
 	List	   *path = NIL;
-	MemoryContext cur_context;
+	MemoryContext *cur_context;
 
 	for (cur_context = c; cur_context != NULL; cur_context = cur_context->parent)
 	{
@@ -1747,7 +1747,7 @@ static void
 compute_contexts_count_and_ids(List *contexts, HTAB *context_id_lookup,
 							   int *stats_count, bool summary)
 {
-	foreach_ptr(MemoryContextData, cur, contexts)
+	foreach_ptr(MemoryContext, cur, contexts)
 	{
 		MemoryStatsContextId *entry;
 		bool		found;
@@ -1763,7 +1763,7 @@ compute_contexts_count_and_ids(List *contexts, HTAB *context_id_lookup,
 		entry->context_id = ++(*stats_count);
 
 		/* Append the children of the current context to the main list. */
-		for (MemoryContext c = cur->firstchild; c != NULL; c = c->nextchild)
+		for (MemoryContext *c = cur->firstchild; c != NULL; c = c->nextchild)
 		{
 			if (summary)
 			{
@@ -1793,7 +1793,7 @@ compute_contexts_count_and_ids(List *contexts, HTAB *context_id_lookup,
  */
 static void
 PublishMemoryContext(MemoryStatsEntry *memcxt_info, int curr_id,
-					 MemoryContext context, List *path,
+					 MemoryContext *context, List *path,
 					 MemoryContextCounters stat, int num_contexts,
 					 dsa_area *area, int max_levels)
 {
@@ -1946,7 +1946,7 @@ palloc(Size size)
 {
 	/* duplicates MemoryContextAlloc to avoid increased overhead */
 	void	   *ret;
-	MemoryContext context = CurrentMemoryContext;
+	MemoryContext *context = CurrentMemoryContext;
 
 	Assert(MemoryContextIsValid(context));
 	AssertNotInCriticalSection(context);
@@ -1976,7 +1976,7 @@ palloc0(Size size)
 {
 	/* duplicates MemoryContextAllocZero to avoid increased overhead */
 	void	   *ret;
-	MemoryContext context = CurrentMemoryContext;
+	MemoryContext *context = CurrentMemoryContext;
 
 	Assert(MemoryContextIsValid(context));
 	AssertNotInCriticalSection(context);
@@ -1998,7 +1998,7 @@ palloc_extended(Size size, int flags)
 {
 	/* duplicates MemoryContextAllocExtended to avoid increased overhead */
 	void	   *ret;
-	MemoryContext context = CurrentMemoryContext;
+	MemoryContext *context = CurrentMemoryContext;
 
 	Assert(MemoryContextIsValid(context));
 	AssertNotInCriticalSection(context);
@@ -2037,7 +2037,7 @@ palloc_extended(Size size, int flags)
  * 'flags' may be 0 or set the same as MemoryContextAllocExtended().
  */
 void *
-MemoryContextAllocAligned(MemoryContext context,
+MemoryContextAllocAligned(MemoryContext *context,
 						  Size size, Size alignto, int flags)
 {
 	MemoryChunk *alignedchunk;
@@ -2153,7 +2153,7 @@ pfree(void *pointer)
 {
 #ifdef USE_VALGRIND
 	MemoryContextMethodID method = GetMemoryChunkMethodID(pointer);
-	MemoryContext context = GetMemoryChunkContext(pointer);
+	MemoryContext *context = GetMemoryChunkContext(pointer);
 #endif
 
 	MCXT_METHOD(pointer, free_p) (pointer);
@@ -2175,7 +2175,7 @@ repalloc(void *pointer, Size size)
 	MemoryContextMethodID method = GetMemoryChunkMethodID(pointer);
 #endif
 #if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
-	MemoryContext context = GetMemoryChunkContext(pointer);
+	MemoryContext *context = GetMemoryChunkContext(pointer);
 #endif
 	void	   *ret;
 
@@ -2213,7 +2213,7 @@ void *
 repalloc_extended(void *pointer, Size size, int flags)
 {
 #if defined(USE_ASSERT_CHECKING) || defined(USE_VALGRIND)
-	MemoryContext context = GetMemoryChunkContext(pointer);
+	MemoryContext *context = GetMemoryChunkContext(pointer);
 #endif
 	void	   *ret;
 
@@ -2268,7 +2268,7 @@ repalloc0(void *pointer, Size oldsize, Size size)
  * See considerations in comment at MaxAllocHugeSize.
  */
 void *
-MemoryContextAllocHuge(MemoryContext context, Size size)
+MemoryContextAllocHuge(MemoryContext *context, Size size)
 {
 	void	   *ret;
 
@@ -2311,7 +2311,7 @@ repalloc_huge(void *pointer, Size size)
  *		Like strdup(), but allocate from the specified context
  */
 char *
-MemoryContextStrdup(MemoryContext context, const char *string)
+MemoryContextStrdup(MemoryContext *context, const char *string)
 {
 	char	   *nstr;
 	Size		len = strlen(string) + 1;

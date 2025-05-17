@@ -87,8 +87,8 @@ RelationBuildPartitionKey(Relation relation)
 	oidvector  *collation;
 	ListCell   *partexprs_item;
 	Datum		datum;
-	MemoryContext partkeycxt,
-				oldcxt;
+	MemoryContext *partkeycxt,
+			   *oldcxt;
 	int16		procnum;
 
 	tuple = SearchSysCache1(PARTRELID,
@@ -337,7 +337,7 @@ static List *
 generate_partition_qual(Relation rel)
 {
 	HeapTuple	tuple;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	Datum		boundDatum;
 	bool		isnull;
 	List	   *my_qual = NIL,

@@ -89,7 +89,7 @@ test_regex(PG_FUNCTION_ARGS)
 		Oid			collation = PG_GET_COLLATION();
 		test_re_flags re_flags;
 		regex_t		cpattern;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);

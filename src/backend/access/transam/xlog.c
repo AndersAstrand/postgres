@@ -663,7 +663,7 @@ static int	MyLockNo = 0;
 static bool holdingAllLocks = false;
 
 #ifdef WAL_DEBUG
-static MemoryContext walDebugCxt = NULL;
+static MemoryContext *walDebugCxt = NULL;
 #endif
 
 static void CleanupAfterArchiveRecovery(TimeLineID EndOfLogTLI,
@@ -1023,7 +1023,7 @@ XLogInsertRecord(XLogRecData *rdata,
 		StringInfoData buf;
 		StringInfoData recordBuf;
 		char	   *errormsg = NULL;
-		MemoryContext oldCxt;
+		MemoryContext *oldCxt;
 
 		oldCxt = MemoryContextSwitchTo(walDebugCxt);
 

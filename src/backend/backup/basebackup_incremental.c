@@ -74,7 +74,7 @@ static uint32 hash_string_pointer(const char *s);
 struct IncrementalBackupInfo
 {
 	/* Memory context for this object and its subsidiary objects. */
-	MemoryContext mcxt;
+	MemoryContext *mcxt;
 
 	/* Temporary buffer for storing the manifest while parsing it. */
 	StringInfoData buf;
@@ -149,10 +149,10 @@ static int	compare_block_numbers(const void *a, const void *b);
  * supplied when creating an incremental backup.
  */
 IncrementalBackupInfo *
-CreateIncrementalBackupInfo(MemoryContext mcxt)
+CreateIncrementalBackupInfo(MemoryContext *mcxt)
 {
 	IncrementalBackupInfo *ib;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	JsonManifestParseContext *context;
 
 	oldcontext = MemoryContextSwitchTo(mcxt);
@@ -194,7 +194,7 @@ void
 AppendIncrementalManifestData(IncrementalBackupInfo *ib, const char *data,
 							  int len)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Switch to our memory context. */
 	oldcontext = MemoryContextSwitchTo(ib->mcxt);
@@ -226,7 +226,7 @@ AppendIncrementalManifestData(IncrementalBackupInfo *ib, const char *data,
 void
 FinalizeIncrementalManifest(IncrementalBackupInfo *ib)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Switch to our memory context. */
 	oldcontext = MemoryContextSwitchTo(ib->mcxt);
@@ -263,7 +263,7 @@ void
 PrepareForIncrementalBackup(IncrementalBackupInfo *ib,
 							BackupState *backup_state)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	List	   *expectedTLEs;
 	List	   *all_wslist,
 			   *required_wslist = NIL;

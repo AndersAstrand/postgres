@@ -291,7 +291,7 @@ MJEvalOuterValues(MergeJoinState *mergestate)
 	ExprContext *econtext = mergestate->mj_OuterEContext;
 	MJEvalResult result = MJEVAL_MATCHABLE;
 	int			i;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/* Check for end of outer subplan */
 	if (TupIsNull(mergestate->mj_OuterTupleSlot))
@@ -338,7 +338,7 @@ MJEvalInnerValues(MergeJoinState *mergestate, TupleTableSlot *innerslot)
 	ExprContext *econtext = mergestate->mj_InnerEContext;
 	MJEvalResult result = MJEVAL_MATCHABLE;
 	int			i;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/* Check for end of inner subplan */
 	if (TupIsNull(innerslot))
@@ -389,7 +389,7 @@ MJCompare(MergeJoinState *mergestate)
 	bool		nulleqnull = false;
 	ExprContext *econtext = mergestate->js.ps.ps_ExprContext;
 	int			i;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * Call the comparison functions in short-lived context, in case they leak

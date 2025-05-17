@@ -855,7 +855,7 @@ show_all_settings(PG_FUNCTION_ARGS)
 	int			call_cntr;
 	int			max_calls;
 	AttInMetadata *attinmeta;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())

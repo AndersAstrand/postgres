@@ -56,8 +56,8 @@ static bool desirable_join(PlannerInfo *root,
 Cost
 geqo_eval(PlannerInfo *root, Gene *tour, int num_gene)
 {
-	MemoryContext mycontext;
-	MemoryContext oldcxt;
+	MemoryContext *mycontext;
+	MemoryContext *oldcxt;
 	RelOptInfo *joinrel;
 	Cost		fitness;
 	int			savelength;

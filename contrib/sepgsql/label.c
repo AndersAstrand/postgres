@@ -111,7 +111,7 @@ static void
 sepgsql_set_client_label(const char *new_label)
 {
 	const char *tcontext;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	pending_label *plabel;
 
 	/* Reset to the initial client label, if NULL */
@@ -324,7 +324,7 @@ sepgsql_fmgr_hook(FmgrHookEventType event,
 			stack = (void *) DatumGetPointer(*private);
 			if (!stack)
 			{
-				MemoryContext oldcxt;
+				MemoryContext *oldcxt;
 
 				oldcxt = MemoryContextSwitchTo(flinfo->fn_mcxt);
 				stack = palloc(sizeof(*stack));

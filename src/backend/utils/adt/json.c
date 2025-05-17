@@ -70,7 +70,7 @@ typedef struct JsonUniqueBuilderState
 {
 	JsonUniqueCheckState check; /* unique check */
 	StringInfoData skipped_keys;	/* skipped keys with NULL values */
-	MemoryContext mcxt;			/* context for saving skipped keys */
+	MemoryContext *mcxt;		/* context for saving skipped keys */
 } JsonUniqueBuilderState;
 
 
@@ -778,8 +778,8 @@ datum_to_json(Datum val, JsonTypeCategory tcategory, Oid outfuncoid)
 static Datum
 json_agg_transfn_worker(FunctionCallInfo fcinfo, bool absent_on_null)
 {
-	MemoryContext aggcontext,
-				oldcontext;
+	MemoryContext *aggcontext,
+			   *oldcontext;
 	JsonAggState *state;
 	Datum		val;
 
@@ -981,7 +981,7 @@ json_unique_builder_get_throwawaybuf(JsonUniqueBuilderState *cxt)
 
 	if (!out->data)
 	{
-		MemoryContext oldcxt = MemoryContextSwitchTo(cxt->mcxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(cxt->mcxt);
 
 		initStringInfo(out);
 		MemoryContextSwitchTo(oldcxt);
@@ -1002,8 +1002,8 @@ static Datum
 json_object_agg_transfn_worker(FunctionCallInfo fcinfo,
 							   bool absent_on_null, bool unique_keys)
 {
-	MemoryContext aggcontext,
-				oldcontext;
+	MemoryContext *aggcontext,
+			   *oldcontext;
 	JsonAggState *state;
 	StringInfo	out;
 	Datum		arg;

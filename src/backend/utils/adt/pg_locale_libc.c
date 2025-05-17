@@ -41,7 +41,7 @@
  */
 #define		TEXTBUFLEN			1024
 
-extern pg_locale_t create_pg_locale_libc(Oid collid, MemoryContext context);
+extern pg_locale_t create_pg_locale_libc(Oid collid, MemoryContext *context);
 
 extern size_t strlower_libc(char *dst, size_t dstsize, const char *src,
 							ssize_t srclen, pg_locale_t locale);
@@ -418,7 +418,7 @@ strupper_libc_mb(char *dest, size_t destsize, const char *src, ssize_t srclen,
 }
 
 pg_locale_t
-create_pg_locale_libc(Oid collid, MemoryContext context)
+create_pg_locale_libc(Oid collid, MemoryContext *context)
 {
 	const char *collate;
 	const char *ctype;

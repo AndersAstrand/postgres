@@ -346,8 +346,8 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 	Page		newlpage = NULL,
 				newrpage = NULL;
 	void	   *ptp_workspace = NULL;
-	MemoryContext tmpCxt;
-	MemoryContext oldCxt;
+	MemoryContext *tmpCxt;
+	MemoryContext *oldCxt;
 
 	/*
 	 * We do all the work of this function and its subfunctions in a temporary

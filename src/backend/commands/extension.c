@@ -951,8 +951,8 @@ execute_sql_string(const char *sql, const char *filename)
 	foreach(lc1, raw_parsetree_list)
 	{
 		RawStmt    *parsetree = lfirst_node(RawStmt, lc1);
-		MemoryContext per_parsetree_context,
-					oldcontext;
+		MemoryContext *per_parsetree_context,
+				   *oldcontext;
 		List	   *stmt_list;
 		ListCell   *lc2;
 

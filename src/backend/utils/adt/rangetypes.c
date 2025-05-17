@@ -1220,7 +1220,7 @@ range_split_internal(TypeCacheEntry *typcache, const RangeType *r1, const RangeT
 Datum
 range_intersect_agg_transfn(PG_FUNCTION_ARGS)
 {
-	MemoryContext aggContext;
+	MemoryContext *aggContext;
 	Oid			rngtypoid;
 	TypeCacheEntry *typcache;
 	RangeType  *result;

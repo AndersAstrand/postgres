@@ -479,7 +479,7 @@ typedef struct
 
 /* prototypes for private functions */
 static TRGM *createTrgmNFAInternal(regex_t *regex, TrgmPackedGraph **graph,
-								   MemoryContext rcontext);
+								   MemoryContext *rcontext);
 static void RE_compile(regex_t *regex, text *text_re,
 					   int cflags, Oid collation);
 static void getColorInfo(regex_t *regex, TrgmNFA *trgmNFA);
@@ -495,12 +495,12 @@ static bool validArcLabel(TrgmStateKey *key, TrgmColor co);
 static TrgmState *getState(TrgmNFA *trgmNFA, TrgmStateKey *key);
 static bool prefixContains(TrgmPrefix *prefix1, TrgmPrefix *prefix2);
 static bool selectColorTrigrams(TrgmNFA *trgmNFA);
-static TRGM *expandColorTrigrams(TrgmNFA *trgmNFA, MemoryContext rcontext);
+static TRGM *expandColorTrigrams(TrgmNFA *trgmNFA, MemoryContext *rcontext);
 static void fillTrgm(trgm *ptrgm, trgm_mb_char s[3]);
 static void mergeStates(TrgmState *state1, TrgmState *state2);
 static int	colorTrgmInfoCmp(const void *p1, const void *p2);
 static int	colorTrgmInfoPenaltyCmp(const void *p1, const void *p2);
-static TrgmPackedGraph *packGraph(TrgmNFA *trgmNFA, MemoryContext rcontext);
+static TrgmPackedGraph *packGraph(TrgmNFA *trgmNFA, MemoryContext *rcontext);
 static int	packArcInfoCmp(const void *a1, const void *a2);
 
 #ifdef TRGM_REGEXP_DEBUG
@@ -522,12 +522,12 @@ static void printTrgmPackedGraph(TrgmPackedGraph *packedGraph, TRGM *trigrams);
  */
 TRGM *
 createTrgmNFA(text *text_re, Oid collation,
-			  TrgmPackedGraph **graph, MemoryContext rcontext)
+			  TrgmPackedGraph **graph, MemoryContext *rcontext)
 {
 	TRGM	   *trg;
 	regex_t		regex;
-	MemoryContext tmpcontext;
-	MemoryContext oldcontext;
+	MemoryContext *tmpcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * This processing generates a great deal of cruft, which we'd like to
@@ -565,7 +565,7 @@ createTrgmNFA(text *text_re, Oid collation,
  */
 static TRGM *
 createTrgmNFAInternal(regex_t *regex, TrgmPackedGraph **graph,
-					  MemoryContext rcontext)
+					  MemoryContext *rcontext)
 {
 	TRGM	   *trg;
 	TrgmNFA		trgmNFA;
@@ -1774,7 +1774,7 @@ selectColorTrigrams(TrgmNFA *trgmNFA)
  * The array must be allocated in rcontext.
  */
 static TRGM *
-expandColorTrigrams(TrgmNFA *trgmNFA, MemoryContext rcontext)
+expandColorTrigrams(TrgmNFA *trgmNFA, MemoryContext *rcontext)
 {
 	TRGM	   *trg;
 	trgm	   *p;
@@ -1929,7 +1929,7 @@ colorTrgmInfoPenaltyCmp(const void *p1, const void *p2)
  * The result data must be allocated in rcontext.
  */
 static TrgmPackedGraph *
-packGraph(TrgmNFA *trgmNFA, MemoryContext rcontext)
+packGraph(TrgmNFA *trgmNFA, MemoryContext *rcontext)
 {
 	int			snumber = 2,
 				arcIndex,

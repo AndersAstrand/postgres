@@ -151,7 +151,7 @@ bool
 standard_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
 	EState	   *estate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* sanity checks: queryDesc must not be started already */
 	Assert(queryDesc != NULL);
@@ -379,7 +379,7 @@ standard_ExecutorRun(QueryDesc *queryDesc,
 	CmdType		operation;
 	DestReceiver *dest;
 	bool		sendTuples;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* sanity checks */
 	Assert(queryDesc != NULL);
@@ -484,7 +484,7 @@ void
 standard_ExecutorFinish(QueryDesc *queryDesc)
 {
 	EState	   *estate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* sanity checks */
 	Assert(queryDesc != NULL);
@@ -547,7 +547,7 @@ void
 standard_ExecutorEnd(QueryDesc *queryDesc)
 {
 	EState	   *estate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* sanity checks */
 	Assert(queryDesc != NULL);
@@ -615,7 +615,7 @@ void
 ExecutorRewind(QueryDesc *queryDesc)
 {
 	EState	   *estate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* sanity checks */
 	Assert(queryDesc != NULL);
@@ -1433,7 +1433,7 @@ ExecGetTriggerResultRel(EState *estate, Oid relid,
 	ResultRelInfo *rInfo;
 	ListCell   *l;
 	Relation	rel;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Search through the query result relations */
 	foreach(l, estate->es_opened_result_relations)
@@ -1858,7 +1858,7 @@ ExecRelCheck(ResultRelInfo *resultRelInfo,
 	int			ncheck = rel->rd_att->constr->num_check;
 	ConstrCheck *check = rel->rd_att->constr->check;
 	ExprContext *econtext;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * CheckNNConstraintFetch let this pass with only a warning, but now we
@@ -1948,7 +1948,7 @@ ExecPartitionCheck(ResultRelInfo *resultRelInfo, TupleTableSlot *slot,
 		 * Ensure that the qual tree and prepared expression are in the
 		 * query-lifespan context.
 		 */
-		MemoryContext oldcxt = MemoryContextSwitchTo(estate->es_query_cxt);
+		MemoryContext *oldcxt = MemoryContextSwitchTo(estate->es_query_cxt);
 		List	   *qual = RelationGetPartitionQual(resultRelInfo->ri_RelationDesc);
 
 		resultRelInfo->ri_PartitionCheckExpr = ExecPrepareCheck(qual, estate);
@@ -2172,7 +2172,7 @@ ExecRelGenVirtualNotNull(ResultRelInfo *resultRelInfo, TupleTableSlot *slot,
 {
 	Relation	rel = resultRelInfo->ri_RelationDesc;
 	ExprContext *econtext;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * We implement this by building a NullTest node for each virtual
@@ -2861,7 +2861,7 @@ EvalPlanQualSlot(EPQState *epqstate,
 
 	if (*slot == NULL)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(epqstate->parentestate->es_query_cxt);
 		*slot = table_slot_create(relation, &epqstate->tuple_table);
@@ -2991,7 +2991,7 @@ EvalPlanQualFetchRowMark(EPQState *epqstate, Index rti, TupleTableSlot *slot)
 TupleTableSlot *
 EvalPlanQualNext(EPQState *epqstate)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	TupleTableSlot *slot;
 
 	oldcontext = MemoryContextSwitchTo(epqstate->recheckestate->es_query_cxt);
@@ -3077,7 +3077,7 @@ EvalPlanQualStart(EPQState *epqstate, Plan *planTree)
 	EState	   *parentestate = epqstate->parentestate;
 	Index		rtsize = parentestate->es_range_table_size;
 	EState	   *rcestate;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ListCell   *l;
 
 	epqstate->recheckestate = rcestate = CreateExecutorState();
@@ -3250,7 +3250,7 @@ EvalPlanQualEnd(EPQState *epqstate)
 {
 	EState	   *estate = epqstate->recheckestate;
 	Index		rtsize;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ListCell   *l;
 
 	rtsize = epqstate->parentestate->es_range_table_size;

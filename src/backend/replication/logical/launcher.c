@@ -115,7 +115,7 @@ get_subscription_list(void)
 	Relation	rel;
 	TableScanDesc scan;
 	HeapTuple	tup;
-	MemoryContext resultcxt;
+	MemoryContext *resultcxt;
 
 	/* This is the context that we will allocate our output data in */
 	resultcxt = CurrentMemoryContext;
@@ -132,7 +132,7 @@ get_subscription_list(void)
 	{
 		Form_pg_subscription subform = (Form_pg_subscription) GETSTRUCT(tup);
 		Subscription *sub;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/*
 		 * Allocate our results in the caller's context, not the
@@ -985,7 +985,7 @@ ApplyLauncherShmemInit(void)
 static void
 logicalrep_launcher_attach_dshmem(void)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Quick exit if we already did this. */
 	if (LogicalRepCtx->last_start_dsh != DSHASH_HANDLE_INVALID &&
@@ -1143,8 +1143,8 @@ ApplyLauncherMain(Datum main_arg)
 		int			rc;
 		List	   *sublist;
 		ListCell   *lc;
-		MemoryContext subctx;
-		MemoryContext oldctx;
+		MemoryContext *subctx;
+		MemoryContext *oldctx;
 		long		wait_time = DEFAULT_NAPTIME_PER_CYCLE;
 
 		CHECK_FOR_INTERRUPTS();

@@ -313,7 +313,7 @@ ReorderBufferAllocate(void)
 {
 	ReorderBuffer *buffer;
 	HASHCTL		hash_ctl;
-	MemoryContext new_ctx;
+	MemoryContext *new_ctx;
 
 	Assert(MyReplicationSlot != NULL);
 
@@ -403,7 +403,7 @@ ReorderBufferAllocate(void)
 void
 ReorderBufferFree(ReorderBuffer *rb)
 {
-	MemoryContext context = rb->context;
+	MemoryContext *context = rb->context;
 
 	/*
 	 * We free separately allocated data by entirely scrapping reorderbuffer's
@@ -858,7 +858,7 @@ ReorderBufferQueueMessage(ReorderBuffer *rb, TransactionId xid,
 {
 	if (transactional)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		ReorderBufferChange *change;
 
 		Assert(xid != InvalidTransactionId);
@@ -2196,7 +2196,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 						bool streaming)
 {
 	bool		using_subtxn;
-	MemoryContext ccxt = CurrentMemoryContext;
+	MemoryContext *ccxt = CurrentMemoryContext;
 	ReorderBufferIterTXNState *volatile iterstate = NULL;
 	volatile XLogRecPtr prev_lsn = InvalidXLogRecPtr;
 	ReorderBufferChange *volatile specinsert = NULL;
@@ -2694,7 +2694,7 @@ ReorderBufferProcessTXN(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	}
 	PG_CATCH();
 	{
-		MemoryContext ecxt = MemoryContextSwitchTo(ccxt);
+		MemoryContext *ecxt = MemoryContextSwitchTo(ccxt);
 		ErrorData  *errdata = CopyErrorData();
 
 		/* TODO: Encapsulate cleanup from the PG_TRY and PG_CATCH blocks */
@@ -3440,7 +3440,7 @@ ReorderBufferAddInvalidations(ReorderBuffer *rb, TransactionId xid,
 							  SharedInvalidationMessage *msgs)
 {
 	ReorderBufferTXN *txn;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ReorderBufferChange *change;
 
 	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
@@ -4922,7 +4922,7 @@ ReorderBufferToastReplace(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	HeapTuple	tmphtup;
 	Relation	toast_rel;
 	TupleDesc	toast_desc;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	HeapTuple	newtup;
 	Size		old_size;
 

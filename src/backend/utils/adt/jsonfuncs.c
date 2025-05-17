@@ -111,7 +111,7 @@ typedef struct EachState
 	JsonLexContext *lex;
 	Tuplestorestate *tuple_store;
 	TupleDesc	ret_tdesc;
-	MemoryContext tmp_cxt;
+	MemoryContext *tmp_cxt;
 	const char *result_start;
 	bool		normalize_results;
 	bool		next_scalar;
@@ -125,7 +125,7 @@ typedef struct ElementsState
 	const char *function_name;
 	Tuplestorestate *tuple_store;
 	TupleDesc	ret_tdesc;
-	MemoryContext tmp_cxt;
+	MemoryContext *tmp_cxt;
 	const char *result_start;
 	bool		normalize_results;
 	bool		next_scalar;
@@ -238,7 +238,7 @@ typedef struct PopulateRecordCache
 {
 	Oid			argtype;		/* declared type of the record argument */
 	ColumnIOData c;				/* metadata cache for populate_composite() */
-	MemoryContext fn_mcxt;		/* where this is stored */
+	MemoryContext *fn_mcxt;		/* where this is stored */
 } PopulateRecordCache;
 
 /* per-call state for populate_recordset */
@@ -260,8 +260,8 @@ typedef struct PopulateArrayContext
 {
 	ArrayBuildState *astate;	/* array build state */
 	ArrayIOData *aio;			/* metadata cache */
-	MemoryContext acxt;			/* array build memory context */
-	MemoryContext mcxt;			/* cache memory context */
+	MemoryContext *acxt;		/* array build memory context */
+	MemoryContext *mcxt;		/* cache memory context */
 	const char *colname;		/* for diagnostics only */
 	int		   *dims;			/* dimensions */
 	int		   *sizes;			/* current dimension counters */
@@ -435,7 +435,7 @@ static Datum populate_record_worker(FunctionCallInfo fcinfo, const char *funcnam
 
 /* helper functions for populate_record[set] */
 static HeapTupleHeader populate_record(TupleDesc tupdesc, RecordIOData **record_p,
-									   HeapTupleHeader defaultval, MemoryContext mcxt,
+									   HeapTupleHeader defaultval, MemoryContext *mcxt,
 									   JsObject *obj, Node *escontext);
 static void get_record_type_from_argument(FunctionCallInfo fcinfo,
 										  const char *funcname,
@@ -445,18 +445,18 @@ static void get_record_type_from_query(FunctionCallInfo fcinfo,
 									   PopulateRecordCache *cache);
 static bool JsValueToJsObject(JsValue *jsv, JsObject *jso, Node *escontext);
 static Datum populate_composite(CompositeIOData *io, Oid typid,
-								const char *colname, MemoryContext mcxt,
+								const char *colname, MemoryContext *mcxt,
 								HeapTupleHeader defaultval, JsValue *jsv, bool *isnull,
 								Node *escontext);
 static Datum populate_scalar(ScalarIOData *io, Oid typid, int32 typmod, JsValue *jsv,
 							 bool *isnull, Node *escontext, bool omit_quotes);
 static void prepare_column_cache(ColumnIOData *column, Oid typid, int32 typmod,
-								 MemoryContext mcxt, bool need_scalar);
+								 MemoryContext *mcxt, bool need_scalar);
 static Datum populate_record_field(ColumnIOData *col, Oid typid, int32 typmod,
-								   const char *colname, MemoryContext mcxt, Datum defaultval,
+								   const char *colname, MemoryContext *mcxt, Datum defaultval,
 								   JsValue *jsv, bool *isnull, Node *escontext,
 								   bool omit_scalar_quotes);
-static RecordIOData *allocate_record_info(MemoryContext mcxt, int ncolumns);
+static RecordIOData *allocate_record_info(MemoryContext *mcxt, int ncolumns);
 static bool JsObjectGetField(JsObject *obj, char *field, JsValue *jsv);
 static void populate_recordset_record(PopulateRecordsetState *state, JsObject *obj);
 static bool populate_array_json(PopulateArrayContext *ctx, const char *json, int len);
@@ -467,11 +467,11 @@ static bool populate_array_assign_ndims(PopulateArrayContext *ctx, int ndims);
 static bool populate_array_check_dimension(PopulateArrayContext *ctx, int ndim);
 static bool populate_array_element(PopulateArrayContext *ctx, int ndim, JsValue *jsv);
 static Datum populate_array(ArrayIOData *aio, const char *colname,
-							MemoryContext mcxt, JsValue *jsv,
+							MemoryContext *mcxt, JsValue *jsv,
 							bool *isnull,
 							Node *escontext);
 static Datum populate_domain(DomainIOData *io, Oid typid, const char *colname,
-							 MemoryContext mcxt, JsValue *jsv, bool *isnull,
+							 MemoryContext *mcxt, JsValue *jsv, bool *isnull,
 							 Node *escontext, bool omit_quotes);
 
 /* functions supporting jsonb_delete, jsonb_set and jsonb_concat */
@@ -572,7 +572,7 @@ jsonb_object_keys(PG_FUNCTION_ARGS)
 
 	if (SRF_IS_FIRSTCALL())
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		Jsonb	   *jb = PG_GETARG_JSONB_P(0);
 		bool		skipNested = false;
 		JsonbIterator *it;
@@ -739,7 +739,7 @@ json_object_keys(PG_FUNCTION_ARGS)
 		text	   *json = PG_GETARG_TEXT_PP(0);
 		JsonLexContext lex;
 		JsonSemAction *sem;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -1975,8 +1975,8 @@ each_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname, bool as_text)
 {
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
 	ReturnSetInfo *rsi;
-	MemoryContext old_cxt,
-				tmp_cxt;
+	MemoryContext *old_cxt,
+			   *tmp_cxt;
 	bool		skipNested = false;
 	JsonbIterator *it;
 	JsonbValue	v;
@@ -2120,7 +2120,7 @@ static JsonParseErrorType
 each_object_field_end(void *state, char *fname, bool isnull)
 {
 	EachState  *_state = (EachState *) state;
-	MemoryContext old_cxt;
+	MemoryContext *old_cxt;
 	int			len;
 	text	   *val;
 	HeapTuple	tuple;
@@ -2222,8 +2222,8 @@ elements_worker_jsonb(FunctionCallInfo fcinfo, const char *funcname,
 {
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
 	ReturnSetInfo *rsi;
-	MemoryContext old_cxt,
-				tmp_cxt;
+	MemoryContext *old_cxt,
+			   *tmp_cxt;
 	bool		skipNested = false;
 	JsonbIterator *it;
 	JsonbValue	v;
@@ -2372,7 +2372,7 @@ static JsonParseErrorType
 elements_array_element_end(void *state, bool isnull)
 {
 	ElementsState *_state = (ElementsState *) state;
-	MemoryContext old_cxt;
+	MemoryContext *old_cxt;
 	int			len;
 	text	   *val;
 	HeapTuple	tuple;
@@ -2914,7 +2914,7 @@ populate_array_dim_jsonb(PopulateArrayContext *ctx, /* context */
 static Datum
 populate_array(ArrayIOData *aio,
 			   const char *colname,
-			   MemoryContext mcxt,
+			   MemoryContext *mcxt,
 			   JsValue *jsv,
 			   bool *isnull,
 			   Node *escontext)
@@ -3026,7 +3026,7 @@ JsValueToJsObject(JsValue *jsv, JsObject *jso, Node *escontext)
 
 /* acquire or update cached tuple descriptor for a composite type */
 static void
-update_cached_tupdesc(CompositeIOData *io, MemoryContext mcxt)
+update_cached_tupdesc(CompositeIOData *io, MemoryContext *mcxt)
 {
 	if (!io->tupdesc ||
 		io->tupdesc->tdtypeid != io->base_typid ||
@@ -3034,7 +3034,7 @@ update_cached_tupdesc(CompositeIOData *io, MemoryContext mcxt)
 	{
 		TupleDesc	tupdesc = lookup_rowtype_tupdesc(io->base_typid,
 													 io->base_typmod);
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		if (io->tupdesc)
 			FreeTupleDesc(io->tupdesc);
@@ -3058,7 +3058,7 @@ static Datum
 populate_composite(CompositeIOData *io,
 				   Oid typid,
 				   const char *colname,
-				   MemoryContext mcxt,
+				   MemoryContext *mcxt,
 				   HeapTupleHeader defaultval,
 				   JsValue *jsv,
 				   bool *isnull,
@@ -3217,7 +3217,7 @@ static Datum
 populate_domain(DomainIOData *io,
 				Oid typid,
 				const char *colname,
-				MemoryContext mcxt,
+				MemoryContext *mcxt,
 				JsValue *jsv,
 				bool *isnull,
 				Node *escontext,
@@ -3251,7 +3251,7 @@ static void
 prepare_column_cache(ColumnIOData *column,
 					 Oid typid,
 					 int32 typmod,
-					 MemoryContext mcxt,
+					 MemoryContext *mcxt,
 					 bool need_scalar)
 {
 	HeapTuple	tup;
@@ -3344,7 +3344,7 @@ prepare_column_cache(ColumnIOData *column,
 Datum
 json_populate_type(Datum json_val, Oid json_type,
 				   Oid typid, int32 typmod,
-				   void **cache, MemoryContext mcxt,
+				   void **cache, MemoryContext *mcxt,
 				   bool *isnull, bool omit_quotes,
 				   Node *escontext)
 {
@@ -3407,7 +3407,7 @@ populate_record_field(ColumnIOData *col,
 					  Oid typid,
 					  int32 typmod,
 					  const char *colname,
-					  MemoryContext mcxt,
+					  MemoryContext *mcxt,
 					  Datum defaultval,
 					  JsValue *jsv,
 					  bool *isnull,
@@ -3473,7 +3473,7 @@ populate_record_field(ColumnIOData *col,
 }
 
 static RecordIOData *
-allocate_record_info(MemoryContext mcxt, int ncolumns)
+allocate_record_info(MemoryContext *mcxt, int ncolumns)
 {
 	RecordIOData *data = (RecordIOData *)
 		MemoryContextAlloc(mcxt,
@@ -3520,7 +3520,7 @@ static HeapTupleHeader
 populate_record(TupleDesc tupdesc,
 				RecordIOData **record_p,
 				HeapTupleHeader defaultval,
-				MemoryContext mcxt,
+				MemoryContext *mcxt,
 				JsObject *obj,
 				Node *escontext)
 {
@@ -3664,7 +3664,7 @@ get_record_type_from_query(FunctionCallInfo fcinfo,
 						   PopulateRecordCache *cache)
 {
 	TupleDesc	tupdesc;
-	MemoryContext old_cxt;
+	MemoryContext *old_cxt;
 
 	if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
 		ereport(ERROR,
@@ -3706,7 +3706,7 @@ populate_record_worker(FunctionCallInfo fcinfo, const char *funcname,
 	Datum		rettuple;
 	bool		isnull;
 	JsonbValue	jbv;
-	MemoryContext fnmcxt = fcinfo->flinfo->fn_mcxt;
+	MemoryContext *fnmcxt = fcinfo->flinfo->fn_mcxt;
 	PopulateRecordCache *cache = fcinfo->flinfo->fn_extra;
 
 	/*
@@ -4043,7 +4043,7 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 {
 	int			json_arg_num = have_record_arg ? 1 : 0;
 	ReturnSetInfo *rsi;
-	MemoryContext old_cxt;
+	MemoryContext *old_cxt;
 	HeapTupleHeader rec;
 	PopulateRecordCache *cache = fcinfo->flinfo->fn_extra;
 	PopulateRecordsetState *state;

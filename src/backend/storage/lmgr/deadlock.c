@@ -143,7 +143,7 @@ static PGPROC *blocking_autovacuum_proc = NULL;
 void
 InitDeadLockChecking(void)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Make sure allocations are permanent */
 	oldcxt = MemoryContextSwitchTo(TopMemoryContext);

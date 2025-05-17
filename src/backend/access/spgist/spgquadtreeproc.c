@@ -277,7 +277,7 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 			if (in->norderbys > 0)
 			{
-				MemoryContext oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
+				MemoryContext *oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
 
 				/* Use parent quadrant box as traversalValue */
 				BOX		   *quadrant = box_copy(bbox);
@@ -384,7 +384,7 @@ spg_quad_inner_consistent(PG_FUNCTION_ARGS)
 
 			if (in->norderbys > 0)
 			{
-				MemoryContext oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
+				MemoryContext *oldCtx = MemoryContextSwitchTo(in->traversalMemoryContext);
 				BOX		   *quadrant = getQuadrantArea(bbox, centroid, i);
 
 				MemoryContextSwitchTo(oldCtx);

@@ -96,12 +96,12 @@ typedef struct regexp_matches_ctx
 #endif
 
 /* A parent memory context for regular expressions. */
-static MemoryContext RegexpCacheMemoryContext;
+static MemoryContext *RegexpCacheMemoryContext;
 
 /* this structure describes one cached regular expression */
 typedef struct cached_re_str
 {
-	MemoryContext cre_context;	/* memory context for this regexp */
+	MemoryContext *cre_context; /* memory context for this regexp */
 	char	   *cre_pat;		/* original RE (not null terminated!) */
 	int			cre_pat_len;	/* length of original RE, in bytes */
 	int			cre_flags;		/* compile flags: extended,icase etc */
@@ -148,7 +148,7 @@ RE_compile_and_cache(text *text_re, int cflags, Oid collation)
 	int			regcomp_result;
 	cached_re_str re_temp;
 	char		errMsg[100];
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Look for a match among previously compiled REs.  Since the data
@@ -1348,7 +1348,7 @@ regexp_matches(PG_FUNCTION_ARGS)
 		text	   *pattern = PG_GETARG_TEXT_PP(1);
 		text	   *flags = PG_GETARG_TEXT_PP_IF_EXISTS(2);
 		pg_re_flags re_flags;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -1683,7 +1683,7 @@ regexp_split_to_table(PG_FUNCTION_ARGS)
 		text	   *pattern = PG_GETARG_TEXT_PP(1);
 		text	   *flags = PG_GETARG_TEXT_PP_IF_EXISTS(2);
 		pg_re_flags re_flags;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);

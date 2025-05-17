@@ -376,7 +376,7 @@ typedef struct GinScanEntryData
 
 typedef struct GinScanOpaqueData
 {
-	MemoryContext tempCtx;
+	MemoryContext *tempCtx;
 	GinState	ginstate;
 
 	GinScanKey	keys;			/* one per scan qualifier expr */
@@ -386,7 +386,7 @@ typedef struct GinScanOpaqueData
 	uint32		totalentries;
 	uint32		allocentries;	/* allocated length of entries[] */
 
-	MemoryContext keyCtx;		/* used to hold key and entry data */
+	MemoryContext *keyCtx;		/* used to hold key and entry data */
 
 	bool		isVoidRes;		/* true if query is unsatisfiable */
 } GinScanOpaqueData;

@@ -140,7 +140,7 @@ static void appendStringInfoLineSeparator(StringInfo str);
 
 #ifdef USE_LIBXMLCONTEXT
 
-static MemoryContext LibxmlContext = NULL;
+static MemoryContext *LibxmlContext = NULL;
 
 static void xml_memory_init(void);
 static void *xml_palloc(size_t size);

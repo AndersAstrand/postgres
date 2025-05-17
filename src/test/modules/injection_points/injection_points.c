@@ -376,7 +376,7 @@ injection_points_attach(PG_FUNCTION_ARGS)
 
 	if (injection_point_local)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		/* Local injection point, so track it for automated cleanup */
 		oldctx = MemoryContextSwitchTo(TopMemoryContext);
@@ -532,7 +532,7 @@ injection_points_detach(PG_FUNCTION_ARGS)
 	/* Remove point from local list, if required */
 	if (inj_list_local != NIL)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		oldctx = MemoryContextSwitchTo(TopMemoryContext);
 		inj_list_local = list_delete(inj_list_local, makeString(name));

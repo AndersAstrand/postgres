@@ -326,8 +326,8 @@ standard_ExplainOneQuery(Query *query, int cursorOptions,
 	BufferUsage bufusage_start,
 				bufusage;
 	MemoryContextCounters mem_counters;
-	MemoryContext planner_ctx = NULL;
-	MemoryContext saved_ctx = NULL;
+	MemoryContext *planner_ctx = NULL;
+	MemoryContext *saved_ctx = NULL;
 
 	if (es->memory)
 	{

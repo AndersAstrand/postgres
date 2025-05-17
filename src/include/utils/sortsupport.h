@@ -63,7 +63,7 @@ typedef struct SortSupportData
 	 * These fields are initialized before calling the BTSORTSUPPORT function
 	 * and should not be changed later.
 	 */
-	MemoryContext ssup_cxt;		/* Context containing sort info */
+	MemoryContext *ssup_cxt;	/* Context containing sort info */
 	Oid			ssup_collation; /* Collation to use, or InvalidOid */
 
 	/*

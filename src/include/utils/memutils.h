@@ -75,46 +75,46 @@
  * Only TopMemoryContext and ErrorContext are initialized by
  * MemoryContextInit() itself.
  */
-extern PGDLLIMPORT MemoryContext TopMemoryContext;
-extern PGDLLIMPORT MemoryContext ErrorContext;
-extern PGDLLIMPORT MemoryContext PostmasterContext;
-extern PGDLLIMPORT MemoryContext CacheMemoryContext;
-extern PGDLLIMPORT MemoryContext MessageContext;
-extern PGDLLIMPORT MemoryContext TopTransactionContext;
-extern PGDLLIMPORT MemoryContext CurTransactionContext;
+extern PGDLLIMPORT MemoryContext *TopMemoryContext;
+extern PGDLLIMPORT MemoryContext *ErrorContext;
+extern PGDLLIMPORT MemoryContext *PostmasterContext;
+extern PGDLLIMPORT MemoryContext *CacheMemoryContext;
+extern PGDLLIMPORT MemoryContext *MessageContext;
+extern PGDLLIMPORT MemoryContext *TopTransactionContext;
+extern PGDLLIMPORT MemoryContext *CurTransactionContext;
 
 /* This is a transient link to the active portal's memory context: */
-extern PGDLLIMPORT MemoryContext PortalContext;
+extern PGDLLIMPORT MemoryContext *PortalContext;
 
 
 /*
  * Memory-context-type-independent functions in mcxt.c
  */
 extern void MemoryContextInit(void);
-extern void MemoryContextReset(MemoryContext context);
-extern void MemoryContextDelete(MemoryContext context);
-extern void MemoryContextResetOnly(MemoryContext context);
-extern void MemoryContextResetChildren(MemoryContext context);
-extern void MemoryContextDeleteChildren(MemoryContext context);
-extern void MemoryContextSetIdentifier(MemoryContext context, const char *id);
-extern void MemoryContextSetParent(MemoryContext context,
-								   MemoryContext new_parent);
-extern MemoryContext GetMemoryChunkContext(void *pointer);
+extern void MemoryContextReset(MemoryContext *context);
+extern void MemoryContextDelete(MemoryContext *context);
+extern void MemoryContextResetOnly(MemoryContext *context);
+extern void MemoryContextResetChildren(MemoryContext *context);
+extern void MemoryContextDeleteChildren(MemoryContext *context);
+extern void MemoryContextSetIdentifier(MemoryContext *context, const char *id);
+extern void MemoryContextSetParent(MemoryContext *context,
+								   MemoryContext *new_parent);
+extern MemoryContext *GetMemoryChunkContext(void *pointer);
 extern Size GetMemoryChunkSpace(void *pointer);
-extern MemoryContext MemoryContextGetParent(MemoryContext context);
-extern bool MemoryContextIsEmpty(MemoryContext context);
-extern Size MemoryContextMemAllocated(MemoryContext context, bool recurse);
-extern void MemoryContextMemConsumed(MemoryContext context,
+extern MemoryContext *MemoryContextGetParent(MemoryContext *context);
+extern bool MemoryContextIsEmpty(MemoryContext *context);
+extern Size MemoryContextMemAllocated(MemoryContext *context, bool recurse);
+extern void MemoryContextMemConsumed(MemoryContext *context,
 									 MemoryContextCounters *consumed);
-extern void MemoryContextStats(MemoryContext context);
-extern void MemoryContextStatsDetail(MemoryContext context,
+extern void MemoryContextStats(MemoryContext *context);
+extern void MemoryContextStatsDetail(MemoryContext *context,
 									 int max_level, int max_children,
 									 bool print_to_stderr);
-extern void MemoryContextAllowInCriticalSection(MemoryContext context,
+extern void MemoryContextAllowInCriticalSection(MemoryContext *context,
 												bool allow);
 
 #ifdef MEMORY_CONTEXT_CHECKING
-extern void MemoryContextCheck(MemoryContext context);
+extern void MemoryContextCheck(MemoryContext *context);
 #endif
 
 /* Handy macro for copying and assigning context ID ... but note double eval */
@@ -129,11 +129,11 @@ extern void ProcessLogMemoryContextInterrupt(void);
  */
 
 /* aset.c */
-extern MemoryContext AllocSetContextCreateInternal(MemoryContext parent,
-												   const char *name,
-												   Size minContextSize,
-												   Size initBlockSize,
-												   Size maxBlockSize);
+extern MemoryContext *AllocSetContextCreateInternal(MemoryContext *parent,
+													const char *name,
+													Size minContextSize,
+													Size initBlockSize,
+													Size maxBlockSize);
 
 /*
  * This wrapper macro exists to check for non-constant strings used as context
@@ -151,24 +151,24 @@ extern MemoryContext AllocSetContextCreateInternal(MemoryContext parent,
 #endif
 
 /* slab.c */
-extern MemoryContext SlabContextCreate(MemoryContext parent,
-									   const char *name,
-									   Size blockSize,
-									   Size chunkSize);
+extern MemoryContext *SlabContextCreate(MemoryContext *parent,
+										const char *name,
+										Size blockSize,
+										Size chunkSize);
 
 /* generation.c */
-extern MemoryContext GenerationContextCreate(MemoryContext parent,
-											 const char *name,
-											 Size minContextSize,
-											 Size initBlockSize,
-											 Size maxBlockSize);
+extern MemoryContext *GenerationContextCreate(MemoryContext *parent,
+											  const char *name,
+											  Size minContextSize,
+											  Size initBlockSize,
+											  Size maxBlockSize);
 
 /* bump.c */
-extern MemoryContext BumpContextCreate(MemoryContext parent,
-									   const char *name,
-									   Size minContextSize,
-									   Size initBlockSize,
-									   Size maxBlockSize);
+extern MemoryContext *BumpContextCreate(MemoryContext *parent,
+										const char *name,
+										Size minContextSize,
+										Size initBlockSize,
+										Size maxBlockSize);
 
 /*
  * Recommended default alloc parameters, suitable for "ordinary" contexts
@@ -388,7 +388,7 @@ typedef struct MemoryStatsBackendState
  */
 typedef struct MemoryStatsContextId
 {
-	MemoryContext context;
+	MemoryContext *context;
 	int			context_id;
 } MemoryStatsContextId;
 

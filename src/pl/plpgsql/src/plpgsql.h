@@ -963,7 +963,7 @@ typedef struct PLpgSQL_function
 	Oid			fn_oid;
 	PLpgSQL_trigtype fn_is_trigger;
 	Oid			fn_input_collation;
-	MemoryContext fn_cxt;
+	MemoryContext *fn_cxt;
 
 	Oid			fn_rettype;
 	int			fn_rettyplen;
@@ -1033,7 +1033,7 @@ typedef struct PLpgSQL_execstate
 
 	Tuplestorestate *tuple_store;	/* SRFs accumulate results here */
 	TupleDesc	tuple_store_desc;	/* descriptor for tuples in tuple_store */
-	MemoryContext tuple_store_cxt;
+	MemoryContext *tuple_store_cxt;
 	ResourceOwner tuple_store_owner;
 	ReturnSetInfo *rsi;
 
@@ -1048,7 +1048,7 @@ typedef struct PLpgSQL_execstate
 	int			ndatums;
 	PLpgSQL_datum **datums;
 	/* context containing variable values (same as func's SPI_proc context) */
-	MemoryContext datum_context;
+	MemoryContext *datum_context;
 
 	/*
 	 * paramLI is what we use to pass local variable values to the executor.
@@ -1069,8 +1069,8 @@ typedef struct PLpgSQL_execstate
 	HTAB	   *cast_hash;
 
 	/* memory context for statement-lifespan temporary values */
-	MemoryContext stmt_mcontext;	/* current stmt context, or NULL if none */
-	MemoryContext stmt_mcontext_parent; /* parent of current context */
+	MemoryContext *stmt_mcontext;	/* current stmt context, or NULL if none */
+	MemoryContext *stmt_mcontext_parent;	/* parent of current context */
 
 	/* temporary state for results from evaluation of query or expr */
 	SPITupleTable *eval_tuptable;
@@ -1209,7 +1209,7 @@ extern PLpgSQL_datum **plpgsql_Datums;
 extern char *plpgsql_error_funcname;
 
 extern PLpgSQL_function *plpgsql_curr_compile;
-extern MemoryContext plpgsql_compile_tmp_cxt;
+extern MemoryContext *plpgsql_compile_tmp_cxt;
 
 extern PLpgSQL_plugin **plpgsql_plugin_ptr;
 

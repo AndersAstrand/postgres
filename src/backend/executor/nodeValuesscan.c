@@ -87,7 +87,7 @@ ValuesNext(ValuesScanState *node)
 	{
 		List	   *exprlist = node->exprlists[curr_idx];
 		List	   *exprstatelist = node->exprstatelists[curr_idx];
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 		Datum	   *values;
 		bool	   *isnull;
 		ListCell   *lc;

@@ -1385,7 +1385,7 @@ generate_series_step_int8(PG_FUNCTION_ARGS)
 	FuncCallContext *funcctx;
 	generate_series_fctx *fctx;
 	int64		result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())

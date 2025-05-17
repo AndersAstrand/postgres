@@ -931,7 +931,7 @@ bpchar_sortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
 	Oid			collid = ssup->ssup_collation;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
@@ -1211,7 +1211,7 @@ Datum
 btbpchar_pattern_sortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 

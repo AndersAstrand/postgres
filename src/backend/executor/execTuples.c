@@ -399,7 +399,7 @@ static void
 tts_heap_materialize(TupleTableSlot *slot)
 {
 	HeapTupleTableSlot *hslot = (HeapTupleTableSlot *) slot;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	Assert(!TTS_EMPTY(slot));
 
@@ -439,7 +439,7 @@ static void
 tts_heap_copyslot(TupleTableSlot *dstslot, TupleTableSlot *srcslot)
 {
 	HeapTuple	tuple;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(dstslot->tts_mcxt);
 	tuple = ExecCopySlotHeapTuple(srcslot);
@@ -587,7 +587,7 @@ static void
 tts_minimal_materialize(TupleTableSlot *slot)
 {
 	MinimalTupleTableSlot *mslot = (MinimalTupleTableSlot *) slot;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	Assert(!TTS_EMPTY(slot));
 
@@ -635,7 +635,7 @@ tts_minimal_materialize(TupleTableSlot *slot)
 static void
 tts_minimal_copyslot(TupleTableSlot *dstslot, TupleTableSlot *srcslot)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	MinimalTuple mintuple;
 
 	oldcontext = MemoryContextSwitchTo(dstslot->tts_mcxt);
@@ -804,7 +804,7 @@ static void
 tts_buffer_heap_materialize(TupleTableSlot *slot)
 {
 	BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	Assert(!TTS_EMPTY(slot));
 
@@ -874,7 +874,7 @@ tts_buffer_heap_copyslot(TupleTableSlot *dstslot, TupleTableSlot *srcslot)
 		TTS_SHOULDFREE(srcslot) ||
 		!bsrcslot->base.tuple)
 	{
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 
 		ExecClearTuple(dstslot);
 		dstslot->tts_flags &= ~TTS_FLAG_EMPTY;
@@ -1665,7 +1665,7 @@ ExecForceStoreHeapTuple(HeapTuple tuple,
 	}
 	else if (TTS_IS_BUFFERTUPLE(slot))
 	{
-		MemoryContext oldContext;
+		MemoryContext *oldContext;
 		BufferHeapTupleTableSlot *bslot = (BufferHeapTupleTableSlot *) slot;
 
 		ExecClearTuple(slot);

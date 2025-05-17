@@ -24,7 +24,7 @@ typedef struct PLySavedArgs
 /* cached procedure data */
 typedef struct PLyProcedure
 {
-	MemoryContext mcxt;			/* context holding this PLyProcedure and its
+	MemoryContext *mcxt;		/* context holding this PLyProcedure and its
 								 * subsidiary data */
 	char	   *proname;		/* SQL name of procedure */
 	char	   *pyname;			/* Python name of procedure */

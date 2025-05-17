@@ -60,7 +60,7 @@ typedef struct
 	int			nattrs;
 	PrinttupAttrInfo *myinfo;	/* Cached info about each attr */
 	StringInfoData buf;			/* output buffer (*not* in tmpcontext) */
-	MemoryContext tmpcontext;	/* Memory context for per-row workspace */
+	MemoryContext *tmpcontext;	/* Memory context for per-row workspace */
 } DR_printtup;
 
 /* ----------------
@@ -305,7 +305,7 @@ printtup(TupleTableSlot *slot, DestReceiver *self)
 {
 	TupleDesc	typeinfo = slot->tts_tupleDescriptor;
 	DR_printtup *myState = (DR_printtup *) self;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	StringInfo	buf = &myState->buf;
 	int			natts = typeinfo->natts;
 	int			i;

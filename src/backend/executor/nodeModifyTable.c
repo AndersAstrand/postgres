@@ -436,7 +436,7 @@ ExecInitGenerated(ResultRelInfo *resultRelInfo,
 	ExprState **ri_GeneratedExprs;
 	int			ri_NumGeneratedNeeded;
 	Bitmapset  *updatedCols;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/* Nothing to do if no generated columns */
 	if (!(tupdesc->constr && (tupdesc->constr->has_generated_stored || tupdesc->constr->has_generated_virtual)))
@@ -549,7 +549,7 @@ ExecComputeStoredGenerated(ResultRelInfo *resultRelInfo,
 	int			natts = tupdesc->natts;
 	ExprContext *econtext = GetPerTupleExprContext(estate);
 	ExprState **ri_GeneratedExprs;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 	Datum	   *values;
 	bool	   *nulls;
 
@@ -863,7 +863,7 @@ ExecInsert(ModifyTableContext *context,
 	ModifyTable *node = (ModifyTable *) mtstate->ps.plan;
 	OnConflictAction onconflict = node->onConflictAction;
 	PartitionTupleRouting *proute = mtstate->mt_partition_tuple_routing;
-	MemoryContext oldContext;
+	MemoryContext *oldContext;
 
 	/*
 	 * If the input result relation is a partitioned table, find the leaf
@@ -1968,7 +1968,7 @@ ExecCrossPartitionUpdate(ModifyTableContext *context,
 	if (mtstate->mt_partition_tuple_routing == NULL)
 	{
 		Relation	rootRel = mtstate->rootResultRelInfo->ri_RelationDesc;
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		/* Things built here have to last for the query duration. */
 		oldcxt = MemoryContextSwitchTo(estate->es_query_cxt);

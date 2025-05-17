@@ -347,7 +347,7 @@ make_tuple_indirect(PG_FUNCTION_ARGS)
 
 	int			i;
 
-	MemoryContext old_context;
+	MemoryContext *old_context;
 
 	/* Extract type info from the tuple itself */
 	tupType = HeapTupleHeaderGetTypeId(rec);

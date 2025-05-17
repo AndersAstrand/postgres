@@ -1384,7 +1384,7 @@ is_dummy_rel(RelOptInfo *rel)
 void
 mark_dummy_rel(RelOptInfo *rel)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* Already marked? */
 	if (is_dummy_rel(rel))

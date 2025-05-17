@@ -370,7 +370,7 @@ macaddr_sortsupport(PG_FUNCTION_ARGS)
 	if (ssup->abbreviate)
 	{
 		macaddr_sortsupport_state *uss;
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 
 		oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 

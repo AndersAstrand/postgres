@@ -29,7 +29,7 @@ struct SnapBuild
 	SnapBuildState state;
 
 	/* private memory context used to allocate memory for this module. */
-	MemoryContext context;
+	MemoryContext *context;
 
 	/* all transactions < than this have committed/aborted */
 	TransactionId xmin;
@@ -194,6 +194,6 @@ typedef struct SnapBuildOnDisk
 } SnapBuildOnDisk;
 
 extern bool SnapBuildRestoreSnapshot(SnapBuildOnDisk *ondisk, XLogRecPtr lsn,
-									 MemoryContext context, bool missing_ok);
+									 MemoryContext *context, bool missing_ok);
 
 #endif							/* SNAPBUILD_INTERNAL_H */

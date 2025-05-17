@@ -352,7 +352,7 @@ statext_dependencies_build(StatsBuildData *data)
 
 	/* result */
 	MVDependencies *dependencies = NULL;
-	MemoryContext cxt;
+	MemoryContext *cxt;
 
 	Assert(data->nattnums >= 2);
 
@@ -379,7 +379,7 @@ statext_dependencies_build(StatsBuildData *data)
 		{
 			double		degree;
 			MVDependency *d;
-			MemoryContext oldcxt;
+			MemoryContext *oldcxt;
 
 			/* release memory used by dependency degree calculation */
 			oldcxt = MemoryContextSwitchTo(cxt);

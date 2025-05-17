@@ -747,7 +747,7 @@ get_eclass_for_sort_expr(PlannerInfo *root,
 	EquivalenceClass *newec;
 	EquivalenceMember *newem;
 	ListCell   *lc1;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/*
 	 * Ensure the expression exposes the correct type and collation.
@@ -1988,7 +1988,7 @@ create_join_clause(PlannerInfo *root,
 {
 	RestrictInfo *rinfo;
 	RestrictInfo *parent_rinfo = NULL;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	rinfo = ec_search_clause_for_ems(root, ec, leftem, rightem, parent_ec);
 	if (rinfo)
@@ -2946,7 +2946,7 @@ add_child_join_rel_equivalences(PlannerInfo *root,
 	Relids		top_parent_relids = child_joinrel->top_parent_relids;
 	Relids		child_relids = child_joinrel->relids;
 	Bitmapset  *matching_ecs;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			i;
 
 	Assert(IS_JOIN_REL(child_joinrel) && IS_JOIN_REL(parent_joinrel));

@@ -258,7 +258,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 					delta,
 					deltafrac,
 					i;
-		MemoryContext old_cxt;
+		MemoryContext *old_cxt;
 		float4	   *emptyfrac;
 
 		stats->stats_valid = true;

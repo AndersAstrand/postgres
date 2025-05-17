@@ -44,7 +44,7 @@ typedef struct
 } EventTriggerCacheEntry;
 
 static HTAB *EventTriggerCache;
-static MemoryContext EventTriggerCacheContext;
+static MemoryContext *EventTriggerCacheContext;
 static EventTriggerCacheStateType EventTriggerCacheState = ETCS_NEEDS_REBUILD;
 
 static void BuildEventTriggerCache(void);
@@ -78,7 +78,7 @@ BuildEventTriggerCache(void)
 {
 	HASHCTL		ctl;
 	HTAB	   *cache;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	Relation	rel;
 	Relation	irel;
 	SysScanDesc scan;

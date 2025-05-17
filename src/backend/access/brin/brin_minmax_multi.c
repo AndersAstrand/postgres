@@ -1602,8 +1602,8 @@ ensure_free_space_in_buffer(BrinDesc *bdesc, Oid colloid,
 							AttrNumber attno, Form_pg_attribute attr,
 							Ranges *range)
 {
-	MemoryContext ctx;
-	MemoryContext oldctx;
+	MemoryContext *ctx;
+	MemoryContext *oldctx;
 
 	FmgrInfo   *cmpFn,
 			   *distanceFn;
@@ -1795,8 +1795,8 @@ compactify_ranges(BrinDesc *bdesc, Ranges *ranges, int max_values)
 	int			neranges;
 	DistanceValue *distances;
 
-	MemoryContext ctx;
-	MemoryContext oldctx;
+	MemoryContext *ctx;
+	MemoryContext *oldctx;
 
 	/*
 	 * Do we need to actually compactify anything?
@@ -2443,7 +2443,7 @@ brin_minmax_multi_add_value(PG_FUNCTION_ARGS)
 	 */
 	if (column->bv_allnulls)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		int			target_maxvalues;
 		int			maxvalues;
@@ -2489,7 +2489,7 @@ brin_minmax_multi_add_value(PG_FUNCTION_ARGS)
 	}
 	else if (!ranges)
 	{
-		MemoryContext oldctx;
+		MemoryContext *oldctx;
 
 		int			maxvalues;
 		BlockNumber pagesPerRange = BrinGetPagesPerRange(bdesc->bd_index);
@@ -2750,8 +2750,8 @@ brin_minmax_multi_union(PG_FUNCTION_ARGS)
 	FmgrInfo   *cmpFn,
 			   *distanceFn;
 	DistanceValue *distances;
-	MemoryContext ctx;
-	MemoryContext oldctx;
+	MemoryContext *ctx;
+	MemoryContext *oldctx;
 
 	Assert(col_a->bv_attno == col_b->bv_attno);
 	Assert(!col_a->bv_allnulls && !col_b->bv_allnulls);

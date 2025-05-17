@@ -63,7 +63,7 @@ BaseBackupAddTarget(char *name,
 					bbsink *(*get_sink) (bbsink *, void *))
 {
 	BaseBackupTargetType *newtype;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	ListCell   *lc;
 
 	/* If the target list is not yet initialized, do that first. */
@@ -172,7 +172,7 @@ static void
 initialize_target_list(void)
 {
 	BaseBackupTargetType *ttype = builtin_backup_targets;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	while (ttype->name != NULL)

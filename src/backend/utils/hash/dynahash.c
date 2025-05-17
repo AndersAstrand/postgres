@@ -224,7 +224,7 @@ struct HTAB
 	HashCompareFunc match;		/* key comparison function */
 	HashCopyFunc keycopy;		/* key copying function */
 	HashAllocFunc alloc;		/* memory allocator */
-	MemoryContext hcxt;			/* memory context if default allocator used */
+	MemoryContext *hcxt;		/* memory context if default allocator used */
 	char	   *tabname;		/* table name (for error messages) */
 	bool		isshared;		/* true if table is in shared memory */
 	bool		isfixed;		/* if true, don't enlarge */
@@ -285,7 +285,7 @@ static bool has_seq_scans(HTAB *hashp);
 /*
  * memory allocation support
  */
-static MemoryContext CurrentDynaHashCxt = NULL;
+static MemoryContext *CurrentDynaHashCxt = NULL;
 
 static void *
 DynaHashAlloc(Size size)

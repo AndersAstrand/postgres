@@ -1511,7 +1511,7 @@ generate_series_step_int4(PG_FUNCTION_ARGS)
 	FuncCallContext *funcctx;
 	generate_series_fctx *fctx;
 	int32		result;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	/* stuff done only on the first call of the function */
 	if (SRF_IS_FIRSTCALL())

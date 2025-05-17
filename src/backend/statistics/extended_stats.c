@@ -115,8 +115,8 @@ BuildRelationExtStatistics(Relation onerel, bool inh, double totalrows,
 	Relation	pg_stext;
 	ListCell   *lc;
 	List	   *statslist;
-	MemoryContext cxt;
-	MemoryContext oldcxt;
+	MemoryContext *cxt;
+	MemoryContext *oldcxt;
 	int64		ext_cnt;
 
 	/* Do nothing if there are no columns to analyze. */
@@ -265,8 +265,8 @@ ComputeExtStatisticsRows(Relation onerel,
 	Relation	pg_stext;
 	ListCell   *lc;
 	List	   *lstats;
-	MemoryContext cxt;
-	MemoryContext oldcxt;
+	MemoryContext *cxt;
+	MemoryContext *oldcxt;
 	int			result = 0;
 
 	/* If there are no columns to analyze, just return 0. */
@@ -2107,8 +2107,8 @@ static void
 compute_expr_stats(Relation onerel, AnlExprData *exprdata, int nexprs,
 				   HeapTuple *rows, int numrows)
 {
-	MemoryContext expr_context,
-				old_context;
+	MemoryContext *expr_context,
+			   *old_context;
 	int			ind,
 				i;
 

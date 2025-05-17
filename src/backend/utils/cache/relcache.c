@@ -413,7 +413,7 @@ static Relation
 AllocateRelationDesc(Form_pg_class relp)
 {
 	Relation	relation;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	Form_pg_class relationForm;
 
 	/* Relcache entries must live in CacheMemoryContext */
@@ -614,7 +614,7 @@ RelationBuildTupleDesc(Relation relation)
 			if (!missingNull)
 			{
 				/* Yes, fetch from the array */
-				MemoryContext oldcxt;
+				MemoryContext *oldcxt;
 				bool		is_null;
 				int			one = 1;
 				Datum		missval;
@@ -751,8 +751,8 @@ RelationBuildTupleDesc(Relation relation)
 static void
 RelationBuildRuleLock(Relation relation)
 {
-	MemoryContext rulescxt;
-	MemoryContext oldcxt;
+	MemoryContext *rulescxt;
+	MemoryContext *oldcxt;
 	HeapTuple	rewrite_tuple;
 	Relation	rewrite_desc;
 	TupleDesc	rewrite_tupdesc;
@@ -1080,8 +1080,8 @@ RelationBuildDesc(Oid targetRelId, bool insertIt)
 	 * error out partway through.
 	 */
 #ifdef MAYBE_RECOVER_RELATION_BUILD_MEMORY
-	MemoryContext tmpcxt = NULL;
-	MemoryContext oldcxt = NULL;
+	MemoryContext *tmpcxt = NULL;
+	MemoryContext *oldcxt = NULL;
 
 	if (RECOVER_RELATION_BUILD_MEMORY || debug_discard_caches > 0)
 	{
@@ -1453,8 +1453,8 @@ RelationInitIndexAccessInfo(Relation relation)
 	oidvector  *indcoll;
 	oidvector  *indclass;
 	int2vector *indoption;
-	MemoryContext indexcxt;
-	MemoryContext oldcontext;
+	MemoryContext *indexcxt;
+	MemoryContext *oldcontext;
 	int			indnatts;
 	int			indnkeyatts;
 	uint16		amsupport;
@@ -2749,7 +2749,7 @@ RelationRebuildRelation(Relation relation)
 		if (keep_rules)
 		{
 			SWAPFIELD(RuleLock *, rd_rules);
-			SWAPFIELD(MemoryContext, rd_rulescxt);
+			SWAPFIELD(MemoryContext *, rd_rulescxt);
 		}
 		if (keep_policies)
 			SWAPFIELD(RowSecurityDesc *, rd_rsdesc);
@@ -2762,7 +2762,7 @@ RelationRebuildRelation(Relation relation)
 		if (keep_partkey)
 		{
 			SWAPFIELD(PartitionKey, rd_partkey);
-			SWAPFIELD(MemoryContext, rd_partkeycxt);
+			SWAPFIELD(MemoryContext *, rd_partkeycxt);
 		}
 		if (newrel->rd_pdcxt != NULL || newrel->rd_pddcxt != NULL)
 		{
@@ -3105,7 +3105,7 @@ RememberToFreeTupleDescAtEOX(TupleDesc td)
 {
 	if (EOXactTupleDescArray == NULL)
 	{
-		MemoryContext oldcxt;
+		MemoryContext *oldcxt;
 
 		oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
 
@@ -3525,7 +3525,7 @@ RelationBuildLocalRelation(const char *relname,
 						   char relkind)
 {
 	Relation	rel;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			natts = tupDesc->natts;
 	int			i;
 	bool		has_not_null;
@@ -4047,7 +4047,7 @@ RelationCacheInitialize(void)
 void
 RelationCacheInitializePhase2(void)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/*
 	 * relation mapper needs initialized too
@@ -4108,7 +4108,7 @@ RelationCacheInitializePhase3(void)
 {
 	HASH_SEQ_STATUS status;
 	RelIdCacheEnt *idhentry;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	bool		needNewCacheFile = !criticalSharedRelcachesBuilt;
 
 	/*
@@ -4430,7 +4430,7 @@ static TupleDesc
 BuildHardcodedDescriptor(int natts, const FormData_pg_attribute *attrs)
 {
 	TupleDesc	result;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	oldcxt = MemoryContextSwitchTo(CacheMemoryContext);
@@ -4736,7 +4736,7 @@ RelationGetFKeyList(Relation relation)
 	ScanKeyData skey;
 	HeapTuple	htup;
 	List	   *oldlist;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the list. */
 	if (relation->rd_fkeyvalid)
@@ -4845,7 +4845,7 @@ RelationGetIndexList(Relation relation)
 	Oid			pkeyIndex = InvalidOid;
 	Oid			candidateIndex = InvalidOid;
 	bool		pkdeferrable = false;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the list. */
 	if (relation->rd_indexvalid)
@@ -4982,7 +4982,7 @@ RelationGetStatExtList(Relation relation)
 	HeapTuple	htup;
 	List	   *result;
 	List	   *oldlist;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the list. */
 	if (relation->rd_statvalid != 0)
@@ -5100,7 +5100,7 @@ RelationGetIndexExpressions(Relation relation)
 	Datum		exprsDatum;
 	bool		isnull;
 	char	   *exprsString;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the result. */
 	if (relation->rd_indexprs)
@@ -5213,7 +5213,7 @@ RelationGetIndexPredicate(Relation relation)
 	Datum		predDatum;
 	bool		isnull;
 	char	   *predString;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the result. */
 	if (relation->rd_indpred)
@@ -5312,7 +5312,7 @@ RelationGetIndexAttrBitmap(Relation relation, IndexAttrBitmapKind attrKind)
 	Oid			relpkindex;
 	Oid			relreplindex;
 	ListCell   *l;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the result. */
 	if (relation->rd_attrsvalid)
@@ -5579,7 +5579,7 @@ RelationGetIdentityKeyBitmap(Relation relation)
 	Relation	indexDesc;
 	int			i;
 	Oid			replidindex;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 
 	/* Quick exit if we already computed the result */
 	if (relation->rd_idattr != NULL)
@@ -5664,7 +5664,7 @@ RelationGetExclusionInfo(Relation indexRelation,
 	ScanKeyData skey[1];
 	HeapTuple	htup;
 	bool		found;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	int			i;
 
 	indnkeyatts = IndexRelationGetNumberOfKeyAttributes(indexRelation);
@@ -5795,7 +5795,7 @@ RelationBuildPublicationDesc(Relation relation, PublicationDesc *pubdesc)
 {
 	List	   *puboids;
 	ListCell   *lc;
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	Oid			schemaid;
 	List	   *ancestors = NIL;
 	Oid			relid = RelationGetRelid(relation);
@@ -5987,7 +5987,7 @@ CopyIndexAttOptions(bytea **srcopts, int natts)
 bytea	  **
 RelationGetIndexAttOptions(Relation relation, bool copy)
 {
-	MemoryContext oldcxt;
+	MemoryContext *oldcxt;
 	bytea	  **opts = relation->rd_opcoptions;
 	Oid			relid = RelationGetRelid(relation);
 	int			natts = RelationGetNumberOfAttributes(relation);	/* XXX
@@ -6304,7 +6304,7 @@ load_relcache_init_file(bool shared)
 		 */
 		if (rel->rd_rel->relkind == RELKIND_INDEX)
 		{
-			MemoryContext indexcxt;
+			MemoryContext *indexcxt;
 			Oid		   *opfamily;
 			Oid		   *opcintype;
 			RegProcedure *support;

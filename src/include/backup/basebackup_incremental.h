@@ -28,7 +28,7 @@ typedef enum
 struct IncrementalBackupInfo;
 typedef struct IncrementalBackupInfo IncrementalBackupInfo;
 
-extern IncrementalBackupInfo *CreateIncrementalBackupInfo(MemoryContext);
+extern IncrementalBackupInfo *CreateIncrementalBackupInfo(MemoryContext *);
 
 extern void AppendIncrementalManifestData(IncrementalBackupInfo *ib,
 										  const char *data,

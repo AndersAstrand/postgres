@@ -449,8 +449,8 @@ TimeZoneAbbrevTable *
 load_tzoffsets(const char *filename)
 {
 	TimeZoneAbbrevTable *result = NULL;
-	MemoryContext tmpContext;
-	MemoryContext oldContext;
+	MemoryContext *tmpContext;
+	MemoryContext *oldContext;
 	tzEntry    *array;
 	int			arraysize;
 	int			n;

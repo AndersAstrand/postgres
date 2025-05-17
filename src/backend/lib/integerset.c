@@ -203,7 +203,7 @@ struct IntegerSet
 	 * it in integerset.c itself, but the callers can ask for it with
 	 * intset_memory_usage().
 	 */
-	MemoryContext context;
+	MemoryContext *context;
 	uint64		mem_used;
 
 	uint64		num_entries;	/* total # of values in the set */

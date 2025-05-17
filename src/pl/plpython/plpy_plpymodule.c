@@ -404,7 +404,7 @@ PLy_output(volatile int level, PyObject *self, PyObject *args, PyObject *kw)
 	char	   *volatile datatype_name = NULL;
 	char	   *volatile table_name = NULL;
 	char	   *volatile schema_name = NULL;
-	volatile MemoryContext oldcontext;
+	volatile MemoryContext *oldcontext;
 	PyObject   *key,
 			   *value;
 	PyObject   *volatile so;

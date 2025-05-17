@@ -131,7 +131,7 @@ test_empty(void)
 	dsa = dsa_create(tranche_id);
 	radixtree = rt_create(dsa, tranche_id);
 #else
-	MemoryContext radixtree_ctx;
+	MemoryContext *radixtree_ctx;
 
 	radixtree_ctx = AllocSetContextCreate(CurrentMemoryContext,
 										  "test_radix_tree",
@@ -174,7 +174,7 @@ test_basic(rt_node_class_test_elem *test_info, int shift, bool asc)
 	dsa = dsa_create(tranche_id);
 	radixtree = rt_create(dsa, tranche_id);
 #else
-	MemoryContext radixtree_ctx;
+	MemoryContext *radixtree_ctx;
 
 	radixtree_ctx = AllocSetContextCreate(CurrentMemoryContext,
 										  "test_radix_tree",
@@ -311,7 +311,7 @@ test_random(void)
 	dsa = dsa_create(tranche_id);
 	radixtree = rt_create(dsa, tranche_id);
 #else
-	MemoryContext radixtree_ctx;
+	MemoryContext *radixtree_ctx;
 
 	radixtree_ctx = SlabContextCreate(CurrentMemoryContext,
 									  "test_radix_tree",

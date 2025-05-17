@@ -106,7 +106,7 @@ struct ExpandedObjectHeader
 	const ExpandedObjectMethods *eoh_methods;
 
 	/* Memory context containing this header and subsidiary data */
-	MemoryContext eoh_context;
+	MemoryContext *eoh_context;
 
 	/* Standard R/W TOAST pointer for this object is kept here */
 	char		eoh_rw_ptr[EXPANDED_POINTER_SIZE];
@@ -159,12 +159,12 @@ EOHPGetRODatum(const struct ExpandedObjectHeader *eohptr)
 extern ExpandedObjectHeader *DatumGetEOHP(Datum d);
 extern void EOH_init_header(ExpandedObjectHeader *eohptr,
 							const ExpandedObjectMethods *methods,
-							MemoryContext obj_context);
+							MemoryContext *obj_context);
 extern Size EOH_get_flat_size(ExpandedObjectHeader *eohptr);
 extern void EOH_flatten_into(ExpandedObjectHeader *eohptr,
 							 void *result, Size allocated_size);
 extern Datum MakeExpandedObjectReadOnlyInternal(Datum d);
-extern Datum TransferExpandedObject(Datum d, MemoryContext new_parent);
+extern Datum TransferExpandedObject(Datum d, MemoryContext *new_parent);
 extern void DeleteExpandedObject(Datum d);
 
 #endif							/* EXPANDEDDATUM_H */

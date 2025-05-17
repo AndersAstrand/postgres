@@ -90,10 +90,10 @@ typedef struct CopyToStateData
 	/*
 	 * Working state
 	 */
-	MemoryContext copycontext;	/* per-copy execution context */
+	MemoryContext *copycontext; /* per-copy execution context */
 
 	FmgrInfo   *out_functions;	/* lookup info for output functions */
-	MemoryContext rowcontext;	/* per-row evaluation context */
+	MemoryContext *rowcontext;	/* per-row evaluation context */
 	uint64		bytes_processed;	/* number of bytes processed so far */
 } CopyToStateData;
 
@@ -634,7 +634,7 @@ BeginCopyTo(ParseState *pstate,
 	bool		pipe = (filename == NULL && data_dest_cb == NULL);
 	TupleDesc	tupDesc;
 	int			num_phys_attrs;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	const int	progress_cols[] = {
 		PROGRESS_COPY_COMMAND,
 		PROGRESS_COPY_TYPE
@@ -1122,7 +1122,7 @@ DoCopyTo(CopyToState cstate)
 static inline void
 CopyOneRowTo(CopyToState cstate, TupleTableSlot *slot)
 {
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	MemoryContextReset(cstate->rowcontext);
 	oldcontext = MemoryContextSwitchTo(cstate->rowcontext);

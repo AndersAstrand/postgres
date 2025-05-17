@@ -1902,7 +1902,7 @@ bttextsortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
 	Oid			collid = ssup->ssup_collation;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
@@ -2946,7 +2946,7 @@ Datum
 bttext_pattern_sortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
@@ -4066,7 +4066,7 @@ Datum
 bytea_sortsupport(PG_FUNCTION_ARGS)
 {
 	SortSupport ssup = (SortSupport) PG_GETARG_POINTER(0);
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	oldcontext = MemoryContextSwitchTo(ssup->ssup_cxt);
 
@@ -5364,8 +5364,8 @@ static StringInfo
 makeStringAggState(FunctionCallInfo fcinfo)
 {
 	StringInfo	state;
-	MemoryContext aggcontext;
-	MemoryContext oldcontext;
+	MemoryContext *aggcontext;
+	MemoryContext *oldcontext;
 
 	if (!AggCheckCallContext(fcinfo, &aggcontext))
 	{
@@ -5444,7 +5444,7 @@ string_agg_combine(PG_FUNCTION_ARGS)
 {
 	StringInfo	state1;
 	StringInfo	state2;
-	MemoryContext agg_context;
+	MemoryContext *agg_context;
 
 	if (!AggCheckCallContext(fcinfo, &agg_context))
 		elog(ERROR, "aggregate function called in non-aggregate context");
@@ -5466,7 +5466,7 @@ string_agg_combine(PG_FUNCTION_ARGS)
 	if (state1 == NULL)
 	{
 		/* We must copy state2's data into the agg_context */
-		MemoryContext old_context;
+		MemoryContext *old_context;
 
 		old_context = MemoryContextSwitchTo(agg_context);
 		state1 = makeStringAggState(fcinfo);

@@ -218,7 +218,7 @@ typedef struct IndexInfo
 	int			ii_ParallelWorkers;
 	Oid			ii_Am;
 	void	   *ii_AmCache;
-	MemoryContext ii_Context;
+	MemoryContext *ii_Context;
 } IndexInfo;
 
 /* ----------------
@@ -272,8 +272,8 @@ typedef struct ExprContext
 	TupleTableSlot *ecxt_outertuple;
 
 	/* Memory contexts for expression evaluation --- see notes above */
-	MemoryContext ecxt_per_query_memory;
-	MemoryContext ecxt_per_tuple_memory;
+	MemoryContext *ecxt_per_query_memory;
+	MemoryContext *ecxt_per_tuple_memory;
 
 	/* Values to substitute for Param nodes in expression */
 	ParamExecData *ecxt_param_exec_vals;	/* for PARAM_EXEC params */
@@ -705,7 +705,7 @@ typedef struct EState
 	QueryEnvironment *es_queryEnv;	/* query environment */
 
 	/* Other working state: */
-	MemoryContext es_query_cxt; /* per-query context in which EState lives */
+	MemoryContext *es_query_cxt;	/* per-query context in which EState lives */
 
 	List	   *es_tupleTable;	/* List of TupleTableSlots */
 
@@ -866,8 +866,8 @@ typedef struct TupleHashTableData
 	ExprState  *tab_hash_expr;	/* ExprState for hashing table datatype(s) */
 	ExprState  *tab_eq_func;	/* comparator for table datatype(s) */
 	Oid		   *tab_collations; /* collations for hash and comparison */
-	MemoryContext tablecxt;		/* memory context containing table */
-	MemoryContext tempcxt;		/* context for function evaluations */
+	MemoryContext *tablecxt;	/* memory context containing table */
+	MemoryContext *tempcxt;		/* context for function evaluations */
 	Size		additionalsize; /* size of additional data */
 	TupleTableSlot *tableslot;	/* slot for referencing table entries */
 	/* The following fields are set transiently for each table search: */
@@ -1016,8 +1016,8 @@ typedef struct SubPlanState
 	TupleHashTable hashnulls;	/* hash table for rows with null(s) */
 	bool		havehashrows;	/* true if hashtable is not empty */
 	bool		havenullrows;	/* true if hashnulls is not empty */
-	MemoryContext hashtablecxt; /* memory context containing hash tables */
-	MemoryContext hashtempcxt;	/* temp memory context for hash tables */
+	MemoryContext *hashtablecxt;	/* memory context containing hash tables */
+	MemoryContext *hashtempcxt; /* temp memory context for hash tables */
 	ExprContext *innerecontext; /* econtext for computing inner tuples */
 	int			numCols;		/* number of columns being hashed */
 	/* each of the remaining fields is an array of length numCols: */
@@ -1379,7 +1379,7 @@ typedef struct ProjectSetState
 	ExprDoneCond *elemdone;		/* array of per-SRF is-done states */
 	int			nelems;			/* length of elemdone[] array */
 	bool		pending_srf_tuples; /* still evaluating srfs in tlist? */
-	MemoryContext argcontext;	/* context for SRF arguments */
+	MemoryContext *argcontext;	/* context for SRF arguments */
 } ProjectSetState;
 
 
@@ -1564,9 +1564,9 @@ typedef struct RecursiveUnionState
 	/* Remaining fields are unused in UNION ALL case */
 	Oid		   *eqfuncoids;		/* per-grouping-field equality fns */
 	FmgrInfo   *hashfunctions;	/* per-grouping-field hash fns */
-	MemoryContext tempContext;	/* short-term context for comparisons */
+	MemoryContext *tempContext; /* short-term context for comparisons */
 	TupleHashTable hashtable;	/* hash table for tuples already seen */
-	MemoryContext tableContext; /* memory context containing hash table */
+	MemoryContext *tableContext;	/* memory context containing hash table */
 } RecursiveUnionState;
 
 /* ----------------
@@ -1975,7 +1975,7 @@ typedef struct FunctionScanState
 	int64		ordinal;
 	int			nfuncs;
 	struct FunctionScanPerFuncState *funcstates;	/* array of length nfuncs */
-	MemoryContext argcontext;
+	MemoryContext *argcontext;
 } FunctionScanState;
 
 /* ----------------
@@ -2035,7 +2035,7 @@ typedef struct TableFuncScanState
 	FmgrInfo   *in_functions;	/* input function for each column */
 	Oid		   *typioparams;	/* typioparam for each column */
 	int64		ordinal;		/* row number to be output next */
-	MemoryContext perTableCxt;	/* per-table context */
+	MemoryContext *perTableCxt; /* per-table context */
 	Tuplestorestate *tupstore;	/* output tuple store */
 } TableFuncScanState;
 
@@ -2345,7 +2345,7 @@ typedef struct MemoizeState
 	Oid		   *collations;		/* collation for comparisons nkeys in size */
 	uint64		mem_used;		/* bytes of memory used by cache */
 	uint64		mem_limit;		/* memory limit in bytes for the cache */
-	MemoryContext tableContext; /* memory context to store cache data */
+	MemoryContext *tableContext;	/* memory context to store cache data */
 	dlist_head	lru_list;		/* least recently used entry list */
 	struct MemoizeTuple *last_tuple;	/* Used to point to the last tuple
 										 * returned during a cache hit and the
@@ -2566,8 +2566,8 @@ typedef struct AggState
 	/* these fields are used in AGG_HASHED and AGG_MIXED modes: */
 	bool		table_filled;	/* hash table filled yet? */
 	int			num_hashes;
-	MemoryContext hash_metacxt; /* memory for hash table bucket array */
-	MemoryContext hash_tablecxt;	/* memory for hash table entries */
+	MemoryContext *hash_metacxt;	/* memory for hash table bucket array */
+	MemoryContext *hash_tablecxt;	/* memory for hash table entries */
 	struct LogicalTapeSet *hash_tapeset;	/* tape set for hash spill tapes */
 	struct HashAggSpill *hash_spills;	/* HashAggSpill for each grouping set,
 										 * exists only during first pass */
@@ -2678,9 +2678,9 @@ typedef struct WindowAggState
 	int64		groupheadpos;	/* current row's peer group head position */
 	int64		grouptailpos;	/* " " " " tail position (group end+1) */
 
-	MemoryContext partcontext;	/* context for partition-lifespan data */
-	MemoryContext aggcontext;	/* shared context for aggregate working data */
-	MemoryContext curaggcontext;	/* current aggregate's working data */
+	MemoryContext *partcontext; /* context for partition-lifespan data */
+	MemoryContext *aggcontext;	/* shared context for aggregate working data */
+	MemoryContext *curaggcontext;	/* current aggregate's working data */
 	ExprContext *tmpcontext;	/* short-term evaluation context */
 
 	bool		all_first;		/* true if the scan is starting */
@@ -2866,7 +2866,7 @@ typedef struct SetOpState
 	Oid		   *eqfuncoids;		/* per-grouping-field equality fns */
 	FmgrInfo   *hashfunctions;	/* per-grouping-field hash fns */
 	TupleHashTable hashtable;	/* hash table with one entry per group */
-	MemoryContext tableContext; /* memory context containing hash table */
+	MemoryContext *tableContext;	/* memory context containing hash table */
 	bool		table_filled;	/* hash table filled yet? */
 	TupleHashIterator hashiter; /* for iterating through hash table */
 } SetOpState;

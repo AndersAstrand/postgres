@@ -22,7 +22,7 @@
 #include "storage/standby.h"
 #include "utils/memutils.h"
 
-static MemoryContext opCtx;		/* working memory for operations */
+static MemoryContext *opCtx;	/* working memory for operations */
 
 /*
  * _bt_restore_page -- re-enter all the index tuples on a page
@@ -1018,7 +1018,7 @@ void
 btree_redo(XLogReaderState *record)
 {
 	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	oldCtx = MemoryContextSwitchTo(opCtx);
 	switch (info)

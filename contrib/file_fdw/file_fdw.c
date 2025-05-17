@@ -732,7 +732,7 @@ fileIterateForeignScan(ForeignScanState *node)
 	FileFdwExecutionState *festate = (FileFdwExecutionState *) node->fdw_state;
 	EState	   *estate = CreateExecutorState();
 	ExprContext *econtext;
-	MemoryContext oldcontext = CurrentMemoryContext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
 	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
 	CopyFromState cstate = festate->cstate;
 	ErrorContextCallback errcallback;
@@ -1201,8 +1201,8 @@ file_acquire_sample_rows(Relation onerel, int elevel,
 	List	   *options;
 	CopyFromState cstate;
 	ErrorContextCallback errcallback;
-	MemoryContext oldcontext = CurrentMemoryContext;
-	MemoryContext tupcontext;
+	MemoryContext *oldcontext = CurrentMemoryContext;
+	MemoryContext *tupcontext;
 
 	Assert(onerel);
 	Assert(targrows > 0);

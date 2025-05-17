@@ -132,7 +132,7 @@ GetNamedDSMSegment(const char *name, size_t size,
 				   void (*init_callback) (void *ptr), bool *found)
 {
 	DSMRegistryEntry *entry;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	void	   *ret;
 
 	Assert(found);

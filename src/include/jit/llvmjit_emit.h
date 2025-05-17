@@ -239,8 +239,8 @@ l_mcxt_switch(LLVMModuleRef mod, LLVMBuilderRef b, LLVMValueRef nc)
 	LLVMValueRef ret;
 
 	if (!(cur = LLVMGetNamedGlobal(mod, cmc)))
-		cur = LLVMAddGlobal(mod, l_ptr(StructMemoryContextData), cmc);
-	ret = l_load(b, l_ptr(StructMemoryContextData), cur, cmc);
+		cur = LLVMAddGlobal(mod, l_ptr(StructMemoryContext), cmc);
+	ret = l_load(b, l_ptr(StructMemoryContext), cur, cmc);
 	LLVMBuildStore(b, nc, cur);
 
 	return ret;

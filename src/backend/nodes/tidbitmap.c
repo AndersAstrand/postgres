@@ -140,7 +140,7 @@ typedef enum
 struct TIDBitmap
 {
 	NodeTag		type;			/* to make it a valid Node */
-	MemoryContext mcxt;			/* memory context containing me */
+	MemoryContext *mcxt;		/* memory context containing me */
 	TBMStatus	status;			/* see codes above */
 	struct pagetable_hash *pagetable;	/* hash table of PagetableEntry's */
 	int			nentries;		/* number of entries in pagetable */

@@ -273,7 +273,7 @@ ginNewScanKey(IndexScanDesc scan)
 	int			i;
 	bool		hasNullQuery = false;
 	bool		attrHasNormalScan[INDEX_MAX_KEYS] = {false};
-	MemoryContext oldCtx;
+	MemoryContext *oldCtx;
 
 	/*
 	 * Allocate all the scan key information in the key context. (If

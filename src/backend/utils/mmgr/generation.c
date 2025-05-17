@@ -58,7 +58,7 @@ typedef void *GenerationPointer;
  */
 typedef struct GenerationContext
 {
-	MemoryContextData header;	/* Standard memory-context fields */
+	MemoryContext header;		/* Standard memory-context fields */
 
 	/* Generational context parameters */
 	uint32		initBlockSize;	/* initial block size */
@@ -156,8 +156,8 @@ static inline void GenerationBlockFree(GenerationContext *set,
  * initBlockSize: initial allocation block size
  * maxBlockSize: maximum allocation block size
  */
-MemoryContext
-GenerationContextCreate(MemoryContext parent,
+MemoryContext *
+GenerationContextCreate(MemoryContext *parent,
 						const char *name,
 						Size minContextSize,
 						Size initBlockSize,
@@ -259,15 +259,15 @@ GenerationContextCreate(MemoryContext parent,
 		set->allocChunkLimit >>= 1;
 
 	/* Finally, do the type-independent part of context creation */
-	MemoryContextCreate((MemoryContext) set,
+	MemoryContextCreate((MemoryContext *) set,
 						T_GenerationContext,
 						MCTX_GENERATION_ID,
 						parent,
 						name);
 
-	((MemoryContext) set)->mem_allocated = firstBlockSize;
+	((MemoryContext *) set)->mem_allocated = firstBlockSize;
 
-	return (MemoryContext) set;
+	return (MemoryContext *) set;
 }
 
 /*
@@ -280,7 +280,7 @@ GenerationContextCreate(MemoryContext parent,
  * allocations.
  */
 void
-GenerationReset(MemoryContext context)
+GenerationReset(MemoryContext *context)
 {
 	GenerationContext *set = (GenerationContext *) context;
 	dlist_mutable_iter miter;
@@ -325,7 +325,7 @@ GenerationReset(MemoryContext context)
  *		Free all memory which is allocated in the given context.
  */
 void
-GenerationDelete(MemoryContext context)
+GenerationDelete(MemoryContext *context)
 {
 	/* Reset to release all releasable GenerationBlocks */
 	GenerationReset(context);
@@ -340,7 +340,7 @@ GenerationDelete(MemoryContext context)
  */
 pg_noinline
 static void *
-GenerationAllocLarge(MemoryContext context, Size size, int flags)
+GenerationAllocLarge(MemoryContext *context, Size size, int flags)
 {
 	GenerationContext *set = (GenerationContext *) context;
 	GenerationBlock *block;
@@ -410,7 +410,7 @@ GenerationAllocLarge(MemoryContext context, Size size, int flags)
  * the code between GenerationAlloc() and GenerationAllocFromNewBlock().
  */
 static inline void *
-GenerationAllocChunkFromBlock(MemoryContext context, GenerationBlock *block,
+GenerationAllocChunkFromBlock(MemoryContext *context, GenerationBlock *block,
 							  Size size, Size chunk_size)
 {
 	MemoryChunk *chunk = (MemoryChunk *) (block->freeptr);
@@ -458,7 +458,7 @@ GenerationAllocChunkFromBlock(MemoryContext context, GenerationBlock *block,
  */
 pg_noinline
 static void *
-GenerationAllocFromNewBlock(MemoryContext context, Size size, int flags,
+GenerationAllocFromNewBlock(MemoryContext *context, Size size, int flags,
 							Size chunk_size)
 {
 	GenerationContext *set = (GenerationContext *) context;
@@ -524,7 +524,7 @@ GenerationAllocFromNewBlock(MemoryContext context, Size size, int flags,
  * call.
  */
 void *
-GenerationAlloc(MemoryContext context, Size size, int flags)
+GenerationAlloc(MemoryContext *context, Size size, int flags)
 {
 	GenerationContext *set = (GenerationContext *) context;
 	GenerationBlock *block;
@@ -671,7 +671,7 @@ GenerationBlockFree(GenerationContext *set, GenerationBlock *block)
 	/* release the block from the list of blocks */
 	dlist_delete(&block->node);
 
-	((MemoryContext) set)->mem_allocated -= block->blksize;
+	((MemoryContext *) set)->mem_allocated -= block->blksize;
 
 #ifdef CLOBBER_FREED_MEMORY
 	wipe_mem(block, block->blksize);
@@ -737,7 +737,7 @@ GenerationFree(void *pointer)
 	Assert(chunk->requested_size < chunksize);
 	if (!sentinel_ok(pointer, chunk->requested_size))
 		elog(WARNING, "detected write past chunk end in %s %p",
-			 ((MemoryContext) block->context)->name, chunk);
+			 ((MemoryContext *) block->context)->name, chunk);
 #endif
 
 #ifdef CLOBBER_FREED_MEMORY
@@ -842,7 +842,7 @@ GenerationRealloc(void *pointer, Size size, int flags)
 	Assert(chunk->requested_size < oldsize);
 	if (!sentinel_ok(pointer, chunk->requested_size))
 		elog(WARNING, "detected write past chunk end in %s %p",
-			 ((MemoryContext) set)->name, chunk);
+			 ((MemoryContext *) set)->name, chunk);
 #endif
 
 	/*
@@ -905,14 +905,14 @@ GenerationRealloc(void *pointer, Size size, int flags)
 	}
 
 	/* allocate new chunk (this also checks size is valid) */
-	newPointer = GenerationAlloc((MemoryContext) set, size, flags);
+	newPointer = GenerationAlloc((MemoryContext *) set, size, flags);
 
 	/* leave immediately if request was not completed */
 	if (newPointer == NULL)
 	{
 		/* Disallow access to the chunk header. */
 		VALGRIND_MAKE_MEM_NOACCESS(chunk, Generation_CHUNKHDRSZ);
-		return MemoryContextAllocationFailure((MemoryContext) set, size, flags);
+		return MemoryContextAllocationFailure((MemoryContext *) set, size, flags);
 	}
 
 	/*
@@ -943,7 +943,7 @@ GenerationRealloc(void *pointer, Size size, int flags)
  * GenerationGetChunkContext
  *		Return the MemoryContext that 'pointer' belongs to.
  */
-MemoryContext
+MemoryContext *
 GenerationGetChunkContext(void *pointer)
 {
 	MemoryChunk *chunk = PointerGetMemoryChunk(pointer);
@@ -999,7 +999,7 @@ GenerationGetChunkSpace(void *pointer)
  *		Is a GenerationContext empty of any allocated space?
  */
 bool
-GenerationIsEmpty(MemoryContext context)
+GenerationIsEmpty(MemoryContext *context)
 {
 	GenerationContext *set = (GenerationContext *) context;
 	dlist_iter	iter;
@@ -1030,7 +1030,7 @@ GenerationIsEmpty(MemoryContext context)
  * space of freed chunks (which is unknown).
  */
 void
-GenerationStats(MemoryContext context,
+GenerationStats(MemoryContext *context,
 				MemoryStatsPrintFunc printfunc, void *passthru,
 				MemoryContextCounters *totals, bool print_to_stderr)
 {
@@ -1090,7 +1090,7 @@ GenerationStats(MemoryContext context,
  * routine will be entered again when elog cleanup tries to release memory!
  */
 void
-GenerationCheck(MemoryContext context)
+GenerationCheck(MemoryContext *context)
 {
 	GenerationContext *gen = (GenerationContext *) context;
 	const char *name = context->name;

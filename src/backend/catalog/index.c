@@ -4272,7 +4272,7 @@ RestoreReindexState(const void *reindexstate)
 {
 	const SerializedReindexState *sistate = (const SerializedReindexState *) reindexstate;
 	int			c = 0;
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 
 	currentlyReindexedHeap = sistate->currentlyReindexedHeap;
 	currentlyReindexedIndex = sistate->currentlyReindexedIndex;

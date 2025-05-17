@@ -2472,7 +2472,7 @@ llvm_compile_expr(ExprState *state)
 
 					v_tmpcontext =
 						l_ptr_const(aggstate->tmpcontext->ecxt_per_tuple_memory,
-									l_ptr(StructMemoryContextData));
+									l_ptr(StructMemoryContext));
 					v_oldcontext = l_mcxt_switch(mod, b, v_tmpcontext);
 					v_retval = BuildV1Call(context, b, mod, fcinfo,
 										   &v_fcinfo_isnull);
@@ -2770,7 +2770,7 @@ llvm_compile_expr(ExprState *state)
 					/* invoke transition function in per-tuple context */
 					v_tmpcontext =
 						l_ptr_const(aggstate->tmpcontext->ecxt_per_tuple_memory,
-									l_ptr(StructMemoryContextData));
+									l_ptr(StructMemoryContext));
 					v_oldcontext = l_mcxt_switch(mod, b, v_tmpcontext);
 
 					/* store transvalue in fcinfo->args[0] */

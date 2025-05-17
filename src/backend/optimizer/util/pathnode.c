@@ -1730,7 +1730,7 @@ create_unique_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 	UniquePath *pathnode;
 	Path		sort_path;		/* dummy for result of cost_sort */
 	Path		agg_path;		/* dummy for result of cost_agg */
-	MemoryContext oldcontext;
+	MemoryContext *oldcontext;
 	int			numCols;
 
 	/* Caller made a mistake if subpath isn't cheapest_total ... */
@@ -4519,7 +4519,7 @@ do { \
 	 */
 	if (new_ppi == NULL)
 	{
-		MemoryContext oldcontext;
+		MemoryContext *oldcontext;
 		RelOptInfo *rel = path->parent;
 
 		oldcontext = MemoryContextSwitchTo(GetMemoryChunkContext(rel));
