@@ -79,7 +79,7 @@ typedef struct WALKeyCacheRec
 	XLogRecPtr	start_lsn;
 	XLogRecPtr	end_lsn;
 
-	InternalKey *key;
+	InternalKey key;
 	void	   *crypt_ctx;
 
 	struct WALKeyCacheRec *next;
