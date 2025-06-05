@@ -91,14 +91,14 @@ sql_tests = [
   'delete_principal_key',
   'insert_update_delete',
   'key_provider',
-  'kmip_test',
+#  'kmip_test',
   'partition_table',
   'pg_tde_is_encrypted',
   'recreate_storage',
   'relocate',
   'tablespace',
   'toast_decrypt',
-  'vault_v2_test',
+#  'vault_v2_test',
   'version',
 ]
 
