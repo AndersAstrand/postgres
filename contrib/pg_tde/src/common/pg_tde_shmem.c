@@ -1,12 +1,5 @@
-/*-------------------------------------------------------------------------
- *
- * pg_tde_shmem.c
- *      Shared memory area to manage cache and locks.
- *
- * IDENTIFICATION
- *    contrib/pg_tde/src/pg_tde_shmem.c
- *
- *-------------------------------------------------------------------------
+/*
+ * Shared memory area to manage cache and locks.
  */
 
 #include "postgres.h"

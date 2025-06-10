@@ -1,14 +1,7 @@
-/*-------------------------------------------------------------------------
- *
- * tde_principal_key.c
- *      Deals with the tde principal key configuration catalog
- *      routines.
- *
- * IDENTIFICATION
- *    contrib/pg_tde/src/catalog/tde_principal_key.c
- *
- *-------------------------------------------------------------------------
+/*
+ * Deals with the tde principal key configuration catalog routines.
  */
+
 #include "postgres.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
