@@ -24,7 +24,6 @@
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "keyring/keyring_api.h"
-#include "common/pg_tde_shmem.h"
 #include "catalog/tde_principal_key.h"
 #include "keyring/keyring_file.h"
 #include "keyring/keyring_vault.h"
@@ -54,7 +53,6 @@ static void
 tde_shmem_request(void)
 {
 	Size		sz = 0;
-	int			required_locks = TdeRequiredLocksCount();
 
 	sz = add_size(sz, PrincipalKeyShmemSize());
 	sz = add_size(sz, TDEXLogEncryptStateSize());
@@ -63,7 +61,7 @@ tde_shmem_request(void)
 		prev_shmem_request_hook();
 
 	RequestAddinShmemSpace(sz);
-	RequestNamedLWLockTranche(TDE_TRANCHE_NAME, required_locks);
+	RequestNamedLWLockTranche(TDE_TRANCHE_NAME, TDE_LWLOCK_COUNT);
 	ereport(LOG, errmsg("tde_shmem_request: requested %ld bytes", sz));
 }
 

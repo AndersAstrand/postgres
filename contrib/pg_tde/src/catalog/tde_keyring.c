@@ -30,7 +30,6 @@
 
 #ifndef FRONTEND
 #include "access/heapam.h"
-#include "common/pg_tde_shmem.h"
 #include "funcapi.h"
 #include "access/relscan.h"
 #include "access/relation.h"
