@@ -3,7 +3,6 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION pg_tde" to load this file. \quit
 
--- Key Provider Management
 CREATE FUNCTION pg_tde_add_database_key_provider(provider_type TEXT, provider_name TEXT, options JSON)
 RETURNS VOID
 LANGUAGE C
@@ -70,7 +69,6 @@ LANGUAGE C
 AS 'MODULE_PATHNAME';
 REVOKE ALL ON FUNCTION pg_tde_list_all_global_key_providers() FROM PUBLIC;
 
--- Global Tablespace Key Provider Management
 CREATE FUNCTION pg_tde_add_global_key_provider(provider_type TEXT, provider_name TEXT, options JSON)
 RETURNS VOID
 LANGUAGE C
@@ -117,7 +115,6 @@ BEGIN ATOMIC
                             'keyPath' VALUE kmip_key_path));
 END;
 
--- Key Provider Management
 CREATE FUNCTION pg_tde_change_database_key_provider(provider_type TEXT, provider_name TEXT, options JSON)
 RETURNS VOID
 LANGUAGE C
@@ -164,7 +161,6 @@ BEGIN ATOMIC
                             'keyPath' VALUE kmip_key_path));
 END;
 
--- Global Tablespace Key Provider Management
 CREATE FUNCTION pg_tde_change_global_key_provider(provider_type TEXT, provider_name TEXT, options JSON)
 RETURNS VOID
 LANGUAGE C
@@ -213,8 +209,8 @@ END;
 
 CREATE FUNCTION pg_tde_is_encrypted(relation REGCLASS)
 RETURNS BOOLEAN
-STRICT
 LANGUAGE C
+STRICT
 AS 'MODULE_PATHNAME';
 
 CREATE FUNCTION pg_tde_set_key_using_database_key_provider(key_name TEXT, provider_name TEXT, ensure_new_key BOOLEAN DEFAULT FALSE)
@@ -237,8 +233,8 @@ REVOKE ALL ON FUNCTION pg_tde_set_server_key_using_global_key_provider(TEXT, TEX
 
 CREATE FUNCTION pg_tde_set_default_key_using_global_key_provider(key_name TEXT, provider_name TEXT, ensure_new_key BOOLEAN DEFAULT FALSE)
 RETURNS VOID
-AS 'MODULE_PATHNAME'
-LANGUAGE C;
+LANGUAGE C
+AS 'MODULE_PATHNAME';
 REVOKE ALL ON FUNCTION pg_tde_set_default_key_using_global_key_provider(TEXT, TEXT, BOOLEAN) FROM PUBLIC;
 
 CREATE FUNCTION pg_tde_verify_key()
@@ -298,9 +294,11 @@ LANGUAGE C
 AS 'MODULE_PATHNAME';
 REVOKE ALL ON FUNCTION pg_tde_delete_database_key_provider(TEXT) FROM PUBLIC;
 
-CREATE FUNCTION pg_tde_version() RETURNS TEXT LANGUAGE C AS 'MODULE_PATHNAME';
+CREATE FUNCTION pg_tde_version()
+RETURNS TEXT
+LANGUAGE C
+AS 'MODULE_PATHNAME';
 
--- Table access method
 CREATE FUNCTION pg_tdeam_handler(internal)
 RETURNS TABLE_AM_HANDLER
 LANGUAGE C
@@ -332,7 +330,6 @@ ON ddl_command_end
 EXECUTE FUNCTION pg_tde_ddl_command_end_capture();
 ALTER EVENT TRIGGER pg_tde_ddl_end ENABLE ALWAYS;
 
--- Per database extension initialization
 CREATE FUNCTION pg_tde_extension_initialize()
 RETURNS VOID
 LANGUAGE C
