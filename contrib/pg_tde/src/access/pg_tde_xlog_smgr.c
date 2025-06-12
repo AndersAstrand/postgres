@@ -63,7 +63,7 @@ typedef struct EncryptionStateData
 static EncryptionStateData *EncryptionState = NULL;
 
 /* TODO: can be swapped out to the disk */
-static InternalKey EncryptionKey =
+static WalEncryptionKey EncryptionKey =
 {
 	.type = MAP_ENTRY_EMPTY,
 	.start_lsn = InvalidXLogRecPtr,

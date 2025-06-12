@@ -22,10 +22,16 @@ typedef struct InternalKey
 {
 	uint8		key[INTERNAL_KEY_LEN];
 	uint8		base_iv[INTERNAL_KEY_IV_LEN];
+} InternalKey;
+
+typedef struct WalEncryptionKey
+{
+	InternalKey key;
 	uint32		type;
 
 	XLogRecPtr	start_lsn;
 } InternalKey;
+
 
 #define MAP_ENTRY_IV_SIZE 16
 #define MAP_ENTRY_AEAD_TAG_SIZE 16
