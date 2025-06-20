@@ -13,6 +13,40 @@
 #include "pg_tde_fe.h"
 #endif
 
+static void uint8_to_hex(const uint8 in[16], char out[33]) {
+	char *hex = "0123456789abcdef";
+
+	for (int i = 0; i < 16; i++) {
+		out[i << 1] = hex[in[i] >> 4];
+		out[(i << 1) + 1] = hex[in[i] & 0x0F];
+	}
+	out[33] = 0;
+}
+
+void log_decrypted_key(const DecryptedTdeKey *decrypted_key) {
+	char data[33];
+	char iv[33];
+
+	uint8_to_hex(decrypted_key->data, data);
+	uint8_to_hex(decrypted_key->iv, iv);
+
+	elog(LOG, "DecryptedTdeKey\n\tdata: %s\n\tiv: %s", data, iv);
+}
+
+void log_encrypted_key(const EncryptedTdeKey *encrypted_key) {
+	char key_data[33];
+	char key_iv[33];
+	char iv[33];
+	char aead_tag[33];
+
+	uint8_to_hex(encrypted_key->key_data, key_data);
+	uint8_to_hex(encrypted_key->key_iv, key_iv);
+	uint8_to_hex(encrypted_key->iv, iv);
+	uint8_to_hex(encrypted_key->aead_tag, aead_tag);
+
+	elog(LOG, "EncryptedTdeKey\n\tkey_data: %s\n\tkey_iv: %s\n\tiv: %s\n\taead_tag: %s", key_data, key_iv, iv, aead_tag);
+}
+
 static void ResourceOwnerReleaseDecryptedTdeKey(Datum resource);
 static DecryptedTdeKey *tde_keys_alloc_decrypted_key(void);
 
@@ -32,6 +66,9 @@ tde_keys_encrypt_key(const DecryptedTdeKey *decrypted_key,
 					 int additional_authentication_data_size)
 {
 	EncryptedTdeKey *encrypted_key = palloc0_object(EncryptedTdeKey);
+
+	// elog(LOG, "tde_keys_encrypt_key");
+	// log_decrypted_key(decrypted_key);
 
 	memcpy(encrypted_key->key_iv, decrypted_key->iv, TDE_KEY_IV_SIZE);
 
@@ -56,6 +93,8 @@ tde_keys_encrypt_key(const DecryptedTdeKey *decrypted_key,
 				  encrypted_key->aead_tag,
 				  TDE_KEY_ENCRYPTION_AEAD_TAG_SIZE);
 
+	// log_encrypted_key(encrypted_key);
+
 	return encrypted_key;
 }
 
@@ -69,6 +108,9 @@ tde_keys_decrypt_key(EncryptedTdeKey *encrypted_key,
 
 	Assert(encrypted_key);
 	Assert(decryption_key);
+
+	// elog(LOG, "tde_keys_decrypt_key");
+	// log_encrypted_key(encrypted_key);
 
 	decrypted_key = tde_keys_alloc_decrypted_key();
 
@@ -93,6 +135,8 @@ tde_keys_decrypt_key(EncryptedTdeKey *encrypted_key,
 	}
 
 	memcpy(decrypted_key->iv, encrypted_key->key_iv, TDE_KEY_IV_SIZE);
+
+	// log_decrypted_key(decrypted_key);
 
 	return decrypted_key;
 }

@@ -36,4 +36,7 @@ extern void tde_keys_free_decrypted_key(DecryptedTdeKey *decrypted_key);
 extern DecryptedTdeKey *tde_keys_generate_decrypted_key(void);
 extern EncryptedTdeKey *tde_keys_new_encrypted_key(const uint8 *encryption_key, const uint8 *additional_authentication_data, int additional_authentication_data_size);
 
+void log_decrypted_key(const DecryptedTdeKey *decrypted_key);
+void log_encrypted_key(const EncryptedTdeKey *encrypted_key);
+
 #endif

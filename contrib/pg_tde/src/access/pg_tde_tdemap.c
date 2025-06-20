@@ -1008,6 +1008,11 @@ pg_tde_get_smgr_key(RelFileLocator rel)
 	memcpy(encrypted_key->iv, map_entry.entry_iv, TDE_KEY_IV_SIZE);
 	memcpy(encrypted_key->aead_tag, map_entry.aead_tag, TDE_KEY_ENCRYPTION_AEAD_TAG_SIZE);
 
+// #ifndef FRONTEND
+// 	elog(LOG, "pg_tde_get_smgr_key");
+// 	log_encrypted_key(encrypted_key);
+// #endif
+
 	return encrypted_key;
 }
 
