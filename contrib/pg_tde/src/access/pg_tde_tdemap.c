@@ -196,9 +196,6 @@ pg_tde_free_key_map_entry(const RelFileLocator rlocator)
 		{
 			TDEMapEntry empty_map_entry = {
 				.type = MAP_ENTRY_EMPTY,
-				.enc_key = {
-					.type = MAP_ENTRY_EMPTY,
-				},
 			};
 
 			pg_tde_write_one_map_entry(map_fd, &empty_map_entry, &prev_pos, db_map_path);
@@ -384,8 +381,15 @@ pg_tde_initialize_map_entry(TDEMapEntry *map_entry, const TDEPrincipalKey *princ
 {
 	map_entry->spcOid = rlocator->spcOid;
 	map_entry->relNumber = rlocator->relNumber;
-	map_entry->type = rel_key_data->type;
+	map_entry->type = TDE_KEY_TYPE_SMGR;
 	map_entry->enc_key = *rel_key_data;
+
+	/*
+	 * We set these fields here, so that existing file entries will be
+	 * consistent and future use of these fields easier.
+	 */
+	map_entry->reserved1 = 1;
+	map_entry->reserved2 = 0;
 
 	if (!RAND_bytes(map_entry->entry_iv, MAP_ENTRY_IV_SIZE))
 		ereport(ERROR,

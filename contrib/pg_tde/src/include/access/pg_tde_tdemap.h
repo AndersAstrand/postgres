@@ -22,9 +22,6 @@ typedef struct InternalKey
 {
 	uint8		key[INTERNAL_KEY_LEN];
 	uint8		base_iv[INTERNAL_KEY_IV_LEN];
-	uint32		type;
-
-	XLogRecPtr	start_lsn;
 } InternalKey;
 
 #define MAP_ENTRY_IV_SIZE 16
@@ -44,6 +41,16 @@ typedef struct TDEMapEntry
 	RelFileNumber relNumber;
 	uint32		type;
 	InternalKey enc_key;
+
+	/*
+	 * These fields were added here to keep the file format the same after
+	 * some fields were removed from InternalKey. Feel free to use them for
+	 * something, but beware that existing files may contain unexpected values
+	 * here.
+	 */
+	uint32		reserved1;		/* Will be 1 in existing files entries. */
+	uint64		reserved2;		/* Will be 0 in existing files entries. */
+
 	/* IV and tag used when encrypting the key itself */
 	unsigned char entry_iv[MAP_ENTRY_IV_SIZE];
 	unsigned char aead_tag[MAP_ENTRY_AEAD_TAG_SIZE];
