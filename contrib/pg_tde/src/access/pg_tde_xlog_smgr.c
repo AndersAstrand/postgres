@@ -415,8 +415,10 @@ TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
 			if (wal_location_cmp(data_start, curr_key->end) < 0 && wal_location_cmp(data_end, curr_key->start) > 0)
 			{
 				char		iv_prefix[16];
-				off_t		dec_off = XLogSegmentOffset(Max(data_start.lsn, curr_key->start.lsn), segSize);
-				off_t		dec_end = XLogSegmentOffset(Min(data_end.lsn, curr_key->end.lsn), segSize);
+				size_t		minlsn = Min(data_end.lsn, curr_key->end.lsn);
+				size_t		maxlsn = data_start.tli > curr_key->start.tli ? data_start.lsn : Max(data_start.lsn, curr_key->start.lsn);
+				off_t		dec_off = XLogSegmentOffset(maxlsn, segSize);
+				off_t		dec_end = XLogSegmentOffset(minlsn, segSize);
 				size_t		dec_sz;
 				char	   *dec_buf = (char *) buf + (dec_off - offset);
 
