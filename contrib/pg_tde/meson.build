@@ -127,6 +127,7 @@ tap_tests = [
   't/wal_archiving.pl',
   't/wal_encrypt.pl',
   't/wal_key_tli.pl',
+  't/059_tde_2pc_replication.pl',
 ]
 
 tests += {

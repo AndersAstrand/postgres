@@ -42,11 +42,22 @@ static const XLogSmgr tde_xlog_smgr = {
 static void *EncryptionCryptCtx = NULL;
 
 /* TODO: can be swapped out to the disk */
-static WalEncryptionKey EncryptionKey =
+WalEncryptionKey EncryptionKey =
 {
 	.type = WAL_KEY_TYPE_INVALID,
 	.wal_start = {.tli = 0,.lsn = InvalidXLogRecPtr},
+	.key = {0,}
 };
+
+static void
+iv_prefix_debug(const char *iv_prefix, char *out_hex)
+{
+	for (int i = 0; i < 16; ++i)
+	{
+		sprintf(out_hex + i * 2, "%02x", (int) *(iv_prefix + i));
+	}
+	out_hex[32] = 0;
+}
 
 /*
  * Must be the same as in replication/walsender.c
@@ -71,6 +82,7 @@ typedef struct EncryptionStateData
 	 */
 	pg_atomic_uint32 enc_key_tli;
 	pg_atomic_uint64 enc_key_lsn;
+	WalLocation LastReadOffset;
 } EncryptionStateData;
 
 static EncryptionStateData *EncryptionState = NULL;
@@ -189,6 +201,7 @@ typedef struct EncryptionStateData
 {
 	TimeLineID	enc_key_tli;
 	XLogRecPtr	enc_key_lsn;
+	WalLocation LastReadOffset;
 } EncryptionStateData;
 
 static EncryptionStateData EncryptionStateD = {0};
@@ -237,6 +250,13 @@ TDEXLogSmgrInitWrite(bool encrypt_xlog)
 	if (encrypt_xlog)
 	{
 		pg_tde_create_wal_key(&EncryptionKey, WAL_KEY_TYPE_ENCRYPTED);
+		
+		// TODO WTF: if we read the key here, everything works properly
+		// but if we comment this out, different processes might end up with different encryption keys
+		// In practice, in a test scenario the wal receiver uses a different key for encryption than the
+		// recovery thread that tries to read the encrypted records
+		char		buf[33];
+		iv_prefix_debug(buf, EncryptionKey.key);
 	}
 	else if (key && key->type == WAL_KEY_TYPE_ENCRYPTED)
 	{
@@ -297,6 +317,25 @@ TDEXLogWriteEncryptedPages(int fd, const void *buf, size_t count, off_t offset,
 	return pg_pwrite(fd, enc_buff, count, offset);
 }
 
+/*
+ * Encrypt XLog page(s) from the buf and write to the segment file.
+ */
+static ssize_t
+TDEXLogWriteEncryptedPagesOldKeys(int fd, const void *buf, size_t count, off_t offset,
+						   TimeLineID tli, XLogSegNo segno, int segSize)
+{
+	char	   *enc_buff = EncryptionBuf;
+
+#ifndef FRONTEND
+	Assert(count <= TDEXLogEncryptBuffSize());
+#endif
+
+	// TODO: this potentially allocates, can't be used in a criticial section :(
+	TDEXLogCryptBuffer(buf, enc_buff, count, offset, tli, segno, segSize);
+
+	return pg_pwrite(fd, enc_buff, count, offset);
+}
+
 static ssize_t
 tdeheap_xlog_seg_write(int fd, const void *buf, size_t count, off_t offset,
 					   TimeLineID tli, XLogSegNo segno, int segSize)
@@ -312,14 +351,38 @@ tdeheap_xlog_seg_write(int fd, const void *buf, size_t count, off_t offset,
 
 		XLogSegNoOffsetToRecPtr(segno, offset, segSize, loc.lsn);
 
+		#ifndef FRONTEND
+		if (EncryptionKey.type == WAL_KEY_TYPE_ENCRYPTED)
+		{
+			loc = ((EncryptionState->LastReadOffset.tli  == 0 && EncryptionState->LastReadOffset.lsn == 0) || !RecoveryInProgress()) ? loc : EncryptionState->LastReadOffset;
+		}
+		#endif
+
 		pg_tde_wal_last_key_set_location(loc);
 		EncryptionKey.wal_start = loc;
 		TDEXLogSetEncKeyLocation(EncryptionKey.wal_start);
+
+	}
+	if (EncryptionKey.type != WAL_KEY_TYPE_INVALID && EncryptionKey.wal_start.lsn == 0)
+	{
+		EncryptionKey.wal_start.lsn = TDEXLogGetEncKeyLsn();
+		EncryptionKey.wal_start.tli = TDEXLogGetEncKeyTli();
 	}
 
+	WalLocation write_loc = {.tli = tli,.lsn = offset};
+
+	// TODO: `EncryptionKey.type == WAL_KEY_TYPE_ENCRYPTED` is questionable
+	// What's the correct behavior when the user turns off WAL encryption, and we rewrite the last page?
+	// Should we write completely a unencrypted page like now?
+	// Should we delete not required keys in this case? Otherwise if something tries to read it...
+	// It would make more sense to keep the page partially encrypted, but we don't even initialize encryption code in that case
+	if (EncryptionKey.type == WAL_KEY_TYPE_ENCRYPTED && unlikely(wal_location_cmp(write_loc, EncryptionState->LastReadOffset) < 0))
+			return TDEXLogWriteEncryptedPagesOldKeys(fd, buf, count, offset, tli, segno, segSize);
+
 	if (EncryptionKey.type == WAL_KEY_TYPE_ENCRYPTED)
+	{
 		return TDEXLogWriteEncryptedPages(fd, buf, count, offset, tli, segno);
-	else
+	} else
 		return pg_pwrite(fd, buf, count, offset);
 }
 
@@ -342,7 +405,10 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
 	if (readsz <= 0)
 		return readsz;
 
-	TDEXLogCryptBuffer(buf, count, offset, tli, segno, segSize);
+	TDEXLogCryptBuffer(buf, buf, count, offset, tli, segno, segSize);
+
+	XLogSegNoOffsetToRecPtr(segno, offset + readsz, segSize, EncryptionState->LastReadOffset.lsn);
+	EncryptionState->LastReadOffset.tli = tli;
 
 	return readsz;
 }
@@ -351,7 +417,7 @@ tdeheap_xlog_seg_read(int fd, void *buf, size_t count, off_t offset,
  * [De]Crypt buffer if needed based on provided segment offset, number and TLI
  */
 void
-TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
+TDEXLogCryptBuffer(const void *buf, void * out_buf, size_t count, off_t offset,
 				   TimeLineID tli, XLogSegNo segno, int segSize)
 {
 	WALKeyCacheRec *keys = pg_tde_get_wal_cache_keys();
@@ -394,6 +460,12 @@ TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
 	XLogSegNoOffsetToRecPtr(segno, offset, segSize, data_start.lsn);
 	XLogSegNoOffsetToRecPtr(segno, offset + count, segSize, data_end.lsn);
 
+	// TODO: Do we need this? Support for the case when we have no keys at all
+	if(keys == NULL && buf != out_buf) {
+		memcpy(out_buf, buf, count);
+		return;
+	}
+
 	/*
 	 * TODO: this is higly ineffective. We should get rid of linked list and
 	 * search from the last key as this is what the walsender is useing.
@@ -401,7 +473,7 @@ TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
 	for (WALKeyCacheRec *curr_key = keys; curr_key != NULL; curr_key = curr_key->next)
 	{
 #ifdef TDE_XLOG_DEBUG
-		elog(DEBUG1, "WAL key %u_%X/%X - %u_%X/%X, encrypted: %s",
+		elog(DEBUG1, "WAL key %u_%X/%X - %u_%X/%X encrypted: %s",
 			 curr_key->start.tli, LSN_FORMAT_ARGS(curr_key->start.lsn),
 			 curr_key->end.tli, LSN_FORMAT_ARGS(curr_key->end.lsn),
 			 curr_key->key.type == WAL_KEY_TYPE_ENCRYPTED ? "yes" : "no");
@@ -411,7 +483,7 @@ TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
 			curr_key->key.type == WAL_KEY_TYPE_ENCRYPTED)
 		{
 			/*
-			 * Check if the key's range overlaps with the buffer's and decypt
+			 * Check if the key's range overlaps with the buffer's and (de)cypt
 			 * the part that does.
 			 */
 			if (wal_location_cmp(data_start, curr_key->end) < 0 && wal_location_cmp(data_end, curr_key->start) > 0)
@@ -422,16 +494,17 @@ TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
 				off_t		dec_off = XLogSegmentOffset(maxlsn, segSize);
 				off_t		dec_end = XLogSegmentOffset(minlsn, segSize);
 				size_t		dec_sz;
-				char	   *dec_buf = (char *) buf + (dec_off - offset);
+				const char	   *dec_buf = (const char *) buf + (dec_off - offset);
+				char	   *decout_buf = (char *) out_buf + (dec_off - offset);
 
 				Assert(dec_off >= offset);
 
 				CalcXLogPageIVPrefix(tli, segno, curr_key->key.base_iv, iv_prefix);
 
 				/* We have reached the end of the segment */
-				if (dec_end == 0)
+				if (dec_end < dec_off)
 				{
-					dec_end = offset + count;
+					dec_end = dec_off + count;
 				}
 
 				dec_sz = dec_end - dec_off;
@@ -444,7 +517,7 @@ TDEXLogCryptBuffer(void *buf, size_t count, off_t offset,
 									dec_off,
 									dec_buf,
 									dec_sz,
-									dec_buf,
+									decout_buf,
 									curr_key->key.key,
 									&curr_key->crypt_ctx);
 			}

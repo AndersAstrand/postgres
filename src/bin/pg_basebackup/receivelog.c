@@ -1051,6 +1051,9 @@ ProcessXLogDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 	int			bytes_written;
 	int			hdr_len;
 	XLogSegNo 	segno;
+#ifdef PERCONA_EXT
+	void* 	enc_buf;
+#endif
 
 	/*
 	 * Once we've decided we don't want to receive any more, just ignore any
@@ -1131,7 +1134,8 @@ ProcessXLogDataMsg(PGconn *conn, StreamCtl *stream, char *copybuf, int len,
 		}
 
 #ifdef PERCONA_EXT
-		TDEXLogCryptBuffer(copybuf + hdr_len + bytes_written, bytes_to_write,
+		enc_buf = copybuf + hdr_len + bytes_written;
+		TDEXLogCryptBuffer(enc_buf, enc_buf, bytes_to_write,
 						   xlogoff, stream->timeline, segno, WalSegSz);
 #endif
 
