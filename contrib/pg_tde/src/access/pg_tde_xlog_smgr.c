@@ -167,7 +167,13 @@ TDEXLogShmemInit(void)
 						TDEXLogEncryptStateSize(),
 						&foundBuf);
 
-	memset(EncryptionState, 0, sizeof(EncryptionStateData));
+	if(!foundBuf) {
+		memset(EncryptionState, 0, sizeof(EncryptionStateData));
+
+		pg_atomic_init_u64(&EncryptionState->enc_key_lsn, 0);
+
+		elog(DEBUG1, "pg_tde: initialized encryption buffer %lu bytes", TDEXLogEncryptStateSize());
+	}
 
 	if (EncryptXLog)
 	{
@@ -175,10 +181,6 @@ TDEXLogShmemInit(void)
 
 		Assert((char *) EncryptionState + TDEXLogEncryptStateSize() >= (char *) EncryptionBuf + TDEXLogEncryptBuffSize());
 	}
-
-	pg_atomic_init_u64(&EncryptionState->enc_key_lsn, 0);
-
-	elog(DEBUG1, "pg_tde: initialized encryption buffer %lu bytes", TDEXLogEncryptStateSize());
 }
 
 #else							/* !FRONTEND */
