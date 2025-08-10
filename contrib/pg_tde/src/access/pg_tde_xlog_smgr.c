@@ -340,6 +340,9 @@ static ssize_t
 tdeheap_xlog_seg_write(int fd, const void *buf, size_t count, off_t offset,
 					   TimeLineID tli, XLogSegNo segno, int segSize)
 {
+	
+	WalLocation write_loc = {.tli = tli,.lsn = offset};
+
 	/*
 	 * Set the last (most recent) key's start LSN if not set.
 	 *
@@ -368,8 +371,6 @@ tdeheap_xlog_seg_write(int fd, const void *buf, size_t count, off_t offset,
 		EncryptionKey.wal_start.lsn = TDEXLogGetEncKeyLsn();
 		EncryptionKey.wal_start.tli = TDEXLogGetEncKeyTli();
 	}
-
-	WalLocation write_loc = {.tli = tli,.lsn = offset};
 
 	// TODO: `EncryptionKey.type == WAL_KEY_TYPE_ENCRYPTED` is questionable
 	// What's the correct behavior when the user turns off WAL encryption, and we rewrite the last page?
