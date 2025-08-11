@@ -249,12 +249,14 @@ TDEXLogSmgrInitWrite(bool encrypt_xlog)
 	 */
 	if (encrypt_xlog)
 	{
+		// TODO: if we crash between this method and when we update the current key,
+		// do we end up floording wal_keys with invalid keys??
 		pg_tde_create_wal_key(&EncryptionKey, WAL_KEY_TYPE_ENCRYPTED);
 		
 		// TODO WTF: if we read the key here, everything works properly
-		// but if we comment this out, different processes might end up with different encryption keys
-		// In practice, in a test scenario the wal receiver uses a different key for encryption than the
-		// recovery thread that tries to read the encrypted records
+		// but if we comment this out, things will fail later with encryption key errors, even in
+		// debug builds
+		// synchronization error? gcc bug? ub?
 		char		buf[33];
 		iv_prefix_debug(buf, EncryptionKey.key);
 	}
@@ -266,6 +268,11 @@ TDEXLogSmgrInitWrite(bool encrypt_xlog)
 	{
 		EncryptionKey = *key;
 		TDEXLogSetEncKeyLocation(EncryptionKey.wal_start);
+	}
+
+	{
+		WalLocation start = {.tli = 1,.lsn = 0};
+		pg_tde_fetch_wal_keys(start);
 	}
 
 	if (key)
@@ -330,7 +337,8 @@ TDEXLogWriteEncryptedPagesOldKeys(int fd, const void *buf, size_t count, off_t o
 	Assert(count <= TDEXLogEncryptBuffSize());
 #endif
 
-	// TODO: this potentially allocates, can't be used in a criticial section :(
+	/* This method potentially allocates, but only in very early execution
+	   Shouldn't happen in a write, where we are in a critical section */
 	TDEXLogCryptBuffer(buf, enc_buff, count, offset, tli, segno, segSize);
 
 	return pg_pwrite(fd, enc_buff, count, offset);
@@ -351,6 +359,7 @@ tdeheap_xlog_seg_write(int fd, const void *buf, size_t count, off_t offset,
 	if (EncryptionKey.type != WAL_KEY_TYPE_INVALID && TDEXLogGetEncKeyLsn() == 0)
 	{
 		WalLocation loc = {.tli = tli};
+		WALKeyCacheRec *keys = pg_tde_get_wal_cache_keys();
 
 		XLogSegNoOffsetToRecPtr(segno, offset, segSize, loc.lsn);
 
@@ -365,6 +374,13 @@ tdeheap_xlog_seg_write(int fd, const void *buf, size_t count, off_t offset,
 		EncryptionKey.wal_start = loc;
 		TDEXLogSetEncKeyLocation(EncryptionKey.wal_start);
 
+		// also update the cache
+		if(keys) for (WALKeyCacheRec *curr_key = keys; curr_key != NULL; curr_key = curr_key->next)
+		{
+			if(!wal_location_valid(curr_key->start)) {
+				curr_key-> start = EncryptionKey.wal_start;
+			}
+		}
 	}
 	if (EncryptionKey.type != WAL_KEY_TYPE_INVALID && EncryptionKey.wal_start.lsn == 0)
 	{
@@ -422,7 +438,6 @@ TDEXLogCryptBuffer(const void *buf, void * out_buf, size_t count, off_t offset,
 				   TimeLineID tli, XLogSegNo segno, int segSize)
 {
 	WALKeyCacheRec *keys = pg_tde_get_wal_cache_keys();
-	XLogRecPtr	write_key_lsn;
 	WalLocation data_end = {.tli = tli};
 	WalLocation data_start = {.tli = tli};
 
@@ -434,38 +449,8 @@ TDEXLogCryptBuffer(const void *buf, void * out_buf, size_t count, off_t offset,
 		keys = pg_tde_fetch_wal_keys(start);
 	}
 
-	/*
-	 * The barrier ensures that we always read a vaild TLI after the valid
-	 * LSN. See the comment in TDEXLogSetEncKeyLocation()
-	 */
-	write_key_lsn = TDEXLogGetEncKeyLsn();
-	pg_read_barrier();
-
-	if (!XLogRecPtrIsInvalid(write_key_lsn))
-	{
-		WALKeyCacheRec *last_key = pg_tde_get_last_wal_key();
-		WalLocation write_loc = {.tli = TDEXLogGetEncKeyTli(),.lsn = write_key_lsn};
-
-		Assert(last_key);
-
-		/* write has generated a new key, need to fetch it */
-		if (wal_location_cmp(last_key->start, write_loc) < 0)
-		{
-			pg_tde_fetch_wal_keys(write_loc);
-
-			/* in case cache was empty before */
-			keys = pg_tde_get_wal_cache_keys();
-		}
-	}
-
 	XLogSegNoOffsetToRecPtr(segno, offset, segSize, data_start.lsn);
 	XLogSegNoOffsetToRecPtr(segno, offset + count, segSize, data_end.lsn);
-
-	// TODO: Do we need this? Support for the case when we have no keys at all
-	if(keys == NULL && buf != out_buf) {
-		memcpy(out_buf, buf, count);
-		return;
-	}
 
 	/*
 	 * TODO: this is higly ineffective. We should get rid of linked list and
@@ -473,6 +458,9 @@ TDEXLogCryptBuffer(const void *buf, void * out_buf, size_t count, off_t offset,
 	 */
 	for (WALKeyCacheRec *curr_key = keys; curr_key != NULL; curr_key = curr_key->next)
 	{
+		// skip keys that weren't updated properly yet
+		if(!wal_location_valid(curr_key->start)) continue;
+
 #ifdef TDE_XLOG_DEBUG
 		elog(DEBUG1, "WAL key %u_%X/%X - %u_%X/%X encrypted: %s",
 			 curr_key->start.tli, LSN_FORMAT_ARGS(curr_key->start.lsn),

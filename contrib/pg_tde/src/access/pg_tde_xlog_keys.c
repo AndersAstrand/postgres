@@ -299,10 +299,9 @@ pg_tde_fetch_wal_keys(WalLocation start)
 		pg_tde_read_one_wal_key_file_entry2(fd, file_idx, &entry);
 
 		/*
-		 * Skip new (just created but not updated by write) and invalid keys
+		 * Skip invalid keys
 		 */
-		if (wal_location_valid(entry.enc_key.wal_start) &&
-			(entry.enc_key.type == WAL_KEY_TYPE_UNENCRYPTED ||
+		if ((entry.enc_key.type == WAL_KEY_TYPE_UNENCRYPTED ||
 			 entry.enc_key.type == WAL_KEY_TYPE_ENCRYPTED) &&
 			wal_location_cmp(entry.enc_key.wal_start, start) >= 0)
 		{
