@@ -21,7 +21,8 @@ $primary->append_conf('postgresql.conf', "autovacuum = off");
 $primary->append_conf('postgresql.conf', "checkpoint_timeout = 1h");
 $primary->append_conf('postgresql.conf', "archive_mode = on");
 $primary->append_conf('postgresql.conf',
-	"archive_command = 'pg_tde_archive_decrypt %p cp %p $archive_dir/%f'");
+	"archive_command = 'pg_tde_archive_decrypt %p \"cp %%p $archive_dir/%%f\"'"
+);
 $primary->start;
 
 $primary->safe_psql('postgres', "CREATE EXTENSION pg_tde;");
