@@ -76,7 +76,8 @@ like(
 my $replica = PostgreSQL::Test::Cluster->new('replica');
 $replica->init_from_backup($primary, 'backup');
 $replica->append_conf('postgresql.conf',
-	"restore_command = 'pg_tde_restore_encrypt %f %p cp $archive_dir/%f %p'");
+	"restore_command = 'pg_tde_restore_encrypt %f %p \"cp $archive_dir/%%f %%p\"'"
+);
 $replica->append_conf('postgresql.conf', "recovery_target_action = promote");
 $replica->set_recovery_mode;
 $replica->start;
