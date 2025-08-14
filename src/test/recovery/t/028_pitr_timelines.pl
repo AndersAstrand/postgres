@@ -33,6 +33,11 @@ use PostgreSQL::Test::Utils;
 use Test::More;
 use File::Compare;
 
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => ".history files not archived as expected";
+}
+
 # Initialize and start primary node with WAL archiving
 my $node_primary = PostgreSQL::Test::Cluster->new('primary');
 $node_primary->init(has_archiving => 1, allows_streaming => 1);

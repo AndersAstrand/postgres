@@ -115,6 +115,8 @@ use Text::ParseWords                 qw(shellwords);
 use Time::HiRes                      qw(usleep);
 use Scalar::Util                     qw(blessed);
 
+use if defined($ENV{TDE_MODE}), 'PostgreSQL::Test::TdeCluster';
+
 our ($use_tcp, $test_localhost, $test_pghost, $last_host_assigned,
 	$last_port_assigned, @all_nodes, $died, $portdir);
 
@@ -1525,6 +1527,10 @@ sub new
 			carp
 			  "PostgreSQL::Test::Cluster isn't fully compatible with version $ver";
 		}
+	}
+
+	if (defined($ENV{TDE_MODE})) {
+		bless $node, 'PostgreSQL::Test::TdeCluster';
 	}
 
 	# Add node to list of nodes

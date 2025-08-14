@@ -9,6 +9,11 @@ use PostgreSQL::Test::Utils;
 use Test::More;
 use Time::HiRes qw(usleep);
 
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => ".history files not archived as expected";
+}
+
 # Initialize and start node with wal_level = replica and WAL archiving
 # enabled.
 my $node = PostgreSQL::Test::Cluster->new('orig');

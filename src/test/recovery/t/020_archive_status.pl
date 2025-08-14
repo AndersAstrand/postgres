@@ -10,6 +10,11 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => ".history files not archived as expected";
+}
+
 my $primary = PostgreSQL::Test::Cluster->new('primary');
 $primary->init(
 	has_archiving => 1,

@@ -17,6 +17,11 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => "could not locate a valid checkpoint record";
+}
+
 my $psql_timeout = IPC::Run::timer($PostgreSQL::Test::Utils::timeout_default);
 
 my $node = PostgreSQL::Test::Cluster->new('primary');

@@ -13,6 +13,11 @@ use Fcntl qw(SEEK_SET);
 
 use integer;    # causes / operator to use integer math
 
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => "Uses write_wal to hack wal directly";
+}
+
 # Is this a big-endian system ("network" byte order)?  We can't use 'Q' in
 # pack() calls because it's not available in some perl builds, so we need to
 # break 64 bit LSN values into two 'I' values.  Fortunately we don't need to

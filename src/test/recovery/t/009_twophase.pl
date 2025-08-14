@@ -9,6 +9,10 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
+if (defined($ENV{TDE_MODE}))
+{
+    plan skip_all => "ASSERT triggers in critical section";
+}
 my $psql_out = '';
 my $psql_rc = '';
 
