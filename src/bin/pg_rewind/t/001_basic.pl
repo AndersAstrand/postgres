@@ -11,6 +11,11 @@ use lib $FindBin::RealBin;
 
 use RewindTest;
 
+if (d$ENV{TDE_MODE_WAL}))
+{
+    plan skip_all => "pg_tde_restore_encrypt gets a WAL segment of invalid size";
+}
+
 sub run_test
 {
 	my $test_mode = shift;

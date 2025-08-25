@@ -14,6 +14,8 @@ our ($tde_template_dir);
 
 BEGIN {
 	$ENV{TDE_MODE_NOSKIP} = 0 unless defined($ENV{TDE_MODE_NOSKIP});
+	$ENV{TDE_MODE_SMGR} = 1 unless defined($ENV{TDE_MODE_SMGR});
+	$ENV{TDE_MODE_WAL} = 1 unless defined($ENV{TDE_MODE_WAL});
 }
 
 sub init
@@ -25,6 +27,25 @@ sub init
 	$self->SUPER::append_conf('postgresql.conf', 'shared_preload_libraries = pg_tde');
 
 	$self->_tde_init_principal_key;
+
+	if ($ENV{TDE_MODE_SMGR})
+	{
+		# Enable the TDE extension in all databases created by initdb, this is
+		# necessary for the tde_heap access method to be available everywhere.
+		foreach ('postgres', 'template0', 'template1')
+		{
+			_tde_init_sql_command($self->data_dir, $_, q(
+				CREATE SCHEMA _pg_tde;
+				CREATE EXTENSION pg_tde WITH SCHEMA _pg_tde;
+			));
+		}
+		$self->SUPER::append_conf('postgresql.conf', 'default_table_access_method = tde_heap');
+	}
+
+	if ($ENV{TDE_MODE_WAL})
+	{
+		$self->SUPER::append_conf('postgresql.conf', 'pg_tde.wal_encrypt = on');
+	}
 
 	return;
 }
@@ -41,6 +62,58 @@ sub append_conf
 	}
 
 	$self->SUPER::append_conf($filename, $str);
+}
+
+sub backup
+{
+	my ($self, $backup_name, %params) = @_;
+	my $backup_dir = $self->backup_dir . '/' . $backup_name;
+
+	mkdir $backup_dir or die "mkdir($backup_dir) failed: $!";
+
+	if ($ENV{TDE_MODE_WAL}) {
+		PostgreSQL::Test::Utils::system_log(
+			'cp', '-R', '-P', '-p',
+			$self->pg_tde_dir,
+			$backup_dir . '/pg_tde',
+		);
+
+		# TODO: More thorough checking for options incompatible with --encrypt-wal
+		$params{backup_options} = [] unless defined $params{backup_options};
+		unless (List::Util::any {$_ eq '-Ft' or $_ eq '-Xnone'} @{ $params{backup_options} }) {
+			push @{ $params{backup_options} }, '--encrypt-wal';
+		}
+	}
+
+	$self->SUPER::backup($backup_name, %params);
+}
+
+sub enable_archiving
+{
+	my ($self) = @_;
+	my $path = $self->archive_dir;
+
+	$self->SUPER::enable_archiving;
+	if ($ENV{TDE_MODE_WAL}) {
+		$self->adjust_conf('postgresql.conf', 'archive_command',
+			qq('pg_tde_archive_decrypt %f %p "cp \\"%%p\\" \\"$path/%%f\\""'));
+	}
+
+	return;
+}
+
+sub enable_restoring
+{
+	my ($self, $root_node, $standby) = @_;
+	my $path = $root_node->archive_dir;
+
+	$self->SUPER::enable_restoring($root_node, $standby);
+	if ($ENV{TDE_MODE_WAL}) {
+		$self->adjust_conf('postgresql.conf', 'restore_command',
+			qq('pg_tde_restore_encrypt %f %p "cp \\"$path/%%f\\" \\"%%p\\""'));
+	}
+
+	return;
 }
 
 sub pg_tde_dir

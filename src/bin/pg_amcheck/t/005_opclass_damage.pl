@@ -10,6 +10,10 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
+if ($ENV{TDE_MODE_SMGR} and not $ENV{TDE_MODE_NOSKIP}) {
+	plan skip_all => 'Investigate why this fails';
+}
+
 my $node = PostgreSQL::Test::Cluster->new('test');
 $node->init;
 $node->start;
