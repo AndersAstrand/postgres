@@ -173,6 +173,14 @@ backend_mod_code = declare_dependency(
   dependencies: backend_mod_deps,
 )
 
+pkgconfig.generate(
+  name: 'postgresql-server',
+  description: 'PostgreSQL server module development',
+  url: pg_url,
+  extra_cflags: cflags_mod,
+  subdirs: ['server', 'internal'],
+)
+
 # normal extension modules
 pg_mod_args = default_mod_args + {
   'dependencies': [backend_mod_code],

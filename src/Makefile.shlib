@@ -80,7 +80,6 @@ shlib_bare	= lib$(NAME)$(DLSUFFIX)
 # Testing the soname variable is a reliable way to determine whether a
 # linkable library is being built.
 soname		= $(shlib_major)
-pkgconfigdir = $(libdir)/pkgconfig
 else
 # Naming convention for dynamically loadable modules
 shlib		= $(NAME)$(DLSUFFIX)
