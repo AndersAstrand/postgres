@@ -57,6 +57,7 @@ main(int argc, char *argv[])
 		{"interactive", no_argument, NULL, 3},
 		{"bypassrls", no_argument, NULL, 4},
 		{"no-bypassrls", no_argument, NULL, 5},
+		{"maintenance-db", required_argument, NULL, 6},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -67,6 +68,7 @@ main(int argc, char *argv[])
 	char	   *host = NULL;
 	char	   *port = NULL;
 	char	   *username = NULL;
+	const char *maintenance_db = NULL;
 	SimpleStringList roles = {NULL, NULL};
 	SimpleStringList members = {NULL, NULL};
 	SimpleStringList admins = {NULL, NULL};
@@ -190,6 +192,9 @@ main(int argc, char *argv[])
 			case 5:
 				bypassrls = TRI_NO;
 				break;
+			case 6:
+				maintenance_db = pg_strdup(optarg);
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -283,7 +288,10 @@ main(int argc, char *argv[])
 	if (login == TRI_DEFAULT)
 		login = TRI_YES;
 
-	cparams.dbname = NULL;		/* this program lacks any dbname option... */
+	if (maintenance_db == NULL)
+		maintenance_db = getenv("PGDATABASE");
+
+	cparams.dbname = maintenance_db;
 	cparams.pghost = host;
 	cparams.pgport = port;
 	cparams.pguser = username;
@@ -453,6 +461,7 @@ help(const char *progname)
 	printf(_("  -U, --username=USERNAME   user name to connect as (not the one to create)\n"));
 	printf(_("  -w, --no-password         never prompt for password\n"));
 	printf(_("  -W, --password            force password prompt\n"));
+	printf(_("  --maintenance-db=DBNAME   alternate maintenance database\n"));
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }

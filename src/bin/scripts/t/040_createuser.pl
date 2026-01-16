@@ -90,4 +90,32 @@ $node->command_fails(
 	],
 	'fails for too many non-options');
 
+# These tests needs to run last as we have to break the cluster somewhat to run them.
+
+$node->safe_psql('postgres', 'CREATE DATABASE maintenance');
+$node->safe_psql('maintenance', 'DROP DATABASE postgres');
+$node->safe_psql('maintenance',
+	"UPDATE pg_database SET datistemplate=false WHERE datname='template1'");
+$node->safe_psql('maintenance', 'DROP DATABASE template1');
+
+$node->command_fails(
+	[ 'createuser', 'regress_user13' ],
+	'fails when default databases do not exist');
+
+$node->command_ok(
+	[
+		'createuser',
+		'--maintenance-db' => 'maintenance',
+		'regress_user14',
+	],
+	'succeeds when maintenance database name is specified');
+
+$node->command_ok(
+	[
+		'createuser',
+		'--maintenance-db' => 'postgresql:///maintenance',
+		'regress_user15',
+	],
+	'succeeds when connection string is specified');
+
 done_testing();

@@ -35,6 +35,7 @@ main(int argc, char *argv[])
 		{"echo", no_argument, NULL, 'e'},
 		{"interactive", no_argument, NULL, 'i'},
 		{"if-exists", no_argument, &if_exists, 1},
+		{"maintenance-db", required_argument, NULL, 2},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -46,6 +47,7 @@ main(int argc, char *argv[])
 	char	   *host = NULL;
 	char	   *port = NULL;
 	char	   *username = NULL;
+	const char *maintenance_db = NULL;
 	enum trivalue prompt_password = TRI_DEFAULT;
 	ConnParams	cparams;
 	bool		echo = false;
@@ -90,6 +92,9 @@ main(int argc, char *argv[])
 			case 0:
 				/* this covers the long options */
 				break;
+			case 2:
+				maintenance_db = pg_strdup(optarg);
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -132,7 +137,10 @@ main(int argc, char *argv[])
 			exit(0);
 	}
 
-	cparams.dbname = NULL;		/* this program lacks any dbname option... */
+	if (maintenance_db == NULL)
+		maintenance_db = getenv("PGDATABASE");
+
+	cparams.dbname = maintenance_db;
 	cparams.pghost = host;
 	cparams.pgport = port;
 	cparams.pguser = username;
@@ -183,6 +191,7 @@ help(const char *progname)
 	printf(_("  -U, --username=USERNAME   user name to connect as (not the one to drop)\n"));
 	printf(_("  -w, --no-password         never prompt for password\n"));
 	printf(_("  -W, --password            force password prompt\n"));
+	printf(_("  --maintenance-db=DBNAME   alternate maintenance database\n"));
 	printf(_("\nReport bugs to <%s>.\n"), PACKAGE_BUGREPORT);
 	printf(_("%s home page: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
 }

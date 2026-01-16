@@ -27,4 +27,35 @@ $node->command_fails_like(
 	qr/role "regress_nonexistent" does not exist/,
 	'fails with nonexistent user');
 
+# These tests needs to run last as we have to break the cluster somewhat to run them.
+
+$node->safe_psql('postgres', 'CREATE ROLE regress_foobar2');
+$node->safe_psql('postgres', 'CREATE ROLE regress_foobar3');
+$node->safe_psql('postgres', 'CREATE ROLE regress_foobar4');
+
+$node->safe_psql('postgres', 'CREATE DATABASE maintenance');
+$node->safe_psql('maintenance', 'DROP DATABASE postgres');
+$node->safe_psql('maintenance',
+	"UPDATE pg_database SET datistemplate=false WHERE datname='template1'");
+$node->safe_psql('maintenance', 'DROP DATABASE template1');
+
+$node->command_fails([ 'dropuser', 'regress_foobar2' ],
+	'fails when default databases do not exist');
+
+$node->command_ok(
+	[
+		'dropuser',
+		'--maintenance-db' => 'maintenance',
+		'regress_foobar3',
+	],
+	'succeeds when maintenance database name is specified');
+
+$node->command_ok(
+	[
+		'dropuser',
+		'--maintenance-db' => 'postgresql:///maintenance',
+		'regress_foobar4',
+	],
+	'succeeds when connection string is specified');
+
 done_testing();
