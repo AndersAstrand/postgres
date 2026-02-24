@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/anders/percona/postgres diff HEAD~1)",
+      "Bash(./configure:*)",
+      "Bash(make:*)",
+      "Bash(PKG_CONFIG_PATH=/home/anders/percona/claude/install-make/lib/pkgconfig pkg-config:*)",
+      "Bash(meson setup:*)",
+      "Bash(git worktree:*)",
+      "Bash(ninja -C:*)",
+      "Bash(PKG_CONFIG_PATH=/home/anders/percona/claude/install-meson/lib/x86_64-linux-gnu/pkgconfig pkg-config:*)",
+      "Bash(PKG_CONFIG_PATH=/home/anders/percona/claude/install-make/lib/pkgconfig make:*)",
+      "Bash(git -C /home/anders/percona/postgres worktree remove:*)"
+    ]
+  }
+}

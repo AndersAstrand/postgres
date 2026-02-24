@@ -121,7 +121,10 @@ postgresql-server.pc: $(MAKEFILE_LIST)
 	echo 'prefix=$(prefix)' >$@
 	echo 'exec_prefix=$(patsubst $(prefix),$${prefix},$(exec_prefix))' >>$@
 	echo 'libdir=$(patsubst $(exec_prefix)/%,$${exec_prefix}/%,$(libdir))' >>$@
+	echo 'pkglibdir=$(patsubst $(exec_prefix)/%,$${exec_prefix}/%,$(pkglibdir))' >>$@
 	echo 'includedir=$(patsubst $(prefix)/%,$${prefix}/%,$(includedir))' >>$@
+	echo 'includedir_server=$(patsubst $(prefix)/%,$${prefix}/%,$(includedir_server))' >>$@
+	echo 'includedir_internal=$(patsubst $(prefix)/%,$${prefix}/%,$(includedir_internal))' >>$@
 	echo >>$@
 	echo 'Name: postgresql-server' >>$@
 	echo 'Description: PostgreSQL server module development' >>$@
@@ -129,7 +132,7 @@ postgresql-server.pc: $(MAKEFILE_LIST)
 	echo 'Version: $(VERSION)' >>$@
 	echo 'Requires: ' >>$@
 	echo 'Requires.private: ' >>$@
-	echo 'Cflags: -I$${includedir} -I$${includedir}/server -I$${includedir}/internal $(CFLAGS_SL) $(CFLAGS_SL_MODULE)' >>$@
+	echo 'Cflags: -I$${includedir_server} -I$${includedir_internal} $(CFLAGS_SL) $(CFLAGS_SL_MODULE)' >>$@
 	echo 'Libs: -L$${libdir} $(LDFLAGS_SL)' >>$@
 	echo 'Libs.private: ' >>$@
 

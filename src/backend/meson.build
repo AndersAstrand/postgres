@@ -178,7 +178,10 @@ pkgconfig.generate(
   description: 'PostgreSQL server module development',
   url: pg_url,
   extra_cflags: cflags_mod,
-  subdirs: ['server', 'internal'],
+  subdirs: [dir_include_pkg_rel / 'server', dir_include_pkg_rel / 'internal'],
+  variables: {
+    'pkglibdir': '${prefix}' / dir_lib_pkg,
+  },
 )
 
 # normal extension modules
