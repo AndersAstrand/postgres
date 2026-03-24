@@ -850,6 +850,7 @@ makeIndexInfo(int numattrs, int numkeyattrs, Oid amoid, List *expressions,
 	n->ii_Concurrent = concurrent;
 	n->ii_Summarizing = summarizing;
 	n->ii_WithoutOverlaps = withoutoverlaps;
+	n->ii_Secondary = false;
 
 	/* summarizing indexes cannot contain non-key attributes */
 	Assert(!summarizing || (numkeyattrs == numattrs));

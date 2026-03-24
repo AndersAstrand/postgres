@@ -1416,6 +1416,8 @@ typedef struct IndexOptInfo
 	bool		disabled;
 	/* true if index doesn't really exist */
 	bool		hypothetical;
+	/* true if this is a secondary index (PK-based lookup) */
+	bool		secondary;
 
 	/*
 	 * Remaining fields are copied from the index AM's API struct

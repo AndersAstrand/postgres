@@ -462,6 +462,7 @@ get_relation_info(PlannerInfo *root, Oid relationObjectId, bool inhparent,
 			info->nullsnotdistinct = index->indnullsnotdistinct;
 			info->immediate = index->indimmediate;
 			info->hypothetical = false;
+			info->secondary = index->indissecondary;
 
 			/*
 			 * Estimate the index size.  If it's not a partial index, we lock

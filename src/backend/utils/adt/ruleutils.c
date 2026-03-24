@@ -1386,8 +1386,9 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 	if (!attrsOnly)
 	{
 		if (!isConstraint)
-			appendStringInfo(&buf, "CREATE %sINDEX %s ON %s%s USING %s (",
+			appendStringInfo(&buf, "CREATE %s%sINDEX %s ON %s%s USING %s (",
 							 idxrec->indisunique ? "UNIQUE " : "",
+							 idxrec->indissecondary ? "SECONDARY " : "",
 							 quote_identifier(NameStr(idxrelrec->relname)),
 							 idxrelrec->relkind == RELKIND_PARTITIONED_INDEX
 							 && !inherits ? "ONLY " : "",
@@ -1411,9 +1412,10 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 		Oid			keycolcollation;
 
 		/*
-		 * Ignore non-key attributes if told to.
+		 * Ignore non-key attributes if told to, or if this is a secondary
+		 * index (whose included PK columns are auto-generated).
 		 */
-		if (keysOnly && keyno >= idxrec->indnkeyatts)
+		if ((keysOnly || idxrec->indissecondary) && keyno >= idxrec->indnkeyatts)
 			break;
 
 		/* Otherwise, print INCLUDE to divide key and non-key attrs. */

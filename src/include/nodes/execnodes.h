@@ -225,6 +225,8 @@ typedef struct IndexInfo
 	bool		ii_Summarizing;
 	/* is it a WITHOUT OVERLAPS index? */
 	bool		ii_WithoutOverlaps;
+	/* is it a secondary index (PK-based lookup)? */
+	bool		ii_Secondary;
 	/* # of workers requested (excludes leader) */
 	int			ii_ParallelWorkers;
 
@@ -1744,6 +1746,14 @@ typedef struct IndexScanState
 	bool	   *iss_OrderByTypByVals;
 	int16	   *iss_OrderByTypLens;
 	Size		iss_PscanLen;
+
+	/* Secondary index support (PK-based lookup) */
+	bool		iss_IsSecondary;
+	Relation	iss_PkRelation;
+	struct IndexScanDescData *iss_PkScanDesc;
+	int			iss_NumPkAttrs;
+	AttrNumber *iss_PkAttrPositions;	/* positions of PK cols in sec idx tuple */
+	ScanKeyData *iss_PkScanKeys;
 } IndexScanState;
 
 /* ----------------

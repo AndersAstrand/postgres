@@ -903,6 +903,131 @@ DefineIndex(ParseState *pstate,
 	ReleaseSysCache(tuple);
 
 	/*
+	 * For secondary indexes, validate that the table has a primary key and
+	 * that the access method is btree.  Then auto-include PK columns so the
+	 * secondary index can perform PK-based lookups.
+	 */
+	if (stmt->secondary)
+	{
+		Oid			pkIndexOid;
+		Relation	pkIndex;
+		int			pkNumKeyAttrs;
+		int			i;
+
+		/* Only btree supported for now */
+		if (strcmp(accessMethodName, "btree") != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("secondary indexes only support btree access method")));
+
+		/* Must not be used on partitioned tables for now */
+		if (partitioned)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("secondary indexes on partitioned tables are not supported")));
+
+		/* Find the primary key index */
+		pkIndexOid = InvalidOid;
+		{
+			List	   *indexoidlist;
+			ListCell   *lc;
+
+			indexoidlist = RelationGetIndexList(rel);
+			foreach(lc, indexoidlist)
+			{
+				Oid			indexoid = lfirst_oid(lc);
+				HeapTuple	indexTuple;
+				Form_pg_index indexForm;
+
+				indexTuple = SearchSysCache1(INDEXRELID,
+											 ObjectIdGetDatum(indexoid));
+				if (!HeapTupleIsValid(indexTuple))
+					elog(ERROR, "cache lookup failed for index %u", indexoid);
+				indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
+
+				if (indexForm->indisprimary)
+				{
+					pkIndexOid = indexoid;
+					ReleaseSysCache(indexTuple);
+					break;
+				}
+				ReleaseSysCache(indexTuple);
+			}
+			list_free(indexoidlist);
+		}
+
+		if (!OidIsValid(pkIndexOid))
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("table \"%s\" does not have a primary key",
+							RelationGetRelationName(rel)),
+					 errhint("Create a primary key on the table before creating a secondary index.")));
+
+		/* Open PK index to get its column info */
+		pkIndex = index_open(pkIndexOid, AccessShareLock);
+		pkNumKeyAttrs = pkIndex->rd_index->indnkeyatts;
+
+		/*
+		 * Auto-append PK columns as included columns, skipping any that are
+		 * already in the user-specified index columns.
+		 */
+		for (i = 0; i < pkNumKeyAttrs; i++)
+		{
+			AttrNumber	pkAttNum = pkIndex->rd_index->indkey.values[i];
+			bool		alreadyPresent = false;
+			ListCell   *lc;
+
+			/* Check if this PK column is already in the index params */
+			foreach(lc, allIndexParams)
+			{
+				IndexElem  *elem = (IndexElem *) lfirst(lc);
+
+				if (elem->name != NULL)
+				{
+					AttrNumber	attnum = get_attnum(tableId, elem->name);
+
+					if (attnum == pkAttNum)
+					{
+						alreadyPresent = true;
+						break;
+					}
+				}
+			}
+
+			if (!alreadyPresent)
+			{
+				IndexElem  *newElem = makeNode(IndexElem);
+				char	   *attname;
+
+				attname = get_attname(tableId, pkAttNum, false);
+				newElem->name = attname;
+				newElem->expr = NULL;
+				newElem->indexcolname = NULL;
+				newElem->collation = NIL;
+				newElem->opclass = NIL;
+				newElem->opclassopts = NIL;
+				newElem->ordering = SORTBY_DEFAULT;
+				newElem->nulls_ordering = SORTBY_NULLS_DEFAULT;
+				newElem->location = -1;
+
+				allIndexParams = lappend(allIndexParams, newElem);
+				numberOfAttributes++;
+			}
+		}
+
+		/* Recompute index column names with added PK columns */
+		indexColNames = ChooseIndexColumnNames(allIndexParams);
+
+		if (numberOfAttributes > INDEX_MAX_KEYS)
+			ereport(ERROR,
+					(errcode(ERRCODE_TOO_MANY_COLUMNS),
+					 errmsg("cannot use more than %d columns in an index",
+							INDEX_MAX_KEYS)));
+
+		index_close(pkIndex, AccessShareLock);
+	}
+
+	/*
 	 * Validate predicate, if given
 	 */
 	if (stmt->whereClause)
@@ -932,6 +1057,10 @@ DefineIndex(ParseState *pstate,
 							  concurrent,
 							  amissummarizing,
 							  stmt->iswithoutoverlaps);
+
+	/* Mark as secondary index if applicable */
+	if (stmt->secondary)
+		indexInfo->ii_Secondary = true;
 
 	typeIds = palloc_array(Oid, numberOfAttributes);
 	collationIds = palloc_array(Oid, numberOfAttributes);

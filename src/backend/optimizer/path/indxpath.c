@@ -751,6 +751,7 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 			add_path(rel, (Path *) ipath);
 
 		if (index->amhasgetbitmap &&
+			!index->secondary &&
 			(ipath->path.pathkeys == NIL ||
 			 ipath->indexselectivity < 1.0))
 			*bitindexpaths = lappend(*bitindexpaths, ipath);
@@ -828,6 +829,14 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	int			indexcol;
 
 	Assert(skip_nonnative_saop != NULL || scantype == ST_BITMAPSCAN);
+
+	/*
+	 * Secondary indexes require PK-based lookup via IndexScan; they cannot
+	 * be used for bitmap scans or index-only scans since those paths use
+	 * TIDs directly and secondary index TIDs may be stale.
+	 */
+	if (index->secondary && scantype == ST_BITMAPSCAN)
+		return NIL;
 
 	/*
 	 * Check that index supports the desired scan type(s)
@@ -955,6 +964,7 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 	 * index data retrieval anyway.
 	 */
 	index_only_scan = (scantype != ST_BITMAPSCAN &&
+					   !index->secondary &&
 					   check_index_only(rel, index));
 
 	/*

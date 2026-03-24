@@ -813,6 +813,22 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 		cpu_run_cost /= parallel_divisor;
 	}
 
+	/*
+	 * For secondary indexes, add the cost of a PK index lookup per tuple.
+	 * Each tuple requires an additional btree descent through the PK index.
+	 */
+	if (index->secondary)
+	{
+		Cost		pk_lookup_cost;
+
+		/*
+		 * Estimate one random page read plus some CPU for the PK btree
+		 * descent per tuple fetched.
+		 */
+		pk_lookup_cost = spc_random_page_cost + cpu_index_tuple_cost * 3;
+		cpu_run_cost += pk_lookup_cost * tuples_fetched;
+	}
+
 	run_cost += cpu_run_cost;
 
 	path->path.startup_cost = startup_cost;

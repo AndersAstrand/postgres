@@ -811,7 +811,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	RESET RESPECT_P RESTART RESTRICT RETURN RETURNING RETURNS REVOKE RIGHT ROLE ROLLBACK ROLLUP
 	ROUTINE ROUTINES ROW ROWS RULE
 
-	SAVEPOINT SCALAR SCHEMA SCHEMAS SCROLL SEARCH SECOND_P SECURITY SELECT
+	SAVEPOINT SCALAR SCHEMA SCHEMAS SCROLL SEARCH SECOND_P SECONDARY SECURITY SELECT
 	SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
 	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SPLIT SOURCE SQL_P STABLE STANDALONE_P
@@ -8451,6 +8451,7 @@ IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_single_name
 					n->initdeferred = false;
 					n->transformed = false;
 					n->if_not_exists = false;
+					n->secondary = false;
 					n->reset_default_tblspc = false;
 					$$ = (Node *) n;
 				}
@@ -8483,6 +8484,73 @@ IndexStmt:	CREATE opt_unique INDEX opt_concurrently opt_single_name
 					n->initdeferred = false;
 					n->transformed = false;
 					n->if_not_exists = true;
+					n->secondary = false;
+					n->reset_default_tblspc = false;
+					$$ = (Node *) n;
+				}
+			| CREATE opt_unique SECONDARY INDEX opt_concurrently opt_single_name
+			ON relation_expr access_method_clause '(' index_params ')'
+			opt_include opt_unique_null_treatment opt_reloptions OptTableSpace where_clause
+				{
+					IndexStmt *n = makeNode(IndexStmt);
+
+					n->unique = $2;
+					n->concurrent = $5;
+					n->idxname = $6;
+					n->relation = $8;
+					n->accessMethod = $9;
+					n->indexParams = $11;
+					n->indexIncludingParams = $13;
+					n->nulls_not_distinct = !$14;
+					n->options = $15;
+					n->tableSpace = $16;
+					n->whereClause = $17;
+					n->excludeOpNames = NIL;
+					n->idxcomment = NULL;
+					n->indexOid = InvalidOid;
+					n->oldNumber = InvalidRelFileNumber;
+					n->oldCreateSubid = InvalidSubTransactionId;
+					n->oldFirstRelfilelocatorSubid = InvalidSubTransactionId;
+					n->primary = false;
+					n->isconstraint = false;
+					n->deferrable = false;
+					n->initdeferred = false;
+					n->transformed = false;
+					n->if_not_exists = false;
+					n->secondary = true;
+					n->reset_default_tblspc = false;
+					$$ = (Node *) n;
+				}
+			| CREATE opt_unique SECONDARY INDEX opt_concurrently IF_P NOT EXISTS name
+			ON relation_expr access_method_clause '(' index_params ')'
+			opt_include opt_unique_null_treatment opt_reloptions OptTableSpace where_clause
+				{
+					IndexStmt *n = makeNode(IndexStmt);
+
+					n->unique = $2;
+					n->concurrent = $5;
+					n->idxname = $9;
+					n->relation = $11;
+					n->accessMethod = $12;
+					n->indexParams = $14;
+					n->indexIncludingParams = $16;
+					n->nulls_not_distinct = !$17;
+					n->options = $18;
+					n->tableSpace = $19;
+					n->whereClause = $20;
+					n->excludeOpNames = NIL;
+					n->idxcomment = NULL;
+					n->indexOid = InvalidOid;
+					n->oldNumber = InvalidRelFileNumber;
+					n->oldCreateSubid = InvalidSubTransactionId;
+					n->oldFirstRelfilelocatorSubid = InvalidSubTransactionId;
+					n->primary = false;
+					n->isconstraint = false;
+					n->deferrable = false;
+					n->initdeferred = false;
+					n->transformed = false;
+					n->if_not_exists = true;
+					n->secondary = true;
 					n->reset_default_tblspc = false;
 					$$ = (Node *) n;
 				}
@@ -18986,6 +19054,7 @@ unreserved_keyword:
 			| SCROLL
 			| SEARCH
 			| SECOND_P
+			| SECONDARY
 			| SECURITY
 			| SEQUENCE
 			| SEQUENCES
@@ -19634,6 +19703,7 @@ bare_label_keyword:
 			| SCHEMAS
 			| SCROLL
 			| SEARCH
+			| SECONDARY
 			| SECURITY
 			| SELECT
 			| SEQUENCE

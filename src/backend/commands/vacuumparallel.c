@@ -904,8 +904,10 @@ parallel_vacuum_process_one_index(ParallelVacuumState *pvs, Relation indrel,
 	switch (indstats->status)
 	{
 		case PARALLEL_INDVAC_STATUS_NEED_BULKDELETE:
-			istat_res = vac_bulkdel_one_index(&ivinfo, istat, pvs->dead_items,
-											  &pvs->shared->dead_items_info);
+			/* Skip bulk deletion for secondary indexes (PK-based lookup) */
+			if (!indrel->rd_index->indissecondary)
+				istat_res = vac_bulkdel_one_index(&ivinfo, istat, pvs->dead_items,
+												  &pvs->shared->dead_items_info);
 			break;
 		case PARALLEL_INDVAC_STATUS_NEED_CLEANUP:
 			istat_res = vac_cleanup_one_index(&ivinfo, istat);

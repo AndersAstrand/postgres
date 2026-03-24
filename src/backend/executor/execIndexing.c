@@ -445,6 +445,16 @@ ExecInsertIndexTuples(ResultRelInfo *resultRelInfo,
 													indexInfo,
 													indexRelation));
 
+		/*
+		 * For secondary indexes, skip insertion entirely when the index key
+		 * columns are unchanged.  The existing entry's PK values are still
+		 * valid, and PK-based lookup will find the current tuple version.
+		 * This is the primary optimization of secondary indexes: avoiding
+		 * index maintenance on non-key UPDATEs.
+		 */
+		if (indexUnchanged && indexInfo->ii_Secondary)
+			continue;
+
 		satisfiesConstraint =
 			index_insert(indexRelation, /* index relation */
 						 values,	/* array of index Datums */

@@ -3103,9 +3103,16 @@ lazy_vacuum_one_index(Relation indrel, IndexBulkDeleteResult *istat,
 							 VACUUM_ERRCB_PHASE_VACUUM_INDEX,
 							 InvalidBlockNumber, InvalidOffsetNumber);
 
-	/* Do bulk deletion */
-	istat = vac_bulkdel_one_index(&ivinfo, istat, vacrel->dead_items,
-								  vacrel->dead_items_info);
+	/*
+	 * Skip bulk deletion for secondary indexes.  Secondary index entries
+	 * store PK values and use PK-based lookup, so the TID stored in the
+	 * index tuple may be stale (pointing to a dead tuple version) after a
+	 * non-key UPDATE that was optimized away.  The entry is still valid
+	 * because the PK values haven't changed, so we must not delete it.
+	 */
+	if (!indrel->rd_index->indissecondary)
+		istat = vac_bulkdel_one_index(&ivinfo, istat, vacrel->dead_items,
+									  vacrel->dead_items_info);
 
 	/* Revert to the previous phase information for error traceback */
 	restore_vacuum_error_info(vacrel, &saved_err_info);

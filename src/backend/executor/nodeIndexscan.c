@@ -29,10 +29,13 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/itup.h"
 #include "access/nbtree.h"
 #include "access/relscan.h"
 #include "access/tableam.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_index.h"
 #include "executor/executor.h"
 #include "executor/instrument.h"
 #include "executor/nodeIndexscan.h"
@@ -41,9 +44,11 @@
 #include "nodes/nodeFuncs.h"
 #include "utils/array.h"
 #include "utils/datum.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/sortsupport.h"
+#include "utils/syscache.h"
 
 /*
  * When an ordering operator is used, tuples fetched from the index that
@@ -58,6 +63,7 @@ typedef struct
 } ReorderTuple;
 
 static TupleTableSlot *IndexNext(IndexScanState *node);
+static TupleTableSlot *IndexNextSecondary(IndexScanState *node);
 static TupleTableSlot *IndexNextWithReorder(IndexScanState *node);
 static void EvalOrderByExpressions(IndexScanState *node, ExprContext *econtext);
 static bool IndexRecheck(IndexScanState *node, TupleTableSlot *slot);
@@ -156,6 +162,136 @@ IndexNext(IndexScanState *node)
 	 * if we get here it means the index scan failed so we are at the end of
 	 * the scan..
 	 */
+	node->iss_ReachedEnd = true;
+	return ExecClearTuple(slot);
+}
+
+/* ----------------------------------------------------------------
+ *		IndexNextSecondary
+ *
+ *		Retrieve a tuple from a secondary index via PK-based lookup:
+ *		1. Scan the secondary index to get index entries
+ *		2. Extract PK values from the included columns
+ *		3. Look up the PK index to find the current heap tuple
+ *		4. Always recheck the index quals (key may have changed since
+ *		   the secondary entry was created)
+ *
+ *		This supports the key optimization of secondary indexes: since
+ *		secondary index entries are NOT updated when non-key columns
+ *		change, the stored TID may be stale.  PK-based lookup always
+ *		finds the current visible tuple version.
+ * ----------------------------------------------------------------
+ */
+static TupleTableSlot *
+IndexNextSecondary(IndexScanState *node)
+{
+	EState	   *estate;
+	ExprContext *econtext;
+	ScanDirection direction;
+	IndexScanDesc scandesc;
+	TupleTableSlot *slot;
+
+	estate = node->ss.ps.state;
+	direction = ScanDirectionCombine(estate->es_direction,
+									 ((IndexScan *) node->ss.ps.plan)->indexorderdir);
+	scandesc = node->iss_ScanDesc;
+	econtext = node->ss.ps.ps_ExprContext;
+	slot = node->ss.ss_ScanTupleSlot;
+
+	if (scandesc == NULL)
+	{
+		scandesc = index_beginscan(node->ss.ss_currentRelation,
+								   node->iss_RelationDesc,
+								   estate->es_snapshot,
+								   node->iss_Instrument,
+								   node->iss_NumScanKeys,
+								   node->iss_NumOrderByKeys);
+
+		node->iss_ScanDesc = scandesc;
+
+		/* We need index tuple data to extract PK values */
+		scandesc->xs_want_itup = true;
+
+		if (node->iss_NumRuntimeKeys == 0 || node->iss_RuntimeKeysReady)
+			index_rescan(scandesc,
+						 node->iss_ScanKeys, node->iss_NumScanKeys,
+						 node->iss_OrderByKeys, node->iss_NumOrderByKeys);
+	}
+
+	/*
+	 * Iterate through secondary index entries.  For each entry, extract PK
+	 * values and look up the PK index to find the current heap tuple.
+	 */
+	while (index_getnext_tid(scandesc, direction) != NULL)
+	{
+		IndexScanDesc pkScanDesc = node->iss_PkScanDesc;
+		IndexTuple	itup = scandesc->xs_itup;
+		TupleDesc	itupdesc;
+		int			i;
+
+		CHECK_FOR_INTERRUPTS();
+
+		/*
+		 * If xs_itup wasn't populated (shouldn't happen with xs_want_itup),
+		 * fall back to direct heap access.
+		 */
+		if (itup == NULL)
+		{
+			if (index_fetch_heap(scandesc, slot))
+			{
+				econtext->ecxt_scantuple = slot;
+				if (ExecQualAndReset(node->indexqualorig, econtext))
+					return slot;
+				InstrCountFiltered2(node, 1);
+			}
+			continue;
+		}
+
+		/* Extract PK values from the secondary index tuple's included cols */
+		itupdesc = RelationGetDescr(node->iss_RelationDesc);
+
+		for (i = 0; i < node->iss_NumPkAttrs; i++)
+		{
+			AttrNumber	pos = node->iss_PkAttrPositions[i];
+			bool		isnull;
+			Datum		val;
+
+			val = index_getattr(itup, pos, itupdesc, &isnull);
+
+			/* Update the argument value in the pre-initialized scan key */
+			node->iss_PkScanKeys[i].sk_argument = val;
+			if (isnull)
+				node->iss_PkScanKeys[i].sk_flags |= SK_ISNULL | SK_SEARCHNULL;
+			else
+				node->iss_PkScanKeys[i].sk_flags &= ~(SK_ISNULL | SK_SEARCHNULL);
+		}
+
+		/* Rescan PK index with the extracted PK values */
+		index_rescan(pkScanDesc,
+					 node->iss_PkScanKeys, node->iss_NumPkAttrs,
+					 NULL, 0);
+
+		/* Fetch the heap tuple via PK index */
+		if (index_getnext_slot(pkScanDesc, ForwardScanDirection, slot))
+		{
+			/*
+			 * Always recheck the index quals against the actual heap tuple.
+			 * The secondary index entry may be stale (from a previous version
+			 * where the key had different values), so we must verify the tuple
+			 * actually satisfies the original query conditions.
+			 */
+			econtext->ecxt_scantuple = slot;
+			if (!ExecQualAndReset(node->indexqualorig, econtext))
+			{
+				InstrCountFiltered2(node, 1);
+				continue;
+			}
+			return slot;
+		}
+
+		/* PK value not found (deleted row) - skip this stale entry */
+	}
+
 	node->iss_ReachedEnd = true;
 	return ExecClearTuple(slot);
 }
@@ -528,7 +664,11 @@ ExecIndexScan(PlanState *pstate)
 	if (node->iss_NumRuntimeKeys != 0 && !node->iss_RuntimeKeysReady)
 		ExecReScan((PlanState *) node);
 
-	if (node->iss_NumOrderByKeys > 0)
+	if (node->iss_IsSecondary)
+		return ExecScan(&node->ss,
+						(ExecScanAccessMtd) IndexNextSecondary,
+						(ExecScanRecheckMtd) IndexRecheck);
+	else if (node->iss_NumOrderByKeys > 0)
 		return ExecScan(&node->ss,
 						(ExecScanAccessMtd) IndexNextWithReorder,
 						(ExecScanRecheckMtd) IndexRecheck);
@@ -817,6 +957,14 @@ ExecEndIndexScan(IndexScanState *node)
 	}
 
 	/*
+	 * Close secondary index PK scan resources if any
+	 */
+	if (node->iss_PkScanDesc)
+		index_endscan(node->iss_PkScanDesc);
+	if (node->iss_PkRelation)
+		index_close(node->iss_PkRelation, NoLock);
+
+	/*
 	 * close the index relation (no-op if we didn't open it)
 	 */
 	if (indexScanDesc)
@@ -1091,6 +1239,130 @@ ExecInitIndexScan(IndexScan *node, EState *estate, int eflags)
 	else
 	{
 		indexstate->iss_RuntimeContext = NULL;
+	}
+
+	/*
+	 * Set up secondary index support if applicable.
+	 */
+	indexstate->iss_IsSecondary = false;
+	indexstate->iss_PkRelation = NULL;
+	indexstate->iss_PkScanDesc = NULL;
+	indexstate->iss_NumPkAttrs = 0;
+	indexstate->iss_PkAttrPositions = NULL;
+	indexstate->iss_PkScanKeys = NULL;
+
+	if (indexstate->iss_RelationDesc->rd_index->indissecondary)
+	{
+		Relation	heapRel = indexstate->ss.ss_currentRelation;
+		Oid			pkIndexOid = InvalidOid;
+		Relation	pkRel;
+		int			pkNumKeyAttrs;
+		int			secNumAttrs;
+		int			i;
+
+		/* Find the primary key index */
+		{
+			List	   *indexoidlist = RelationGetIndexList(heapRel);
+			ListCell   *lc;
+
+			foreach(lc, indexoidlist)
+			{
+				Oid			indexoid = lfirst_oid(lc);
+				HeapTuple	indexTuple;
+				Form_pg_index indexForm;
+
+				indexTuple = SearchSysCache1(INDEXRELID,
+											 ObjectIdGetDatum(indexoid));
+				if (!HeapTupleIsValid(indexTuple))
+					continue;
+				indexForm = (Form_pg_index) GETSTRUCT(indexTuple);
+
+				if (indexForm->indisprimary)
+				{
+					pkIndexOid = indexoid;
+					ReleaseSysCache(indexTuple);
+					break;
+				}
+				ReleaseSysCache(indexTuple);
+			}
+			list_free(indexoidlist);
+		}
+
+		if (OidIsValid(pkIndexOid))
+		{
+			pkRel = index_open(pkIndexOid, AccessShareLock);
+			pkNumKeyAttrs = pkRel->rd_index->indnkeyatts;
+			secNumAttrs = indexstate->iss_RelationDesc->rd_index->indnatts;
+
+			indexstate->iss_IsSecondary = true;
+			indexstate->iss_PkRelation = pkRel;
+			indexstate->iss_NumPkAttrs = pkNumKeyAttrs;
+
+			/*
+			 * Find the positions of PK columns in the secondary index tuple.
+			 * PK columns are auto-appended as included columns, so they appear
+			 * after the key columns.  Match by heap attribute number.
+			 */
+			indexstate->iss_PkAttrPositions = palloc_array(AttrNumber, pkNumKeyAttrs);
+			for (i = 0; i < pkNumKeyAttrs; i++)
+			{
+				AttrNumber	pkHeapAttNum = pkRel->rd_index->indkey.values[i];
+				int			j;
+
+				indexstate->iss_PkAttrPositions[i] = InvalidAttrNumber;
+				for (j = 0; j < secNumAttrs; j++)
+				{
+					AttrNumber	secHeapAttNum =
+						indexstate->iss_RelationDesc->rd_index->indkey.values[j];
+
+					if (secHeapAttNum == pkHeapAttNum)
+					{
+						/* j+1 because index_getattr uses 1-based numbering */
+						indexstate->iss_PkAttrPositions[i] = j + 1;
+						break;
+					}
+				}
+				if (indexstate->iss_PkAttrPositions[i] == InvalidAttrNumber)
+					elog(ERROR, "could not find PK column %d in secondary index",
+						 pkHeapAttNum);
+			}
+
+			/*
+			 * Set up scan keys for PK lookups.  We pre-allocate the array and
+			 * fill in the operator function OIDs from the PK index's opclass.
+			 */
+			indexstate->iss_PkScanKeys = palloc0_array(ScanKeyData, pkNumKeyAttrs);
+			for (i = 0; i < pkNumKeyAttrs; i++)
+			{
+				Oid			opfamily = pkRel->rd_opfamily[i];
+				Oid			opcintype = pkRel->rd_opcintype[i];
+				Oid			eq_opr;
+				RegProcedure eq_proc;
+
+				eq_opr = get_opfamily_member(opfamily, opcintype, opcintype,
+											  BTEqualStrategyNumber);
+				if (!OidIsValid(eq_opr))
+					elog(ERROR, "could not find equality operator for opfamily %u",
+						 opfamily);
+				eq_proc = get_opcode(eq_opr);
+				if (!RegProcedureIsValid(eq_proc))
+					elog(ERROR, "could not find function for operator %u", eq_opr);
+
+				ScanKeyInit(&indexstate->iss_PkScanKeys[i],
+							i + 1,
+							BTEqualStrategyNumber,
+							eq_proc,
+							(Datum) 0);
+			}
+
+			/* Open a scan descriptor for the PK index */
+			indexstate->iss_PkScanDesc = index_beginscan(heapRel,
+														  pkRel,
+														  estate->es_snapshot,
+														  NULL,
+														  pkNumKeyAttrs,
+														  0);
+		}
 	}
 
 	/*
