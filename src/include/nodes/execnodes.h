@@ -1754,6 +1754,7 @@ typedef struct IndexScanState
 	int			iss_NumPkAttrs;
 	AttrNumber *iss_PkAttrPositions;	/* positions of PK cols in sec idx tuple */
 	ScanKeyData *iss_PkScanKeys;
+	struct HTAB *iss_SeenTids;			/* hash of returned heap TIDs for dedup */
 } IndexScanState;
 
 /* ----------------

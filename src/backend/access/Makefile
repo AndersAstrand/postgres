@@ -18,6 +18,7 @@ SUBDIRS	    = \
 	index \
 	nbtree \
 	rmgrdesc \
+	sibtree \
 	spgist \
 	sequence \
 	table \

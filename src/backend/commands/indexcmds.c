@@ -903,9 +903,10 @@ DefineIndex(ParseState *pstate,
 	ReleaseSysCache(tuple);
 
 	/*
-	 * For secondary indexes, validate that the table has a primary key and
-	 * that the access method is btree.  Then auto-include PK columns so the
-	 * secondary index can perform PK-based lookups.
+	 * For secondary indexes, validate that the table has a primary key.
+	 * Force the AM to sibtree (our custom secondary index B-tree).
+	 * Auto-append PK columns as key columns so the secondary index can
+	 * perform PK-based lookups.
 	 */
 	if (stmt->secondary)
 	{
@@ -914,17 +915,18 @@ DefineIndex(ParseState *pstate,
 		int			pkNumKeyAttrs;
 		int			i;
 
-		/* Only btree supported for now */
-		if (strcmp(accessMethodName, "btree") != 0)
-			ereport(ERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("secondary indexes only support btree access method")));
-
 		/* Must not be used on partitioned tables for now */
 		if (partitioned)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 					 errmsg("secondary indexes on partitioned tables are not supported")));
+
+		/* Force access method to sibtree */
+		accessMethodName = "sibtree";
+		accessMethodId = get_am_oid(accessMethodName, false);
+		amRoutine = GetIndexAmRoutineByAmId(accessMethodId, false);
+		amoptions = amRoutine->amoptions;
+		amissummarizing = amRoutine->amsummarizing;
 
 		/* Find the primary key index */
 		pkIndexOid = InvalidOid;
@@ -968,8 +970,10 @@ DefineIndex(ParseState *pstate,
 		pkNumKeyAttrs = pkIndex->rd_index->indnkeyatts;
 
 		/*
-		 * Auto-append PK columns as included columns, skipping any that are
-		 * already in the user-specified index columns.
+		 * Auto-append PK columns as key columns (not INCLUDE columns).
+		 * In the sibtree format, PK values are stored alongside key columns
+		 * as part of the tuple — they serve as the logical pointer to the
+		 * heap row.  Skip columns already present in the user's key.
 		 */
 		for (i = 0; i < pkNumKeyAttrs; i++)
 		{
@@ -977,7 +981,6 @@ DefineIndex(ParseState *pstate,
 			bool		alreadyPresent = false;
 			ListCell   *lc;
 
-			/* Check if this PK column is already in the index params */
 			foreach(lc, allIndexParams)
 			{
 				IndexElem  *elem = (IndexElem *) lfirst(lc);
@@ -1067,12 +1070,17 @@ DefineIndex(ParseState *pstate,
 	opclassIds = palloc_array(Oid, numberOfAttributes);
 	opclassOptions = palloc_array(Datum, numberOfAttributes);
 	coloptions = palloc_array(int16, numberOfAttributes);
+	/*
+	 * For secondary indexes using sibtree, resolve operator classes against
+	 * btree since sibtree shares btree's operator classes and strategies.
+	 */
 	ComputeIndexAttrs(pstate,
 					  indexInfo,
 					  typeIds, collationIds, opclassIds, opclassOptions,
 					  coloptions, allIndexParams,
 					  stmt->excludeOpNames, tableId,
-					  accessMethodName, accessMethodId,
+					  stmt->secondary ? "btree" : accessMethodName,
+					  stmt->secondary ? BTREE_AM_OID : accessMethodId,
 					  amcanorder, stmt->isconstraint, stmt->iswithoutoverlaps,
 					  root_save_userid, root_save_sec_context,
 					  &root_save_nestlevel);

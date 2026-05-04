@@ -44,6 +44,7 @@
 #include "nodes/nodeFuncs.h"
 #include "utils/array.h"
 #include "utils/datum.h"
+#include "utils/hsearch.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
@@ -61,6 +62,13 @@ typedef struct
 	Datum	   *orderbyvals;
 	bool	   *orderbynulls;
 } ReorderTuple;
+
+/* Hash table entry for secondary index TID deduplication */
+typedef struct
+{
+	ItemPointerData tid;	/* hash key */
+	char		status;		/* required by simplehash */
+} SeenTidEntry;
 
 static TupleTableSlot *IndexNext(IndexScanState *node);
 static TupleTableSlot *IndexNextSecondary(IndexScanState *node);
@@ -286,6 +294,34 @@ IndexNextSecondary(IndexScanState *node)
 				InstrCountFiltered2(node, 1);
 				continue;
 			}
+
+			/*
+			 * Deduplicate: stale secondary index entries can point to the
+			 * same PK as current entries, causing duplicate heap rows.
+			 * Track returned heap TIDs and skip duplicates.
+			 */
+			{
+				ItemPointer heaptid = &slot->tts_tid;
+				bool		found;
+
+				if (node->iss_SeenTids == NULL)
+				{
+					HASHCTL		ctl;
+
+					ctl.keysize = sizeof(ItemPointerData);
+					ctl.entrysize = sizeof(ItemPointerData);
+					ctl.hcxt = CurrentMemoryContext;
+					node->iss_SeenTids = hash_create("SecIdx TID dedup",
+													 256, &ctl,
+													 HASH_ELEM | HASH_BLOBS |
+													 HASH_CONTEXT);
+				}
+
+				hash_search(node->iss_SeenTids, heaptid, HASH_ENTER, &found);
+				if (found)
+					continue;	/* already returned this heap tuple */
+			}
+
 			return slot;
 		}
 
@@ -722,6 +758,13 @@ ExecReScanIndexScan(IndexScanState *node)
 		}
 	}
 
+	/* Reset secondary index dedup hash */
+	if (node->iss_SeenTids)
+	{
+		hash_destroy(node->iss_SeenTids);
+		node->iss_SeenTids = NULL;
+	}
+
 	/* reset index scan */
 	if (node->iss_ScanDesc)
 		index_rescan(node->iss_ScanDesc,
@@ -959,6 +1002,8 @@ ExecEndIndexScan(IndexScanState *node)
 	/*
 	 * Close secondary index PK scan resources if any
 	 */
+	if (node->iss_SeenTids)
+		hash_destroy(node->iss_SeenTids);
 	if (node->iss_PkScanDesc)
 		index_endscan(node->iss_PkScanDesc);
 	if (node->iss_PkRelation)

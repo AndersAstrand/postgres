@@ -34,4 +34,8 @@
   descr => 'block range index (BRIN) access method',
   amname => 'brin', amhandler => 'brinhandler', amtype => 'i' },
 
+{ oid => '6', oid_symbol => 'SIBTREE_AM_OID',
+  descr => 'secondary index btree access method',
+  amname => 'sibtree', amhandler => 'sibthandler', amtype => 'i' },
+
 ]
