@@ -1972,11 +1972,20 @@ array_sort_internal(ArrayType *array, bool descending, bool nulls_first,
 				errmsg("could not identify a comparison function for type %s",
 					   format_type_be(elmtyp)));
 
-	/* Put the things to be sorted (elements or sub-arrays) into a tuplesort */
+	/*
+	 * Put the things to be sorted (elements or sub-arrays) into a tuplesort.
+	 *
+	 * Sensitivity is conservatively under-tagged: array element provenance is
+	 * not tracked through array operations, so the source array's sensitivity
+	 * is unreachable from inside this function.  The function's *output* is
+	 * still tagged correctly at the expression level via the static taint
+	 * walker; only the internal sort lacks the bit.
+	 */
 	tuplesortstate = tuplesort_begin_datum(sort_typ,
 										   sort_opr,
 										   collation,
 										   nulls_first,
+										   false,
 										   work_mem,
 										   NULL,
 										   TUPLESORT_NONE);

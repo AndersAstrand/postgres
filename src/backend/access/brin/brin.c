@@ -1219,7 +1219,9 @@ brinbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 		 * factor.
 		 */
 		state->bs_sortstate =
-			tuplesort_begin_index_brin(maintenance_work_mem, coordinate,
+			tuplesort_begin_index_brin(maintenance_work_mem,
+									   TupleDescHasSensitive(RelationGetDescr(state->bs_irel)),
+									   coordinate,
 									   TUPLESORT_NONE);
 
 		/* scan the relation and merge per-worker results */
@@ -2836,7 +2838,9 @@ _brin_parallel_scan_and_build(BrinBuildState *state,
 	coordinate->sharedsort = sharedsort;
 
 	/* Begin "partial" tuplesort */
-	state->bs_sortstate = tuplesort_begin_index_brin(sortmem, coordinate,
+	state->bs_sortstate = tuplesort_begin_index_brin(sortmem,
+													 TupleDescHasSensitive(RelationGetDescr(state->bs_irel)),
+													 coordinate,
 													 TUPLESORT_NONE);
 
 	/* Join parallel scan */

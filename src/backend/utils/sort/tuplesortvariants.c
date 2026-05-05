@@ -559,6 +559,7 @@ tuplesort_begin_index_gist(Relation heapRel,
 
 Tuplesortstate *
 tuplesort_begin_index_brin(int workMem,
+						   bool isSensitive,
 						   SortCoordinate coordinate,
 						   int sortopt)
 {
@@ -579,6 +580,7 @@ tuplesort_begin_index_brin(int workMem,
 	base->writetup = writetup_index_brin;
 	base->readtup = readtup_index_brin;
 	base->haveDatum1 = true;
+	base->isSensitive = isSensitive;
 	base->arg = NULL;
 
 	return state;
@@ -673,7 +675,7 @@ tuplesort_begin_index_gin(Relation heapRel,
 
 Tuplesortstate *
 tuplesort_begin_datum(Oid datumType, Oid sortOperator, Oid sortCollation,
-					  bool nullsFirstFlag, int workMem,
+					  bool nullsFirstFlag, bool isSensitive, int workMem,
 					  SortCoordinate coordinate, int sortopt)
 {
 	Tuplesortstate *state = tuplesort_begin_common(workMem, coordinate,
@@ -707,6 +709,7 @@ tuplesort_begin_datum(Oid datumType, Oid sortOperator, Oid sortCollation,
 	base->writetup = writetup_datum;
 	base->readtup = readtup_datum;
 	base->haveDatum1 = true;
+	base->isSensitive = isSensitive;
 	base->arg = arg;
 
 	arg->datumType = datumType;

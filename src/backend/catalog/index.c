@@ -3442,7 +3442,7 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 	 * pass-by-value on most platforms.
 	 */
 	state.tuplesort = tuplesort_begin_datum(INT8OID, Int8LessOperator,
-											InvalidOid, false,
+											InvalidOid, false, false,
 											maintenance_work_mem,
 											NULL, TUPLESORT_NONE);
 	state.htups = state.itups = state.tups_inserted = 0;

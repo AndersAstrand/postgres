@@ -302,10 +302,18 @@ ordered_set_startup(FunctionCallInfo fcinfo, bool use_tuples)
 												   NULL,
 												   tuplesortopt);
 	else
+		/*
+		 * Sensitivity is conservatively under-tagged here: qstate->tupdesc is
+		 * built by ExecTypeFromTL, which does not populate attissensitive from
+		 * the source expressions.  The result of the aggregate is still
+		 * correctly tagged at the expression level via the static taint
+		 * walker; only the sort's internal state lacks the bit.
+		 */
 		osastate->sortstate = tuplesort_begin_datum(qstate->sortColType,
 													qstate->sortOperator,
 													qstate->sortCollation,
 													qstate->sortNullsFirst,
+													false,
 													work_mem,
 													NULL,
 													tuplesortopt);

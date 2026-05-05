@@ -107,6 +107,7 @@ ExecSort(PlanState *pstate)
 												   plannode->sortOperators[0],
 												   plannode->collations[0],
 												   plannode->nullsFirst[0],
+												   TupleDescAttr(tupDesc, 0)->attissensitive,
 												   work_mem,
 												   NULL,
 												   tuplesortopts);
