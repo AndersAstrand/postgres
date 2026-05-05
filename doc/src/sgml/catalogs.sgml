@@ -1365,6 +1365,15 @@
 
      <row>
       <entry role="catalog_table_entry"><para role="column_definition">
+       <structfield>attissensitive</structfield> <type>bool</type>
+      </para>
+      <para>
+       This column is marked as containing sensitive data.
+      </para></entry>
+     </row>
+
+     <row>
+      <entry role="catalog_table_entry"><para role="column_definition">
        <structfield>attinhcount</structfield> <type>int2</type>
       </para>
       <para>

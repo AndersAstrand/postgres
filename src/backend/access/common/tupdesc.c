@@ -946,6 +946,7 @@ TupleDescInitEntry(TupleDesc desc,
 	att->attgenerated = '\0';
 	att->attisdropped = false;
 	att->attislocal = true;
+	att->attissensitive = false;
 	att->attinhcount = 0;
 	/* variable-length fields are not present in tupledescs */
 
@@ -1009,6 +1010,7 @@ TupleDescInitBuiltinEntry(TupleDesc desc,
 	att->attgenerated = '\0';
 	att->attisdropped = false;
 	att->attislocal = true;
+	att->attissensitive = false;
 	att->attinhcount = 0;
 	/* variable-length fields are not present in tupledescs */
 

@@ -150,6 +150,9 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
 	 */
 	bool		attislocal BKI_DEFAULT(t);
 
+	/* Whether this column is marked as containing sensitive data */
+	bool		attissensitive BKI_DEFAULT(f);
+
 	/* Number of times inherited from direct parent relation(s) */
 	int16		attinhcount BKI_DEFAULT(0);
 
