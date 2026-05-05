@@ -369,6 +369,86 @@ ExecInitExprList(List *nodes, PlanState *parent)
 }
 
 /*
+ * Var resolution context for exprIsSensitive(): selects the input slot's
+ * tupdesc based on the Var's varno.  The input slots' tupdescs already carry
+ * attissensitive (populated from pg_attribute via rd_att for relation scans,
+ * or from the producing projection at higher plan levels), so no relation or
+ * rtable lookup is needed here.
+ */
+typedef struct ExprSensitivityContext
+{
+	PlanState  *parent;
+	TupleDesc	inputDesc;
+} ExprSensitivityContext;
+
+static bool
+exprIsSensitiveWalker(Node *node, ExprSensitivityContext *ctx)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Var))
+	{
+		Var		   *var = (Var *) node;
+		TupleDesc	desc = NULL;
+
+		switch (var->varno)
+		{
+			case INNER_VAR:
+				if (ctx->parent && innerPlanState(ctx->parent))
+					desc = ExecGetResultType(innerPlanState(ctx->parent));
+				break;
+			case OUTER_VAR:
+				if (ctx->parent && outerPlanState(ctx->parent))
+					desc = ExecGetResultType(outerPlanState(ctx->parent));
+				break;
+			case INDEX_VAR:
+			default:
+				desc = ctx->inputDesc;
+				break;
+		}
+
+		if (desc == NULL ||
+			var->varattno <= 0 ||
+			var->varattno > desc->natts)
+			return true;		/* conservative when we can't resolve */
+
+		return TupleDescAttr(desc, var->varattno - 1)->attissensitive;
+	}
+
+	if (IsA(node, Const) || IsA(node, Param) ||
+		IsA(node, CaseTestExpr) || IsA(node, CoerceToDomainValue))
+		return false;
+
+	/*
+	 * Default: any node whose result depends on its children is sensitive iff
+	 * any child is sensitive.  expression_tree_walker returns true as soon as
+	 * the callback does, so this naturally OR-shortcircuits.  Unrecognized
+	 * node tags fall through to the walker, which conservatively recurses
+	 * into all known child fields.
+	 */
+	return expression_tree_walker(node, exprIsSensitiveWalker, ctx);
+}
+
+/*
+ * exprIsSensitive
+ *		True if any column read by `expr` is marked attissensitive in the
+ *		appropriate input slot's tupdesc.
+ *
+ * `parent` provides INNER_VAR/OUTER_VAR resolution via innerPlanState/
+ * outerPlanState; `inputDesc` is the relation-scan input tupdesc (also used
+ * as a fallback for INDEX_VAR).  Either may be NULL; unresolvable Vars are
+ * treated conservatively as sensitive.
+ */
+bool
+exprIsSensitive(Node *expr, PlanState *parent, TupleDesc inputDesc)
+{
+	ExprSensitivityContext ctx = {parent, inputDesc};
+
+	return exprIsSensitiveWalker(expr, &ctx);
+}
+
+/*
  *		ExecBuildProjectionInfo
  *
  * Build a ProjectionInfo node for evaluating the given tlist in the given
@@ -419,6 +499,22 @@ ExecBuildProjectionInfo(List *targetList,
 		Var		   *variable = NULL;
 		AttrNumber	attnum = 0;
 		bool		isSafeVar = false;
+
+		/*
+		 * Propagate sensitivity to this output column: the result is sensitive
+		 * iff any input column read by tle->expr is sensitive in its source
+		 * slot's tupdesc.  We do this here, alongside expression compilation,
+		 * because by this point the input slots' tupdescs carry attissensitive
+		 * (from rd_att for scans, or from a child projection at higher levels).
+		 */
+		if (tle->resno >= 1 && tle->resno <= slot->tts_tupleDescriptor->natts)
+		{
+			Form_pg_attribute resattr;
+
+			resattr = TupleDescAttr(slot->tts_tupleDescriptor, tle->resno - 1);
+			resattr->attissensitive = exprIsSensitive((Node *) tle->expr,
+													  parent, inputDesc);
+		}
 
 		/*
 		 * If tlist expression is a safe non-system Var, use the fast-path

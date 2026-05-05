@@ -373,6 +373,7 @@ extern ProjectionInfo *ExecBuildProjectionInfo(List *targetList,
 											   TupleTableSlot *slot,
 											   PlanState *parent,
 											   TupleDesc inputDesc);
+extern bool exprIsSensitive(Node *expr, PlanState *parent, TupleDesc inputDesc);
 extern ProjectionInfo *ExecBuildUpdateProjection(List *targetList,
 												 bool evalTargetList,
 												 List *targetColnos,

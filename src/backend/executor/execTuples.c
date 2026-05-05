@@ -62,6 +62,7 @@
 #include "access/tupdesc_details.h"
 #include "access/xact.h"
 #include "catalog/pg_type.h"
+#include "executor/executor.h"
 #include "funcapi.h"
 #include "nodes/nodeFuncs.h"
 #include "storage/bufmgr.h"
@@ -2020,6 +2021,49 @@ void
 ExecInitResultTypeTL(PlanState *planstate)
 {
 	TupleDesc	tupDesc = ExecTypeFromTL(planstate->plan->targetlist);
+
+	/*
+	 * Propagate attissensitive from inputs to this result tupdesc.  Scan-class
+	 * plans defer this to ExecAssign*ProjectionInfo (which has access to the
+	 * scan slot via inputDesc); for other plans, INNER_VAR/OUTER_VAR resolve
+	 * via inner/outerPlanState, which are already initialized at this point.
+	 * Nodes that skip projection (Sort, Limit, Material, ...) would otherwise
+	 * leave this tupdesc with no attissensitive, since neither hook fires.
+	 */
+	switch (nodeTag(planstate->plan))
+	{
+		case T_SeqScan:
+		case T_SampleScan:
+		case T_IndexScan:
+		case T_IndexOnlyScan:
+		case T_BitmapHeapScan:
+		case T_TidScan:
+		case T_TidRangeScan:
+		case T_SubqueryScan:
+		case T_FunctionScan:
+		case T_TableFuncScan:
+		case T_ValuesScan:
+		case T_CteScan:
+		case T_NamedTuplestoreScan:
+		case T_WorkTableScan:
+		case T_ForeignScan:
+		case T_CustomScan:
+			break;
+		default:
+			{
+				ListCell   *lc;
+
+				foreach(lc, planstate->plan->targetlist)
+				{
+					TargetEntry *tle = lfirst_node(TargetEntry, lc);
+
+					if (tle->resno >= 1 && tle->resno <= tupDesc->natts)
+						TupleDescAttr(tupDesc, tle->resno - 1)->attissensitive =
+							exprIsSensitive((Node *) tle->expr, planstate, NULL);
+				}
+			}
+			break;
+	}
 
 	planstate->ps_ResultTupleDesc = tupDesc;
 }

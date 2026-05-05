@@ -617,6 +617,23 @@ ExecConditionalAssignProjectionInfo(PlanState *planstate, TupleDesc inputDesc,
 		planstate->resultopsset = planstate->scanopsset;
 		planstate->resultopsfixed = planstate->scanopsfixed;
 		planstate->resultops = planstate->scanops;
+
+		/*
+		 * The tlist is an identity over inputDesc, so the result is the input
+		 * pass-through.  Propagate attissensitive 1:1 so upper plan nodes that
+		 * resolve Vars via ExecGetResultType see the correct sensitivity
+		 * (otherwise ps_ResultTupleDesc still has the bare type info that
+		 * ExecTypeFromTL produced, with no attissensitive set).
+		 */
+		if (planstate->ps_ResultTupleDesc != NULL)
+		{
+			TupleDesc	resultDesc = planstate->ps_ResultTupleDesc;
+
+			Assert(resultDesc->natts == inputDesc->natts);
+			for (int i = 0; i < resultDesc->natts; i++)
+				TupleDescAttr(resultDesc, i)->attissensitive =
+					TupleDescAttr(inputDesc, i)->attissensitive;
+		}
 	}
 	else
 	{
