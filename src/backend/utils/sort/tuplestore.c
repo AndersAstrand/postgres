@@ -107,6 +107,7 @@ struct Tuplestorestate
 	int			eflags;			/* capability flags (OR of pointers' flags) */
 	bool		backward;		/* store extra length words in file? */
 	bool		interXact;		/* keep open through transactions? */
+	bool		isSensitive;	/* any tuple stored holds sensitive data */
 	bool		truncated;		/* tuplestore_trim has removed tuples? */
 	bool		usedDisk;		/* used by tuplestore_get_stats() */
 	int64		maxSpace;		/* used by tuplestore_get_stats() */
@@ -324,11 +325,18 @@ tuplestore_begin_common(int eflags, bool interXact, int maxKBytes)
  * also survive transaction boundaries, and to ensure the tuplestore is closed
  * when it's no longer wanted.
  *
+ * isSensitive: if true, the data stored in this tuplestore is considered
+ * sensitive.  This bit is carried alongside the data so downstream consumers
+ * (eventually spill files, audit hooks, etc.) can act on it.  Callers should
+ * derive it from the source TupleDesc via TupleDescHasSensitive() where one
+ * is available; pass false otherwise.
+ *
  * maxKBytes: how much data to store in memory (any data beyond this
  * amount is paged to disk).  When in doubt, use work_mem.
  */
 Tuplestorestate *
-tuplestore_begin_heap(bool randomAccess, bool interXact, int maxKBytes)
+tuplestore_begin_heap(bool randomAccess, bool interXact, bool isSensitive,
+					  int maxKBytes)
 {
 	Tuplestorestate *state;
 	int			eflags;
@@ -346,6 +354,7 @@ tuplestore_begin_heap(bool randomAccess, bool interXact, int maxKBytes)
 	state->copytup = copytup_heap;
 	state->writetup = writetup_heap;
 	state->readtup = readtup_heap;
+	state->isSensitive = isSensitive;
 
 	return state;
 }

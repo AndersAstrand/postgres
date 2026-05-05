@@ -115,7 +115,9 @@ InitMaterializedSRF(FunctionCallInfo fcinfo, uint32 flags)
 
 	random_access = (rsinfo->allowedModes & SFRM_Materialize_Random) != 0;
 
-	tupstore = tuplestore_begin_heap(random_access, false, work_mem);
+	tupstore = tuplestore_begin_heap(random_access, false,
+									 TupleDescHasSensitive(stored_tupdesc),
+									 work_mem);
 	rsinfo->returnMode = SFRM_Materialize;
 	rsinfo->setResult = tupstore;
 	rsinfo->setDesc = stored_tupdesc;

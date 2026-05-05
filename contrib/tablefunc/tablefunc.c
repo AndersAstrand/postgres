@@ -462,7 +462,9 @@ crosstab(PG_FUNCTION_ARGS)
 	/* initialize our tuplestore in long-lived context */
 	tupstore =
 		tuplestore_begin_heap(rsinfo->allowedModes & SFRM_Materialize_Random,
-							  false, work_mem);
+							  false,
+							  TupleDescHasSensitive(tupdesc),
+							  work_mem);
 
 	MemoryContextSwitchTo(oldcontext);
 
@@ -804,7 +806,9 @@ get_crosstab_tuplestore(char *sql,
 	uint64		proc;
 
 	/* initialize our tuplestore (while still in query context!) */
-	tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
+	tupstore = tuplestore_begin_heap(randomAccess, false,
+									 TupleDescHasSensitive(tupdesc),
+									 work_mem);
 
 	/* Connect to SPI manager */
 	SPI_connect();
@@ -1160,7 +1164,9 @@ connectby(char *relname,
 	oldcontext = MemoryContextSwitchTo(per_query_ctx);
 
 	/* initialize our tuplestore */
-	tupstore = tuplestore_begin_heap(randomAccess, false, work_mem);
+	tupstore = tuplestore_begin_heap(randomAccess, false,
+									 TupleDescHasSensitive(attinmeta->tupdesc),
+									 work_mem);
 
 	MemoryContextSwitchTo(oldcontext);
 

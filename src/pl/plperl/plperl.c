@@ -3342,7 +3342,9 @@ plperl_return_next_internal(SV *sv)
 		current_call_data->ret_tdesc = CreateTupleDescCopy(tupdesc);
 		current_call_data->tuple_store =
 			tuplestore_begin_heap(rsi->allowedModes & SFRM_Materialize_Random,
-								  false, work_mem);
+								  false,
+								  TupleDescHasSensitive(tupdesc),
+								  work_mem);
 
 		MemoryContextSwitchTo(old_cxt);
 	}

@@ -3379,7 +3379,9 @@ pltcl_init_tuple_store(pltcl_call_state *call_state)
 
 	call_state->tuple_store =
 		tuplestore_begin_heap(rsi->allowedModes & SFRM_Materialize_Random,
-							  false, work_mem);
+							  false,
+							  TupleDescHasSensitive(call_state->ret_tupdesc),
+							  work_mem);
 
 	/* Build attinmeta in this context, too */
 	call_state->attinmeta = TupleDescGetAttInMetadata(call_state->ret_tupdesc);

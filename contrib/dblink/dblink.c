@@ -943,7 +943,9 @@ materializeResult(FunctionCallInfo fcinfo, PGconn *conn, PGresult *res)
 			nestlevel = applyRemoteGucs(conn);
 
 		oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
-		tupstore = tuplestore_begin_heap(true, false, work_mem);
+		tupstore = tuplestore_begin_heap(true, false,
+										 TupleDescHasSensitive(tupdesc),
+										 work_mem);
 		rsinfo->setResult = tupstore;
 		rsinfo->setDesc = tupdesc;
 		MemoryContextSwitchTo(oldcontext);
@@ -1051,7 +1053,9 @@ materializeQueryResult(FunctionCallInfo fcinfo,
 			attinmeta = TupleDescGetAttInMetadata(tupdesc);
 
 			oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
-			tupstore = tuplestore_begin_heap(true, false, work_mem);
+			tupstore = tuplestore_begin_heap(true, false,
+											 TupleDescHasSensitive(tupdesc),
+											 work_mem);
 			rsinfo->setResult = tupstore;
 			rsinfo->setDesc = tupdesc;
 			MemoryContextSwitchTo(oldcontext);
@@ -1221,7 +1225,9 @@ storeRow(storeInfo *sinfo, PGresult *res, bool first)
 
 		/* Create a new, empty tuplestore */
 		oldcontext = MemoryContextSwitchTo(rsinfo->econtext->ecxt_per_query_memory);
-		sinfo->tuplestore = tuplestore_begin_heap(true, false, work_mem);
+		sinfo->tuplestore = tuplestore_begin_heap(true, false,
+												  TupleDescHasSensitive(tupdesc),
+												  work_mem);
 		rsinfo->setResult = sinfo->tuplestore;
 		rsinfo->setDesc = tupdesc;
 		MemoryContextSwitchTo(oldcontext);

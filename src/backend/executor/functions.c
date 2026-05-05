@@ -1334,7 +1334,10 @@ postquel_start(execution_state *es, SQLFunctionCachePtr fcache)
 		{
 			MemoryContextSwitchTo(fcache->tscontext);
 			fcache->tstore = tuplestore_begin_heap(fcache->randomAccess,
-												   false, work_mem);
+												   false,
+												   fcache->func->rettupdesc != NULL &&
+												   TupleDescHasSensitive(fcache->func->rettupdesc),
+												   work_mem);
 		}
 	}
 

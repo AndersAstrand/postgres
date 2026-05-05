@@ -3732,7 +3732,10 @@ exec_init_tuple_store(PLpgSQL_execstate *estate)
 
 	estate->tuple_store =
 		tuplestore_begin_heap(rsi->allowedModes & SFRM_Materialize_Random,
-							  false, work_mem);
+							  false,
+							  rsi->expectedDesc != NULL &&
+							  TupleDescHasSensitive(rsi->expectedDesc),
+							  work_mem);
 
 	CurrentResourceOwner = oldowner;
 	MemoryContextSwitchTo(oldcxt);

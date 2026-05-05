@@ -202,8 +202,13 @@ ExecInitRecursiveUnion(RecursiveUnion *node, EState *estate, int eflags)
 	/* initialize processing state */
 	rustate->recursing = false;
 	rustate->intermediate_empty = true;
-	rustate->working_table = tuplestore_begin_heap(false, false, work_mem);
-	rustate->intermediate_table = tuplestore_begin_heap(false, false, work_mem);
+	/*
+	 * Sensitivity is conservatively under-tagged: outerPlanState is not yet
+	 * initialized at this point, so its result tupdesc is not reachable.  A
+	 * future refactor could move tuplestore creation below outer plan init.
+	 */
+	rustate->working_table = tuplestore_begin_heap(false, false, false, work_mem);
+	rustate->intermediate_table = tuplestore_begin_heap(false, false, false, work_mem);
 
 	/*
 	 * If hashing, we need a per-tuple memory context for comparisons, and a

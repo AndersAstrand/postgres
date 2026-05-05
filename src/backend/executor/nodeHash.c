@@ -2807,7 +2807,12 @@ ExecHashBuildNullTupleStore(HashJoinTable hashtable)
 	 * consumption too much.
 	 */
 	oldcxt = MemoryContextSwitchTo(hashtable->hashCxt);
-	tstore = tuplestore_begin_heap(false, false, work_mem / 16);
+	/*
+	 * Sensitivity propagation pending: HashJoinTable does not yet carry the
+	 * isSensitive bit (separate item in the chunk-level propagation work).
+	 * Once it does, derive this from the hashtable's source tupdesc.
+	 */
+	tstore = tuplestore_begin_heap(false, false, false, work_mem / 16);
 	MemoryContextSwitchTo(oldcxt);
 	return tstore;
 }

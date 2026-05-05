@@ -356,7 +356,10 @@ PortalCreateHoldStore(Portal portal)
 
 	portal->holdStore =
 		tuplestore_begin_heap(portal->cursorOptions & CURSOR_OPT_SCROLL,
-							  true, work_mem);
+							  true,
+							  portal->tupDesc != NULL &&
+							  TupleDescHasSensitive(portal->tupDesc),
+							  work_mem);
 
 	MemoryContextSwitchTo(oldcxt);
 }

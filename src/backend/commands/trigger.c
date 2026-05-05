@@ -4009,7 +4009,12 @@ GetCurrentFDWTuplestore(void)
 		saveResourceOwner = CurrentResourceOwner;
 		CurrentResourceOwner = CurTransactionResourceOwner;
 
-		ret = tuplestore_begin_heap(false, false, work_mem);
+		/*
+		 * Sensitivity is conservatively under-tagged: this tuplestore is
+		 * shared across all FDW relations modified at this query depth, so
+		 * there is no single source tupdesc to derive from.
+		 */
+		ret = tuplestore_begin_heap(false, false, false, work_mem);
 
 		CurrentResourceOwner = saveResourceOwner;
 		MemoryContextSwitchTo(oldcxt);
@@ -5069,14 +5074,20 @@ MakeTransitionCaptureState(TriggerDesc *trigdesc, Oid relid, CmdType cmdType)
 	saveResourceOwner = CurrentResourceOwner;
 	CurrentResourceOwner = CurTransactionResourceOwner;
 
+	/*
+	 * Sensitivity is conservatively under-tagged: only relid is available
+	 * here, not the open Relation, so we don't have RelationGetDescr() to
+	 * read attissensitive from.  A future change could thread a Relation
+	 * through MakeTransitionCaptureState's signature (callers all have it).
+	 */
 	if (need_old_upd && upd_table->old_tuplestore == NULL)
-		upd_table->old_tuplestore = tuplestore_begin_heap(false, false, work_mem);
+		upd_table->old_tuplestore = tuplestore_begin_heap(false, false, false, work_mem);
 	if (need_new_upd && upd_table->new_tuplestore == NULL)
-		upd_table->new_tuplestore = tuplestore_begin_heap(false, false, work_mem);
+		upd_table->new_tuplestore = tuplestore_begin_heap(false, false, false, work_mem);
 	if (need_old_del && del_table->old_tuplestore == NULL)
-		del_table->old_tuplestore = tuplestore_begin_heap(false, false, work_mem);
+		del_table->old_tuplestore = tuplestore_begin_heap(false, false, false, work_mem);
 	if (need_new_ins && ins_table->new_tuplestore == NULL)
-		ins_table->new_tuplestore = tuplestore_begin_heap(false, false, work_mem);
+		ins_table->new_tuplestore = tuplestore_begin_heap(false, false, false, work_mem);
 
 	CurrentResourceOwner = saveResourceOwner;
 	MemoryContextSwitchTo(oldcxt);

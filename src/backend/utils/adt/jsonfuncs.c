@@ -4128,7 +4128,9 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 	old_cxt = MemoryContextSwitchTo(rsi->econtext->ecxt_per_query_memory);
 	state->tuple_store = tuplestore_begin_heap(rsi->allowedModes &
 											   SFRM_Materialize_Random,
-											   false, work_mem);
+											   false,
+											   TupleDescHasSensitive(cache->c.io.composite.tupdesc),
+											   work_mem);
 	MemoryContextSwitchTo(old_cxt);
 
 	state->function_name = funcname;

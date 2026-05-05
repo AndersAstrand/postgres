@@ -275,9 +275,18 @@ tfuncFetchRows(TableFuncScanState *tstate, ExprContext *econtext)
 
 	Assert(tstate->opaque == NULL);
 
-	/* build tuplestore for the result */
+	/*
+	 * Build tuplestore for the result.
+	 *
+	 * Sensitivity is taken from the scan tupdesc, which was built by
+	 * BuildDescFromLists from the table function's column declarations and
+	 * does not currently carry attissensitive.  Until that path populates the
+	 * bit (e.g. by walking the column expressions), this propagates as false.
+	 */
 	oldcxt = MemoryContextSwitchTo(econtext->ecxt_per_query_memory);
-	tstate->tupstore = tuplestore_begin_heap(false, false, work_mem);
+	tstate->tupstore = tuplestore_begin_heap(false, false,
+											 TupleDescHasSensitive(tstate->ss.ss_ScanTupleSlot->tts_tupleDescriptor),
+											 work_mem);
 
 	/*
 	 * Each call to fetch a new set of rows - of which there may be very many

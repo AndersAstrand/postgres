@@ -46,6 +46,7 @@ typedef struct Tuplestorestate Tuplestorestate;
 
 extern Tuplestorestate *tuplestore_begin_heap(bool randomAccess,
 											  bool interXact,
+											  bool isSensitive,
 											  int maxKBytes);
 
 extern void tuplestore_set_eflags(Tuplestorestate *state, int eflags);
