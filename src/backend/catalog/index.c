@@ -358,6 +358,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 			to->attalign = from->attalign;
 			to->attstorage = from->attstorage;
 			to->attcompression = from->attcompression;
+			to->attissensitive = from->attissensitive;
 		}
 		else
 		{
@@ -387,6 +388,7 @@ ConstructTupleDescriptor(Relation heapRelation,
 			to->attbyval = typeTup->typbyval;
 			to->attalign = typeTup->typalign;
 			to->attstorage = typeTup->typstorage;
+			to->attissensitive = exprIsSensitive(indexkey, NULL, heapTupDesc);
 
 			/*
 			 * For expression columns, set attcompression invalid, since
