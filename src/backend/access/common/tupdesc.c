@@ -882,6 +882,24 @@ hashRowType(TupleDesc desc)
 }
 
 /*
+ * TupleDescHasSensitive
+ *
+ * True if any attribute in the tuple descriptor has attissensitive set.
+ * Used by code that needs a single bit summarizing whether a chunk of data
+ * (a sort, a tuple store, a hash table, ...) holds sensitive data.
+ */
+bool
+TupleDescHasSensitive(TupleDesc tupdesc)
+{
+	for (int i = 0; i < tupdesc->natts; i++)
+	{
+		if (TupleDescAttr(tupdesc, i)->attissensitive)
+			return true;
+	}
+	return false;
+}
+
+/*
  * TupleDescInitEntry
  *		This function initializes a single attribute structure in
  *		a previously allocated tuple descriptor.

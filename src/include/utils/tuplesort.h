@@ -216,6 +216,16 @@ typedef struct
 
 	bool		tuples;			/* Can SortTuple.tuple ever be set? */
 
+	/*
+	 * Whether any tuple/datum stored in this sort holds sensitive data.  Set
+	 * once by tuplesort_begin_xxx (derived from the source TupleDesc/Relation,
+	 * or supplied explicitly by callers of begin_datum/begin_index_brin).
+	 * Carried alongside the data so that downstream consumers — eventually
+	 * spill files, audit hooks, etc. — can act on it without re-deriving from
+	 * the source.
+	 */
+	bool		isSensitive;
+
 	void	   *arg;			/* Specific information for the sort variant */
 } TuplesortPublic;
 

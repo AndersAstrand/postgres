@@ -214,6 +214,7 @@ tuplesort_begin_heap(TupleDesc tupDesc,
 	base->writetup = writetup_heap;
 	base->readtup = readtup_heap;
 	base->haveDatum1 = true;
+	base->isSensitive = TupleDescHasSensitive(tupDesc);
 	base->arg = tupDesc;		/* assume we need not copy tupDesc */
 
 	/* Prepare SortSupport data for each column */
@@ -290,6 +291,7 @@ tuplesort_begin_cluster(TupleDesc tupDesc,
 	base->writetup = writetup_cluster;
 	base->readtup = readtup_cluster;
 	base->freestate = freestate_cluster;
+	base->isSensitive = TupleDescHasSensitive(tupDesc);
 	base->arg = arg;
 
 	arg->indexInfo = BuildIndexInfo(indexRel);
@@ -397,6 +399,7 @@ tuplesort_begin_index_btree(Relation heapRel,
 	base->writetup = writetup_index;
 	base->readtup = readtup_index;
 	base->haveDatum1 = true;
+	base->isSensitive = TupleDescHasSensitive(RelationGetDescr(indexRel));
 	base->arg = arg;
 
 	arg->index.heapRel = heapRel;
@@ -475,6 +478,7 @@ tuplesort_begin_index_hash(Relation heapRel,
 	base->writetup = writetup_index;
 	base->readtup = readtup_index;
 	base->haveDatum1 = true;
+	base->isSensitive = TupleDescHasSensitive(RelationGetDescr(indexRel));
 	base->arg = arg;
 
 	arg->index.heapRel = heapRel;
@@ -519,6 +523,7 @@ tuplesort_begin_index_gist(Relation heapRel,
 	base->writetup = writetup_index;
 	base->readtup = readtup_index;
 	base->haveDatum1 = true;
+	base->isSensitive = TupleDescHasSensitive(RelationGetDescr(indexRel));
 	base->arg = arg;
 
 	arg->index.heapRel = heapRel;
@@ -658,6 +663,7 @@ tuplesort_begin_index_gin(Relation heapRel,
 	base->writetup = writetup_index_gin;
 	base->readtup = readtup_index_gin;
 	base->haveDatum1 = false;
+	base->isSensitive = TupleDescHasSensitive(desc);
 	base->arg = NULL;
 
 	MemoryContextSwitchTo(oldcontext);
