@@ -3254,6 +3254,7 @@ ExecParallelHashJoinSetUpBatches(HashJoinTable hashtable, int nbatch)
 						   ParallelWorkerNumber + 1,
 						   sizeof(uint32),
 						   SHARED_TUPLESTORE_SINGLE_PASS,
+						   hashtable->inner_isSensitive,
 						   &pstate->fileset,
 						   name);
 		snprintf(name, sizeof(name), "o%dof%d", i, hashtable->nbatch);
@@ -3264,6 +3265,7 @@ ExecParallelHashJoinSetUpBatches(HashJoinTable hashtable, int nbatch)
 						   ParallelWorkerNumber + 1,
 						   sizeof(uint32),
 						   SHARED_TUPLESTORE_SINGLE_PASS,
+						   hashtable->outer_isSensitive,
 						   &pstate->fileset,
 						   name);
 	}

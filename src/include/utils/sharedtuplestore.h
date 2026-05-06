@@ -36,6 +36,7 @@ extern SharedTuplestoreAccessor *sts_initialize(SharedTuplestore *sts,
 												int my_participant_number,
 												size_t meta_data_size,
 												int flags,
+												bool isSensitive,
 												SharedFileSet *fileset,
 												const char *name);
 

@@ -60,6 +60,7 @@ struct SharedTuplestore
 {
 	int			nparticipants;	/* Number of participants that can write. */
 	int			flags;			/* Flag bits from SHARED_TUPLESTORE_XXX */
+	bool		isSensitive;	/* any tuple stored holds sensitive data */
 	size_t		meta_data_size; /* Size of per-tuple header. */
 	char		name[NAMEDATALEN];	/* A name for this tuplestore. */
 
@@ -126,6 +127,7 @@ sts_initialize(SharedTuplestore *sts, int participants,
 			   int my_participant_number,
 			   size_t meta_data_size,
 			   int flags,
+			   bool isSensitive,
 			   SharedFileSet *fileset,
 			   const char *name)
 {
@@ -137,6 +139,7 @@ sts_initialize(SharedTuplestore *sts, int participants,
 	sts->nparticipants = participants;
 	sts->meta_data_size = meta_data_size;
 	sts->flags = flags;
+	sts->isSensitive = isSensitive;
 
 	if (strlen(name) > sizeof(sts->name) - 1)
 		elog(ERROR, "SharedTuplestore name too long");
