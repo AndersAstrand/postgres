@@ -337,6 +337,14 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 				 * later arrivals will merely attach to it.
 				 */
 				hashtable = ExecHashTableCreate(hashNode);
+				/*
+				 * The Hash node only sees the inner relation, so it cannot
+				 * derive the outer-side sensitivity by itself.  Stamp it now,
+				 * before MultiExecProcNode runs (parallel hash join consults
+				 * outer_isSensitive when setting up per-batch SharedTuplestores).
+				 */
+				hashtable->outer_isSensitive =
+					TupleDescHasSensitive(ExecGetResultType(outerPlanState(node)));
 				node->hj_HashTable = hashtable;
 
 				/*
@@ -1156,7 +1164,9 @@ ExecHashJoinOuterGetTuple(PlanState *outerNode,
 			{
 				/* null join key, but we must save tuple to be emitted later */
 				if (hjstate->hj_NullOuterTupleStore == NULL)
-					hjstate->hj_NullOuterTupleStore = ExecHashBuildNullTupleStore(hashtable);
+					hjstate->hj_NullOuterTupleStore =
+						ExecHashBuildNullTupleStore(hashtable,
+													hashtable->outer_isSensitive);
 				tuplestore_puttupleslot(hjstate->hj_NullOuterTupleStore, slot);
 			}
 
@@ -1234,7 +1244,9 @@ ExecParallelHashJoinOuterGetTuple(PlanState *outerNode,
 			{
 				/* null join key, but we must save tuple to be emitted later */
 				if (hjstate->hj_NullOuterTupleStore == NULL)
-					hjstate->hj_NullOuterTupleStore = ExecHashBuildNullTupleStore(hashtable);
+					hjstate->hj_NullOuterTupleStore =
+						ExecHashBuildNullTupleStore(hashtable,
+													hashtable->outer_isSensitive);
 				tuplestore_puttupleslot(hjstate->hj_NullOuterTupleStore, slot);
 			}
 
@@ -1826,7 +1838,9 @@ ExecParallelHashJoinPartitionOuter(HashJoinState *hjstate)
 		{
 			/* null join key, but we must save tuple to be emitted later */
 			if (hjstate->hj_NullOuterTupleStore == NULL)
-				hjstate->hj_NullOuterTupleStore = ExecHashBuildNullTupleStore(hashtable);
+				hjstate->hj_NullOuterTupleStore =
+					ExecHashBuildNullTupleStore(hashtable,
+												hashtable->outer_isSensitive);
 			tuplestore_puttupleslot(hjstate->hj_NullOuterTupleStore, slot);
 		}
 		/* else we can just discard the tuple immediately */

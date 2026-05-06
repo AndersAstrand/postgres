@@ -378,6 +378,18 @@ typedef struct HashJoinTableData
 	ParallelHashJoinState *parallel_state;
 	ParallelHashJoinBatchAccessor *batches;
 	dsa_pointer current_chunk_shared;
+
+	/*
+	 * Whether the inner / outer side of the join carries sensitive data.
+	 * Derived once at construction from each side's result tupdesc; carried
+	 * alongside the hash table so downstream consumers — per-batch spill
+	 * files (BufFile, SharedTuplestore), null-keyed tuplestores, audit
+	 * hooks, etc. — can act on the right side's bit.  The two bits are kept
+	 * separate because the inner and outer relations can have different
+	 * sensitivity, and storing one OR'd value would over-tag.
+	 */
+	bool		inner_isSensitive;
+	bool		outer_isSensitive;
 } HashJoinTableData;
 
 #endif							/* HASHJOIN_H */

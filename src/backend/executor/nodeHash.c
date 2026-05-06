@@ -202,7 +202,9 @@ MultiExecPrivateHash(HashState *node)
 		{
 			/* null join key, but we must save tuple to be emitted later */
 			if (node->null_tuple_store == NULL)
-				node->null_tuple_store = ExecHashBuildNullTupleStore(hashtable);
+				node->null_tuple_store =
+					ExecHashBuildNullTupleStore(hashtable,
+												hashtable->inner_isSensitive);
 			tuplestore_puttupleslot(node->null_tuple_store, slot);
 			nullTuples += 1;
 		}
@@ -320,7 +322,9 @@ MultiExecParallelHash(HashState *node)
 				{
 					/* null join key, but save tuple to be emitted later */
 					if (node->null_tuple_store == NULL)
-						node->null_tuple_store = ExecHashBuildNullTupleStore(hashtable);
+						node->null_tuple_store =
+							ExecHashBuildNullTupleStore(hashtable,
+														hashtable->inner_isSensitive);
 					tuplestore_puttupleslot(node->null_tuple_store, slot);
 					hashtable->reportTuples++;
 				}
@@ -548,6 +552,14 @@ ExecHashTableCreate(HashState *state)
 	hashtable->parallel_state = state->parallel_state;
 	hashtable->area = state->ps.state->es_query_dsa;
 	hashtable->batches = NULL;
+	hashtable->inner_isSensitive =
+		TupleDescHasSensitive(ExecGetResultType(outerPlanState(state)));
+	/*
+	 * outer_isSensitive is set by the caller (ExecHashJoinImpl) after this
+	 * function returns, since the join's outer plan is not reachable from
+	 * here.  Default to false in case any consumer reads it before then.
+	 */
+	hashtable->outer_isSensitive = false;
 
 #ifdef HJDEBUG
 	printf("Hashjoin %p: initial nbatch = %d, nbuckets = %d\n",
@@ -2796,7 +2808,7 @@ ExecHashRemoveNextSkewBucket(HashJoinTable hashtable)
  * what to do with them.  So they're always in private storage.
  */
 Tuplestorestate *
-ExecHashBuildNullTupleStore(HashJoinTable hashtable)
+ExecHashBuildNullTupleStore(HashJoinTable hashtable, bool isSensitive)
 {
 	Tuplestorestate *tstore;
 	MemoryContext oldcxt;
@@ -2805,14 +2817,13 @@ ExecHashBuildNullTupleStore(HashJoinTable hashtable)
 	 * We keep the tuplestore in the hashCxt to ensure it won't go away too
 	 * soon.  Size it at work_mem/16 so that it doesn't bloat the node's space
 	 * consumption too much.
+	 *
+	 * The caller supplies isSensitive because this helper is used for both
+	 * inner-side and outer-side null-keyed tuplestores, which can differ.
 	 */
 	oldcxt = MemoryContextSwitchTo(hashtable->hashCxt);
-	/*
-	 * Sensitivity propagation pending: HashJoinTable does not yet carry the
-	 * isSensitive bit (separate item in the chunk-level propagation work).
-	 * Once it does, derive this from the hashtable's source tupdesc.
-	 */
-	tstore = tuplestore_begin_heap(false, false, false, work_mem / 16);
+	tstore = tuplestore_begin_heap(false, false, isSensitive,
+								   work_mem / 16);
 	MemoryContextSwitchTo(oldcxt);
 	return tstore;
 }
