@@ -189,6 +189,7 @@ struct LogicalTapeSet
 	BufFile    *pfile;			/* underlying file for whole tape set */
 	SharedFileSet *fileset;
 	int			worker;			/* worker # if shared, -1 for leader/serial */
+	bool		isSensitive;	/* tapes hold sensitive data */
 
 	/*
 	 * File size tracking.  nBlocksWritten is the size of the underlying file,
@@ -553,7 +554,8 @@ ltsInitReadBuffer(LogicalTape *lt)
  * same time.
  */
 LogicalTapeSet *
-LogicalTapeSetCreate(bool preallocate, SharedFileSet *fileset, int worker)
+LogicalTapeSetCreate(bool preallocate, bool isSensitive,
+					 SharedFileSet *fileset, int worker)
 {
 	LogicalTapeSet *lts;
 
@@ -572,6 +574,7 @@ LogicalTapeSetCreate(bool preallocate, SharedFileSet *fileset, int worker)
 
 	lts->fileset = fileset;
 	lts->worker = worker;
+	lts->isSensitive = isSensitive;
 
 	/*
 	 * Create temp BufFile storage as required.
@@ -589,10 +592,10 @@ LogicalTapeSetCreate(bool preallocate, SharedFileSet *fileset, int worker)
 		char		filename[MAXPGPATH];
 
 		pg_itoa(worker, filename);
-		lts->pfile = BufFileCreateFileSet(&fileset->fs, filename);
+		lts->pfile = BufFileCreateFileSet(&fileset->fs, filename, isSensitive);
 	}
 	else
-		lts->pfile = BufFileCreateTemp(false);
+		lts->pfile = BufFileCreateTemp(false, isSensitive);
 
 	return lts;
 }
@@ -621,7 +624,8 @@ LogicalTapeImport(LogicalTapeSet *lts, int worker, TapeShare *shared)
 	 * where each source file begins.
 	 */
 	pg_itoa(worker, filename);
-	file = BufFileOpenFileSet(&lts->fileset->fs, filename, O_RDONLY, false);
+	file = BufFileOpenFileSet(&lts->fileset->fs, filename, O_RDONLY, false,
+							  lts->isSensitive);
 	filesize = BufFileSize(file);
 
 	/*

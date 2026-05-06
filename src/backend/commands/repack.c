@@ -2862,7 +2862,7 @@ process_concurrent_changes(XLogRecPtr end_of_wal, ChangeContext *chgcxt, bool do
 
 	/* Open the file. */
 	DecodingWorkerFileName(fname, shared->relid, chgcxt->cc_file_seq);
-	file = BufFileOpenFileSet(&shared->sfs.fs, fname, O_RDONLY, false);
+	file = BufFileOpenFileSet(&shared->sfs.fs, fname, O_RDONLY, false, false);
 	apply_concurrent_changes(file, chgcxt);
 
 	BufFileClose(file);
@@ -3467,7 +3467,7 @@ get_initial_snapshot(DecodingWorker *worker)
 
 	/* Read the snapshot from a file. */
 	DecodingWorkerFileName(fname, shared->relid, WORKER_FILE_SNAPSHOT);
-	file = BufFileOpenFileSet(&shared->sfs.fs, fname, O_RDONLY, false);
+	file = BufFileOpenFileSet(&shared->sfs.fs, fname, O_RDONLY, false, false);
 	BufFileReadExact(file, &snap_size, sizeof(snap_size));
 	snap_space = (char *) palloc(snap_size);
 	BufFileReadExact(file, snap_space, snap_size);

@@ -342,7 +342,8 @@ export_initial_snapshot(Snapshot snapshot, DecodingWorkerShared *shared)
 	SerializeSnapshot(snapshot, snap_space);
 
 	DecodingWorkerFileName(fname, shared->relid, shared->last_exported + 1);
-	file = BufFileCreateFileSet(&shared->sfs.fs, fname);
+	/* Snapshot data is bookkeeping, not user content. */
+	file = BufFileCreateFileSet(&shared->sfs.fs, fname, false);
 	/* To make restoration easier, write the snapshot size first. */
 	BufFileWrite(file, &snap_size, sizeof(snap_size));
 	BufFileWrite(file, snap_space, snap_size);
@@ -372,9 +373,15 @@ decode_concurrent_changes(LogicalDecodingContext *ctx,
 
 	dstate = (RepackDecodingState *) ctx->output_writer_private;
 
-	/* Open the output file. */
+	/*
+	 * Open the output file.
+	 *
+	 * Sensitivity is conservatively under-tagged: shared->relid identifies
+	 * the relation being repacked, but opening it here for RelationGetDescr
+	 * would require lock plumbing not currently in scope.
+	 */
 	DecodingWorkerFileName(fname, shared->relid, shared->last_exported + 1);
-	dstate->file = BufFileCreateFileSet(&shared->sfs.fs, fname);
+	dstate->file = BufFileCreateFileSet(&shared->sfs.fs, fname, false);
 
 	SpinLockAcquire(&shared->mutex);
 	lsn_upto = shared->lsn_upto;

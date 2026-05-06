@@ -1921,7 +1921,10 @@ hash_agg_enter_spill_mode(AggState *aggstate)
 
 		aggstate->hash_ever_spilled = true;
 
-		aggstate->hash_tapeset = LogicalTapeSetCreate(true, NULL, -1);
+		aggstate->hash_tapeset =
+			LogicalTapeSetCreate(true,
+								 TupleDescHasSensitive(ExecGetResultType(outerPlanState(aggstate))),
+								 NULL, -1);
 
 		aggstate->hash_spills = palloc_array(HashAggSpill, aggstate->num_hashes);
 

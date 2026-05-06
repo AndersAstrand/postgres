@@ -549,7 +549,7 @@ extern IndexBuildResult *gistbuild(Relation heap, Relation index,
 
 /* gistbuildbuffers.c */
 extern GISTBuildBuffers *gistInitBuildBuffers(int pagesPerBuffer, int levelStep,
-											  int maxLevel);
+											  int maxLevel, bool isSensitive);
 extern GISTNodeBuffer *gistGetNodeBuffer(GISTBuildBuffers *gfbb,
 										 GISTSTATE *giststate,
 										 BlockNumber nodeBlocknum, int level);

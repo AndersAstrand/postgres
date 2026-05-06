@@ -36,7 +36,7 @@ typedef struct BufFile BufFile;
  * prototypes for functions in buffile.c
  */
 
-extern BufFile *BufFileCreateTemp(bool interXact);
+extern BufFile *BufFileCreateTemp(bool interXact, bool isSensitive);
 extern void BufFileClose(BufFile *file);
 pg_nodiscard extern size_t BufFileRead(BufFile *file, void *ptr, size_t size);
 extern void BufFileReadExact(BufFile *file, void *ptr, size_t size);
@@ -48,10 +48,12 @@ extern int	BufFileSeekBlock(BufFile *file, int64 blknum);
 extern int64 BufFileSize(BufFile *file);
 extern int64 BufFileAppend(BufFile *target, BufFile *source);
 
-extern BufFile *BufFileCreateFileSet(FileSet *fileset, const char *name);
+extern BufFile *BufFileCreateFileSet(FileSet *fileset, const char *name,
+									 bool isSensitive);
 extern void BufFileExportFileSet(BufFile *file);
 extern BufFile *BufFileOpenFileSet(FileSet *fileset, const char *name,
-								   int mode, bool missing_ok);
+								   int mode, bool missing_ok,
+								   bool isSensitive);
 extern void BufFileDeleteFileSet(FileSet *fileset, const char *name,
 								 bool missing_ok);
 extern void BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset);

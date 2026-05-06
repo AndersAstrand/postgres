@@ -768,7 +768,8 @@ gistInitBuffering(GISTBuildState *buildstate)
 
 	/* Initialize GISTBuildBuffers with these parameters */
 	buildstate->gfbb = gistInitBuildBuffers(pagesPerBuffer, levelStep,
-											gistGetMaxLevel(index));
+											gistGetMaxLevel(index),
+											TupleDescHasSensitive(RelationGetDescr(buildstate->heaprel)));
 
 	gistInitParentMap(buildstate);
 

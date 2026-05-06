@@ -1782,7 +1782,7 @@ inittapes(Tuplesortstate *state, bool mergeruns)
 	/* Create the tape set */
 	inittapestate(state, state->maxTapes);
 	state->tapeset =
-		LogicalTapeSetCreate(false,
+		LogicalTapeSetCreate(false, state->base.isSensitive,
 							 state->shared ? &state->shared->fileset : NULL,
 							 state->worker);
 
@@ -3400,7 +3400,8 @@ leader_takeover_tapes(Tuplesortstate *state)
 	 * so the number of tapes allocated here should never be excessive.
 	 */
 	inittapestate(state, nParticipants);
-	state->tapeset = LogicalTapeSetCreate(false, &shared->fileset, -1);
+	state->tapeset = LogicalTapeSetCreate(false, state->base.isSensitive,
+										  &shared->fileset, -1);
 
 	/*
 	 * Set currentRun to reflect the number of runs we will merge (it's not

@@ -316,7 +316,8 @@ sts_puttuple(SharedTuplestoreAccessor *accessor, void *meta_data,
 
 		oldcxt = MemoryContextSwitchTo(accessor->context);
 		accessor->write_file =
-			BufFileCreateFileSet(&accessor->fileset->fs, name);
+			BufFileCreateFileSet(&accessor->fileset->fs, name,
+								 accessor->sts->isSensitive);
 		MemoryContextSwitchTo(oldcxt);
 
 		/* Set up the shared state for this backend's file. */
@@ -540,7 +541,7 @@ sts_parallel_scan_next(SharedTuplestoreAccessor *accessor, void *meta_data)
 				oldcxt = MemoryContextSwitchTo(accessor->context);
 				accessor->read_file =
 					BufFileOpenFileSet(&accessor->fileset->fs, name, O_RDONLY,
-									   false);
+									   false, accessor->sts->isSensitive);
 				MemoryContextSwitchTo(oldcxt);
 			}
 

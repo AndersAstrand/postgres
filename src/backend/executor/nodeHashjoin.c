@@ -527,7 +527,8 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 					Assert(batchno > hashtable->curbatch);
 					ExecHashJoinSaveTuple(mintuple, hashvalue,
 										  &hashtable->outerBatchFile[batchno],
-										  hashtable);
+										  hashtable,
+										  hashtable->outer_isSensitive);
 
 					if (shouldFree)
 						heap_free_minimal_tuple(mintuple);
@@ -1581,7 +1582,8 @@ ExecParallelHashJoinNewBatch(HashJoinState *hjstate)
  */
 void
 ExecHashJoinSaveTuple(MinimalTuple tuple, uint32 hashvalue,
-					  BufFile **fileptr, HashJoinTable hashtable)
+					  BufFile **fileptr, HashJoinTable hashtable,
+					  bool isSensitive)
 {
 	BufFile    *file = *fileptr;
 
@@ -1603,7 +1605,7 @@ ExecHashJoinSaveTuple(MinimalTuple tuple, uint32 hashvalue,
 	{
 		MemoryContext oldctx = MemoryContextSwitchTo(hashtable->spillCxt);
 
-		file = BufFileCreateTemp(false);
+		file = BufFileCreateTemp(false, isSensitive);
 		*fileptr = file;
 
 		MemoryContextSwitchTo(oldctx);

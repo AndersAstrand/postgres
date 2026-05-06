@@ -1185,7 +1185,8 @@ ExecHashIncreaseNumBatches(HashJoinTable hashtable)
 				ExecHashJoinSaveTuple(HJTUPLE_MINTUPLE(hashTuple),
 									  hashTuple->hashvalue,
 									  &hashtable->innerBatchFile[batchno],
-									  hashtable);
+									  hashtable,
+									  hashtable->inner_isSensitive);
 
 				hashtable->spaceUsed -= hashTupleSize;
 				nfreed++;
@@ -1862,7 +1863,8 @@ ExecHashTableInsert(HashJoinTable hashtable,
 		ExecHashJoinSaveTuple(tuple,
 							  hashvalue,
 							  &hashtable->innerBatchFile[batchno],
-							  hashtable);
+							  hashtable,
+							  hashtable->inner_isSensitive);
 	}
 
 	if (shouldFree)
@@ -2747,7 +2749,8 @@ ExecHashRemoveNextSkewBucket(HashJoinTable hashtable)
 			Assert(batchno > hashtable->curbatch);
 			ExecHashJoinSaveTuple(tuple, hashvalue,
 								  &hashtable->innerBatchFile[batchno],
-								  hashtable);
+								  hashtable,
+								  hashtable->inner_isSensitive);
 			pfree(hashTuple);
 			hashtable->spaceUsed -= tupleSize;
 			hashtable->spaceUsedSkew -= tupleSize;

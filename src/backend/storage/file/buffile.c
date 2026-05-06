@@ -75,6 +75,7 @@ struct BufFile
 	File	   *files;			/* palloc'd array with numFiles entries */
 
 	bool		isInterXact;	/* keep open over transactions? */
+	bool		isSensitive;	/* file holds sensitive data */
 	bool		dirty;			/* does buffer need to be written? */
 	bool		readOnly;		/* has the file been set to read only? */
 
@@ -191,7 +192,7 @@ extendBufFile(BufFile *file)
  * transaction boundaries.
  */
 BufFile *
-BufFileCreateTemp(bool interXact)
+BufFileCreateTemp(bool interXact, bool isSensitive)
 {
 	BufFile    *file;
 	File		pfile;
@@ -212,6 +213,7 @@ BufFileCreateTemp(bool interXact)
 
 	file = makeBufFile(pfile);
 	file->isInterXact = interXact;
+	file->isSensitive = isSensitive;
 
 	return file;
 }
@@ -265,13 +267,14 @@ MakeNewFileSetSegment(BufFile *buffile, int segment)
  * unrelated SharedFileSet objects.
  */
 BufFile *
-BufFileCreateFileSet(FileSet *fileset, const char *name)
+BufFileCreateFileSet(FileSet *fileset, const char *name, bool isSensitive)
 {
 	BufFile    *file;
 
 	file = makeBufFileCommon(1);
 	file->fileset = fileset;
 	file->name = pstrdup(name);
+	file->isSensitive = isSensitive;
 	file->files = palloc_object(File);
 	file->files[0] = MakeNewFileSetSegment(file, 0);
 	file->readOnly = false;
@@ -290,7 +293,7 @@ BufFileCreateFileSet(FileSet *fileset, const char *name)
  */
 BufFile *
 BufFileOpenFileSet(FileSet *fileset, const char *name, int mode,
-				   bool missing_ok)
+				   bool missing_ok, bool isSensitive)
 {
 	BufFile    *file;
 	char		segment_name[MAXPGPATH];
@@ -345,6 +348,7 @@ BufFileOpenFileSet(FileSet *fileset, const char *name, int mode,
 	file->readOnly = (mode == O_RDONLY);
 	file->fileset = fileset;
 	file->name = pstrdup(name);
+	file->isSensitive = isSensitive;
 
 	return file;
 }

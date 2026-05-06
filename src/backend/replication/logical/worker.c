@@ -2053,7 +2053,7 @@ stream_abort_internal(TransactionId xid, TransactionId subxid)
 		/* open the changes file */
 		changes_filename(path, MyLogicalRepWorker->subid, xid);
 		fd = BufFileOpenFileSet(MyLogicalRepWorker->stream_fileset, path,
-								O_RDWR, false);
+								O_RDWR, false, false);
 
 		/* OK, truncate the file at the right offset */
 		BufFileTruncateFileSet(fd, subxact_data.subxacts[subidx].fileno,
@@ -2246,7 +2246,7 @@ ensure_last_message(FileSet *stream_fileset, TransactionId xid, int fileno,
 
 	changes_filename(path, MyLogicalRepWorker->subid, xid);
 
-	fd = BufFileOpenFileSet(stream_fileset, path, O_RDONLY, false);
+	fd = BufFileOpenFileSet(stream_fileset, path, O_RDONLY, false, false);
 
 	BufFileSeek(fd, 0, 0, SEEK_END);
 	BufFileTell(fd, &last_fileno, &last_offset);
@@ -2299,7 +2299,8 @@ apply_spooled_messages(FileSet *stream_fileset, TransactionId xid,
 	oldowner = CurrentResourceOwner;
 	CurrentResourceOwner = TopTransactionResourceOwner;
 
-	stream_fd = BufFileOpenFileSet(stream_fileset, path, O_RDONLY, false);
+	stream_fd = BufFileOpenFileSet(stream_fileset, path, O_RDONLY, false,
+								   false);
 
 	CurrentResourceOwner = oldowner;
 
@@ -5248,9 +5249,10 @@ subxact_info_write(Oid subid, TransactionId xid)
 	 * existing file.
 	 */
 	fd = BufFileOpenFileSet(MyLogicalRepWorker->stream_fileset, path, O_RDWR,
-							true);
+							true, false);
 	if (fd == NULL)
-		fd = BufFileCreateFileSet(MyLogicalRepWorker->stream_fileset, path);
+		fd = BufFileCreateFileSet(MyLogicalRepWorker->stream_fileset, path,
+								  false);
 
 	len = sizeof(SubXactInfo) * subxact_data.nsubxacts;
 
@@ -5289,7 +5291,7 @@ subxact_info_read(Oid subid, TransactionId xid)
 	 */
 	subxact_filename(path, subid, xid);
 	fd = BufFileOpenFileSet(MyLogicalRepWorker->stream_fileset, path, O_RDONLY,
-							true);
+							true, false);
 	if (fd == NULL)
 		return;
 
@@ -5469,9 +5471,16 @@ stream_open_file(Oid subid, TransactionId xid, bool first_segment)
 	 * If this is the first streamed segment, create the changes file.
 	 * Otherwise, just open the file for writing, in append mode.
 	 */
+	/*
+	 * Sensitivity is conservatively under-tagged for logical replication's
+	 * spill files: a single stream file holds changes for all relations
+	 * touched by the streamed transaction, so there's no single source
+	 * tupdesc.  A future refinement could OR sensitivity over the
+	 * subscription's published relations.
+	 */
 	if (first_segment)
 		stream_fd = BufFileCreateFileSet(MyLogicalRepWorker->stream_fileset,
-										 path);
+										 path, false);
 	else
 	{
 		/*
@@ -5479,7 +5488,7 @@ stream_open_file(Oid subid, TransactionId xid, bool first_segment)
 		 * append the changes file.
 		 */
 		stream_fd = BufFileOpenFileSet(MyLogicalRepWorker->stream_fileset,
-									   path, O_RDWR, false);
+									   path, O_RDWR, false, false);
 		BufFileSeek(stream_fd, 0, 0, SEEK_END);
 	}
 

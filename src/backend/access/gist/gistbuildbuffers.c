@@ -41,7 +41,8 @@ static void WriteTempFileBlock(BufFile *file, long blknum, const void *ptr);
  * Initialize GiST build buffers.
  */
 GISTBuildBuffers *
-gistInitBuildBuffers(int pagesPerBuffer, int levelStep, int maxLevel)
+gistInitBuildBuffers(int pagesPerBuffer, int levelStep, int maxLevel,
+					 bool isSensitive)
 {
 	GISTBuildBuffers *gfbb;
 	HASHCTL		hashCtl;
@@ -54,7 +55,7 @@ gistInitBuildBuffers(int pagesPerBuffer, int levelStep, int maxLevel)
 	 * Create a temporary file to hold buffer pages that are swapped out of
 	 * memory.
 	 */
-	gfbb->pfile = BufFileCreateTemp(false);
+	gfbb->pfile = BufFileCreateTemp(false, isSensitive);
 	gfbb->nFileBlocks = 0;
 
 	/* Initialize free page management. */
