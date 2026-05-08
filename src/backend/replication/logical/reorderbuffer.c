@@ -98,6 +98,7 @@
 #include "catalog/catalog.h"
 #include "common/int.h"
 #include "lib/binaryheap.h"
+#include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "replication/logical.h"
@@ -106,6 +107,7 @@
 #include "replication/snapbuild.h"	/* just for SnapBuildSnapDecRefcount */
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/procarray.h"
 #include "storage/sinval.h"
 #include "utils/builtins.h"
@@ -154,6 +156,7 @@ typedef struct TXNEntryFile
 	File		vfd;			/* -1 when the file is closed */
 	off_t		curOffset;		/* offset for next write or read. Reset to 0
 								 * when vfd is opened. */
+	FileEncryptionFileState *fstate;	/* per-file encryption state, or NULL */
 } TXNEntryFile;
 
 /* k-way in-order change iteration support structures */
@@ -194,6 +197,19 @@ typedef struct ReorderBufferDiskChange
 	ReorderBufferChange change;
 	/* data follows */
 } ReorderBufferDiskChange;
+
+/*
+ * Header written ahead of each ciphertext blob in an encrypted spill file.
+ *
+ * Spill files are process-local and transient (recreated on every decoding
+ * run), so this struct does not need to be portable across platforms.  Size
+ * is used here for consistency with ReorderBufferDiskChange.size.
+ */
+typedef struct ReorderBufferEncryptedRecord
+{
+	Size		plaintext_size;
+	Size		ciphertext_size;
+} ReorderBufferEncryptedRecord;
 
 #define IsSpecInsert(action) \
 ( \
@@ -266,7 +282,12 @@ static void ReorderBufferExecuteInvalidations(uint32 nmsgs, SharedInvalidationMe
 static void ReorderBufferCheckMemoryLimit(ReorderBuffer *rb);
 static void ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
-										 int fd, ReorderBufferChange *change);
+										 const char *path, int fd,
+										 FileEncryptionFileState *fstate,
+										 pgoff_t *write_offset,
+										 StringInfo ciphertext,
+										 StringInfo writebuf,
+										 ReorderBufferChange *change);
 static Size ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 										TXNEntryFile *file, XLogSegNo *segno);
 static void ReorderBufferRestoreChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
@@ -1328,6 +1349,7 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	for (off = 0; off < state->nr_txns; off++)
 	{
 		state->entries[off].file.vfd = -1;
+		state->entries[off].file.fstate = NULL;
 		state->entries[off].segno = 0;
 	}
 
@@ -1511,6 +1533,11 @@ ReorderBufferIterTXNFinish(ReorderBuffer *rb,
 	{
 		if (state->entries[off].file.vfd != -1)
 			FileClose(state->entries[off].file.vfd);
+		if (state->entries[off].file.fstate != NULL)
+		{
+			FileEncryptionFileClose(state->entries[off].file.fstate);
+			state->entries[off].file.fstate = NULL;
+		}
 	}
 
 	/* free memory we might have "leaked" in the last *Next call */
@@ -4000,6 +4027,13 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	XLogSegNo	curOpenSegNo = 0;
 	Size		spilled = 0;
 	Size		size = txn->size;
+	char		path[MAXPGPATH];
+	bool		encrypted = FileEncryptionEnabled();
+	StringInfoData ciphertext;
+	StringInfoData writebuf;
+	pgoff_t		write_offset = 0;
+	Size		hdr_size = encrypted ? FileEncryptionFileHeaderSize() : 0;
+	FileEncryptionFileState *write_fstate = NULL;
 
 	elog(DEBUG2, "spill %u changes in XID %u to disk",
 		 (uint32) txn->nentries_mem, txn->xid);
@@ -4011,6 +4045,16 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 		subtxn = dlist_container(ReorderBufferTXN, node, subtxn_i.cur);
 		ReorderBufferSerializeTXN(rb, subtxn);
+	}
+
+	/*
+	 * When encryption is enabled, allocate the per-record buffers once and
+	 * reuse them across writes to avoid palloc/pfree churn.
+	 */
+	if (encrypted)
+	{
+		initStringInfo(&ciphertext);
+		initStringInfo(&writebuf);
 	}
 
 	/* serialize changestream */
@@ -4027,10 +4071,13 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		if (fd == -1 ||
 			!XLByteInSeg(change->lsn, curOpenSegNo, wal_segment_size))
 		{
-			char		path[MAXPGPATH];
-
 			if (fd != -1)
 				CloseTransientFile(fd);
+			if (write_fstate != NULL)
+			{
+				FileEncryptionFileClose(write_fstate);
+				write_fstate = NULL;
+			}
 
 			XLByteToSeg(change->lsn, curOpenSegNo, wal_segment_size);
 
@@ -4041,17 +4088,90 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid,
 										curOpenSegNo);
 
-			/* open segment, create it if necessary */
+			/*
+			 * Open segment, create it if necessary.  Use O_RDWR so the
+			 * encryption header at the start of the file can be read back
+			 * if the file already exists from a previous spill of the same
+			 * xid in this segment.
+			 */
 			fd = OpenTransientFile(path,
-								   O_CREAT | O_WRONLY | O_APPEND | PG_BINARY);
+								   O_CREAT | (encrypted ? O_RDWR : O_WRONLY) |
+								   O_APPEND | PG_BINARY);
 
 			if (fd < 0)
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not open file \"%s\": %m", path)));
+
+			/*
+			 * Encryption modules may use the file offset of each record to
+			 * derive a per-record IV.  The file is opened O_APPEND, so writes
+			 * always go to the end; learn the current end once here, then
+			 * advance our local cursor with each write to avoid an extra
+			 * syscall per change.
+			 */
+			if (encrypted)
+			{
+				write_offset = lseek(fd, 0, SEEK_END);
+				if (write_offset < 0)
+					ereport(ERROR,
+							(errcode_for_file_access(),
+							 errmsg("could not determine end of spill file \"%s\": %m",
+									path)));
+
+				if (write_offset == 0)
+				{
+					/*
+					 * Brand-new file: ask the module for a header and write
+					 * it as the first bytes of the file.
+					 */
+					char	   *header = hdr_size > 0 ? palloc(hdr_size) : NULL;
+
+					write_fstate = FileEncryptionFileCreate(path, header);
+
+					if (hdr_size > 0)
+					{
+						if (write(fd, header, hdr_size) != hdr_size)
+						{
+							int			save_errno = errno;
+
+							CloseTransientFile(fd);
+							errno = save_errno ? save_errno : ENOSPC;
+							ereport(ERROR,
+									(errcode_for_file_access(),
+									 errmsg("could not write encryption header to file \"%s\": %m",
+											path)));
+						}
+						pfree(header);
+					}
+					write_offset = hdr_size;
+				}
+				else
+				{
+					/* Existing file: read header back and parse it. */
+					char	   *header = hdr_size > 0 ? palloc(hdr_size) : NULL;
+
+					if (hdr_size > 0)
+					{
+						if (pg_pread(fd, header, hdr_size, 0) != hdr_size)
+							ereport(ERROR,
+									(errcode_for_file_access(),
+									 errmsg("could not read encryption header from file \"%s\": %m",
+											path)));
+					}
+					write_fstate = FileEncryptionFileOpen(path, header);
+					if (header != NULL)
+						pfree(header);
+				}
+			}
 		}
 
-		ReorderBufferSerializeChange(rb, txn, fd, change);
+		ReorderBufferSerializeChange(rb, txn, path, fd,
+									 encrypted ? write_fstate : NULL,
+									 encrypted ? &write_offset : NULL,
+									 encrypted ? &ciphertext : NULL,
+									 encrypted ? &writebuf : NULL,
+									 change);
 		dlist_delete(&change->node);
 		ReorderBufferFreeChange(rb, change, false);
 
@@ -4081,14 +4201,32 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 	if (fd != -1)
 		CloseTransientFile(fd);
+	if (write_fstate != NULL)
+		FileEncryptionFileClose(write_fstate);
+
+	if (encrypted)
+	{
+		pfree(ciphertext.data);
+		pfree(writebuf.data);
+	}
 }
 
 /*
  * Serialize individual change to disk.
+ *
+ * If file encryption is enabled, the caller supplies pre-allocated
+ * "ciphertext" and "writebuf" buffers, and "*write_offset" tracks the
+ * position at which the next encrypted record will be written.  These
+ * arguments may be NULL when encryption is disabled.
  */
 static void
 ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
-							 int fd, ReorderBufferChange *change)
+							 const char *path, int fd,
+							 FileEncryptionFileState *fstate,
+							 pgoff_t *write_offset,
+							 StringInfo ciphertext,
+							 StringInfo writebuf,
+							 ReorderBufferChange *change)
 {
 	ReorderBufferDiskChange *ondisk;
 	Size		sz = sizeof(ReorderBufferDiskChange);
@@ -4269,22 +4407,62 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 	ondisk->size = sz;
 
-	errno = 0;
-	pgstat_report_wait_start(WAIT_EVENT_REORDER_BUFFER_WRITE);
-	if (write(fd, rb->outbuf, ondisk->size) != ondisk->size)
+	if (FileEncryptionEnabled())
 	{
-		int			save_errno = errno;
+		ReorderBufferEncryptedRecord encrypted_record;
 
-		CloseTransientFile(fd);
+		Assert(ciphertext != NULL && writebuf != NULL && write_offset != NULL);
 
-		/* if write didn't set errno, assume problem is no disk space */
-		errno = save_errno ? save_errno : ENOSPC;
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not write to data file for XID %u: %m",
-						txn->xid)));
+		encrypted_record.plaintext_size = ondisk->size;
+
+		resetStringInfo(ciphertext);
+		FileEncryptionEncrypt(fstate, path, *write_offset,
+							  rb->outbuf, ondisk->size, ciphertext);
+
+		encrypted_record.ciphertext_size = ciphertext->len;
+
+		resetStringInfo(writebuf);
+		appendBinaryStringInfo(writebuf, (char *) &encrypted_record,
+							   sizeof(encrypted_record));
+		appendBinaryStringInfo(writebuf, ciphertext->data, ciphertext->len);
+
+		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_REORDER_BUFFER_WRITE);
+		if (write(fd, writebuf->data, writebuf->len) != writebuf->len)
+		{
+			int			save_errno = errno;
+
+			CloseTransientFile(fd);
+
+			errno = save_errno ? save_errno : ENOSPC;
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not write to data file for XID %u: %m",
+							txn->xid)));
+		}
+		pgstat_report_wait_end();
+
+		*write_offset += writebuf->len;
 	}
-	pgstat_report_wait_end();
+	else
+	{
+		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_REORDER_BUFFER_WRITE);
+		if (write(fd, rb->outbuf, ondisk->size) != ondisk->size)
+		{
+			int			save_errno = errno;
+
+			CloseTransientFile(fd);
+
+			/* if write didn't set errno, assume problem is no disk space */
+			errno = save_errno ? save_errno : ENOSPC;
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not write to data file for XID %u: %m",
+							txn->xid)));
+		}
+		pgstat_report_wait_end();
+	}
 
 	/*
 	 * Keep the transaction's final_lsn up to date with each change we send to
@@ -4536,6 +4714,38 @@ ReorderBufferChangeSize(ReorderBufferChange *change)
 
 
 /*
+ * Read a contiguous chunk from a spill file into "dst".
+ *
+ * Updates file->curOffset on success.  Returns 0 if EOF is encountered at the
+ * very start of the read AND eof_ok is true (used for record headers to
+ * detect end-of-segment); otherwise raises an error on any short read or
+ * outright failure.
+ */
+static int
+ReorderBufferReadSpill(TXNEntryFile *file, void *dst, Size sz, bool eof_ok)
+{
+	int			readBytes;
+
+	readBytes = FileRead(file->vfd, dst, sz, file->curOffset,
+						 WAIT_EVENT_REORDER_BUFFER_READ);
+
+	if (readBytes == 0 && eof_ok)
+		return 0;
+	if (readBytes < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read from reorderbuffer spill file: %m")));
+	if ((Size) readBytes != sz)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
+						readBytes, (uint32) sz)));
+
+	file->curOffset += readBytes;
+	return readBytes;
+}
+
+/*
  * Restore a number of changes spilled to disk back into memory.
  */
 static Size
@@ -4546,9 +4756,19 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	XLogSegNo	last_segno;
 	dlist_mutable_iter cleanup_iter;
 	File	   *fd = &file->vfd;
+	char		path[MAXPGPATH];
+	bool		encrypted = FileEncryptionEnabled();
+	StringInfoData ciphertext;
+	StringInfoData plaintext;
 
 	Assert(XLogRecPtrIsValid(txn->first_lsn));
 	Assert(XLogRecPtrIsValid(txn->final_lsn));
+
+	if (encrypted)
+	{
+		initStringInfo(&ciphertext);
+		initStringInfo(&plaintext);
+	}
 
 	/* free current entries, so we have memory for more */
 	dlist_foreach_modify(cleanup_iter, &txn->changes)
@@ -4566,28 +4786,30 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 
 	while (restored < max_changes_in_memory && *segno <= last_segno)
 	{
-		int			readBytes;
 		ReorderBufferDiskChange *ondisk;
+		char	   *plaintext_data;
 
 		CHECK_FOR_INTERRUPTS();
 
+		/*
+		 * Path is needed both for opening a new segment and (when encryption
+		 * is enabled) for the encryption module's per-record IV derivation,
+		 * so derive it once per iteration.  *segno always matches the
+		 * currently-open or about-to-be-opened file.
+		 */
+		if (*fd == -1 && *segno == 0)
+			XLByteToSeg(txn->first_lsn, *segno, wal_segment_size);
+
+		Assert(*segno != 0 || dlist_is_empty(&txn->changes));
+
+		/*
+		 * No need to care about TLIs here, only used during a single run, so
+		 * each LSN only maps to a specific WAL record.
+		 */
+		ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid, *segno);
+
 		if (*fd == -1)
 		{
-			char		path[MAXPGPATH];
-
-			/* first time in */
-			if (*segno == 0)
-				XLByteToSeg(txn->first_lsn, *segno, wal_segment_size);
-
-			Assert(*segno != 0 || dlist_is_empty(&txn->changes));
-
-			/*
-			 * No need to care about TLIs here, only used during a single run,
-			 * so each LSN only maps to a specific WAL record.
-			 */
-			ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid,
-										*segno);
-
 			*fd = PathNameOpenFile(path, O_RDONLY | PG_BINARY);
 
 			/* No harm in resetting the offset even in case of failure */
@@ -4604,6 +4826,35 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 						(errcode_for_file_access(),
 						 errmsg("could not open file \"%s\": %m",
 								path)));
+
+			/*
+			 * Read the per-file encryption header (if any) and hand it to
+			 * the module so it can reconstruct per-file state.  Records
+			 * start immediately after the header.
+			 */
+			if (encrypted)
+			{
+				Size		hdr_size = FileEncryptionFileHeaderSize();
+				char	   *header = NULL;
+
+				if (hdr_size > 0)
+				{
+					int			n;
+
+					header = palloc(hdr_size);
+					n = FileRead(*fd, header, hdr_size, 0,
+								 WAIT_EVENT_REORDER_BUFFER_READ);
+					if (n != hdr_size)
+						ereport(ERROR,
+								(errcode_for_file_access(),
+								 errmsg("could not read file encryption header from \"%s\"",
+										path)));
+				}
+				file->fstate = FileEncryptionFileOpen(path, header);
+				if (header != NULL)
+					pfree(header);
+				file->curOffset = hdr_size;
+			}
 		}
 
 		/*
@@ -4611,63 +4862,98 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		 * about the total size. If we couldn't read a record, we're at the
 		 * end of this file.
 		 */
-		ReorderBufferSerializeReserve(rb, sizeof(ReorderBufferDiskChange));
-		readBytes = FileRead(file->vfd, rb->outbuf,
-							 sizeof(ReorderBufferDiskChange),
-							 file->curOffset, WAIT_EVENT_REORDER_BUFFER_READ);
-
-		/* eof */
-		if (readBytes == 0)
+		if (encrypted)
 		{
-			FileClose(*fd);
-			*fd = -1;
-			(*segno)++;
-			continue;
+			ReorderBufferEncryptedRecord encrypted_record;
+			pgoff_t		record_offset = file->curOffset;
+
+			if (ReorderBufferReadSpill(file, &encrypted_record,
+									   sizeof(encrypted_record), true) == 0)
+			{
+				FileClose(*fd);
+				*fd = -1;
+				FileEncryptionFileClose(file->fstate);
+				file->fstate = NULL;
+				(*segno)++;
+				continue;
+			}
+
+			if (encrypted_record.ciphertext_size > MaxAllocSize ||
+				encrypted_record.plaintext_size > MaxAllocSize)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("reorderbuffer spill record has an invalid size")));
+
+			resetStringInfo(&ciphertext);
+			enlargeStringInfo(&ciphertext, (int) encrypted_record.ciphertext_size);
+
+			ReorderBufferReadSpill(file, ciphertext.data,
+								   encrypted_record.ciphertext_size, false);
+			ciphertext.len = encrypted_record.ciphertext_size;
+			ciphertext.data[ciphertext.len] = '\0';
+
+			FileEncryptionDecrypt(file->fstate, path, record_offset,
+								  ciphertext.data, ciphertext.len,
+								  &plaintext);
+
+			if (plaintext.len != encrypted_record.plaintext_size)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("file encryption module returned %d bytes instead of %u bytes",
+								plaintext.len,
+								(uint32) encrypted_record.plaintext_size)));
+			if (plaintext.len < sizeof(ReorderBufferDiskChange))
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("file encryption module returned a truncated spill record")));
+
+			ondisk = (ReorderBufferDiskChange *) plaintext.data;
+			if (ondisk->size != plaintext.len)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("file encryption module returned an invalid spill record size")));
+
+			plaintext_data = plaintext.data;
 		}
-		else if (readBytes < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: %m")));
-		else if (readBytes != sizeof(ReorderBufferDiskChange))
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
-							readBytes,
-							(uint32) sizeof(ReorderBufferDiskChange))));
+		else
+		{
+			ReorderBufferSerializeReserve(rb, sizeof(ReorderBufferDiskChange));
+			if (ReorderBufferReadSpill(file, rb->outbuf,
+									   sizeof(ReorderBufferDiskChange),
+									   true) == 0)
+			{
+				FileClose(*fd);
+				*fd = -1;
+				(*segno)++;
+				continue;
+			}
 
-		file->curOffset += readBytes;
+			ondisk = (ReorderBufferDiskChange *) rb->outbuf;
 
-		ondisk = (ReorderBufferDiskChange *) rb->outbuf;
+			ReorderBufferSerializeReserve(rb,
+										  sizeof(ReorderBufferDiskChange) + ondisk->size);
+			ondisk = (ReorderBufferDiskChange *) rb->outbuf;
 
-		ReorderBufferSerializeReserve(rb,
-									  sizeof(ReorderBufferDiskChange) + ondisk->size);
-		ondisk = (ReorderBufferDiskChange *) rb->outbuf;
+			ReorderBufferReadSpill(file,
+								   rb->outbuf + sizeof(ReorderBufferDiskChange),
+								   ondisk->size - sizeof(ReorderBufferDiskChange),
+								   false);
 
-		readBytes = FileRead(file->vfd,
-							 rb->outbuf + sizeof(ReorderBufferDiskChange),
-							 ondisk->size - sizeof(ReorderBufferDiskChange),
-							 file->curOffset,
-							 WAIT_EVENT_REORDER_BUFFER_READ);
-
-		if (readBytes < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: %m")));
-		else if (readBytes != ondisk->size - sizeof(ReorderBufferDiskChange))
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not read from reorderbuffer spill file: read %d instead of %u bytes",
-							readBytes,
-							(uint32) (ondisk->size - sizeof(ReorderBufferDiskChange)))));
-
-		file->curOffset += readBytes;
+			plaintext_data = rb->outbuf;
+		}
 
 		/*
 		 * ok, read a full change from disk, now restore it into proper
 		 * in-memory format
 		 */
-		ReorderBufferRestoreChange(rb, txn, rb->outbuf);
+		ReorderBufferRestoreChange(rb, txn, plaintext_data);
 		restored++;
+	}
+
+	if (encrypted)
+	{
+		pfree(ciphertext.data);
+		pfree(plaintext.data);
 	}
 
 	return restored;

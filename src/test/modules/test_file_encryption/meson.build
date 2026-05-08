@@ -23,6 +23,9 @@ tests += {
   'tap': {
     'tests': [
       't/001_buffile.pl',
+      't/002_logical_decoding.pl',
+      't/003_corruption.pl',
+      't/004_apply_streaming.pl',
     ],
   },
 }

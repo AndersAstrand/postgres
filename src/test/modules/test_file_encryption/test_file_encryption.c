@@ -82,6 +82,24 @@ static const FileEncryptionCallbacks test_file_encryption_callbacks = {
 
 static bool log_summary = false;
 
+/*
+ * Optional tampering of decrypt output to exercise the validation paths in
+ * callers.  The default ("none") is a transparent round-trip.
+ */
+typedef enum
+{
+	TAMPER_NONE,
+	TAMPER_DECRYPT_SHORT,		/* return one byte less than expected */
+}			TamperMode;
+
+static int	tamper_mode = TAMPER_NONE;
+
+static const struct config_enum_entry tamper_mode_options[] = {
+	{"none", TAMPER_NONE, false},
+	{"decrypt_short", TAMPER_DECRYPT_SHORT, false},
+	{NULL, 0, false}
+};
+
 static uint32
 path_hash(const char *path)
 {
@@ -122,6 +140,16 @@ _PG_init(void)
 							 NULL,
 							 &log_summary,
 							 false,
+							 PGC_SIGHUP,
+							 0,
+							 NULL, NULL, NULL);
+
+	DefineCustomEnumVariable("test_file_encryption.tamper_mode",
+							 "Deliberately corrupt decrypt output to exercise validation.",
+							 NULL,
+							 &tamper_mode,
+							 TAMPER_NONE,
+							 tamper_mode_options,
 							 PGC_SIGHUP,
 							 0,
 							 NULL, NULL, NULL);
@@ -257,4 +285,18 @@ test_file_encryption_decrypt(const FileEncryptionModuleState *state,
 	xor_transform(priv, path, file_offset, data, data_len, dst);
 	private_state->decrypt_calls++;
 	private_state->decrypt_bytes += data_len;
+
+	switch (tamper_mode)
+	{
+		case TAMPER_NONE:
+			break;
+		case TAMPER_DECRYPT_SHORT:
+			/* drop one byte so plaintext_size mismatches */
+			if (dst->len > 0)
+			{
+				dst->len--;
+				dst->data[dst->len] = '\0';
+			}
+			break;
+	}
 }
