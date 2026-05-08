@@ -31,6 +31,7 @@ SUBDIRS = \
 		  test_dsm_registry \
 		  test_escape \
 		  test_extensions \
+		  test_file_encryption \
 		  test_ginpostinglist \
 		  test_int128 \
 		  test_integerset \

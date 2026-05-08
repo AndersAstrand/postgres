@@ -47,11 +47,14 @@
 
 #include "commands/tablespace.h"
 #include "executor/instrument.h"
+#include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/buffile.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
+#include "utils/memutils.h"
 #include "utils/resowner.h"
 #include "utils/wait_event.h"
 
@@ -64,6 +67,28 @@
 #define BUFFILE_SEG_SIZE		(MAX_PHYSICAL_FILESIZE / BLCKSZ)
 
 /*
+ * When file encryption is enabled, each BLCKSZ plaintext block becomes one
+ * fixed-size physical block on disk:
+ *
+ *	  [ uint32 plaintext_len ] [ uint32 ciphertext_len ] [ ciphertext... ]
+ *
+ * with the rest of the physical block left as unspecified slack.  Fixing
+ * the physical block size lets us seek to logical block N at a known
+ * physical offset without an offset map.
+ *
+ * BUFFILE_ENC_OVERHEAD bounds the room available for the 8-byte header plus
+ * any per-record overhead the encryption module wants to add (e.g. an IV
+ * and/or auth tag).  Modules that need more than (OVERHEAD - HEADER) bytes
+ * of overhead per BLCKSZ plaintext cannot be used for BufFile.
+ */
+#define BUFFILE_ENC_OVERHEAD			64
+#define BUFFILE_ENC_HEADER_SIZE			8
+#define BUFFILE_PHYSICAL_BLOCK_SIZE		(BLCKSZ + BUFFILE_ENC_OVERHEAD)
+#define BUFFILE_MAX_CIPHERTEXT			(BUFFILE_PHYSICAL_BLOCK_SIZE - BUFFILE_ENC_HEADER_SIZE)
+#define BUFFILE_ENC_PLAINTEXT_PER_FILE	\
+	(((MAX_PHYSICAL_FILESIZE) / BUFFILE_PHYSICAL_BLOCK_SIZE) * BLCKSZ)
+
+/*
  * This data structure represents a buffered file that consists of one or
  * more physical files (each accessed through a virtual file descriptor
  * managed by fd.c).
@@ -73,13 +98,39 @@ struct BufFile
 	int			numFiles;		/* number of physical files in set */
 	/* all files except the last have length exactly MAX_PHYSICAL_FILESIZE */
 	File	   *files;			/* palloc'd array with numFiles entries */
+	/*
+	 * Per-physical-file encryption state (parallel to "files"); NULL when
+	 * encryption is disabled, otherwise one entry per physical file.
+	 */
+	FileEncryptionFileState **fstates;
+	/* Bytes the encryption module reserves at the start of each file. */
+	Size		enc_header_size;
 
 	bool		isInterXact;	/* keep open over transactions? */
 	bool		dirty;			/* does buffer need to be written? */
 	bool		readOnly;		/* has the file been set to read only? */
+	bool		encrypted;		/* snapshot of FileEncryptionEnabled() at create */
+
+	/*
+	 * Encrypted-mode bookkeeping.  buffer_from_disk is true when the current
+	 * buffer reflects what's on disk for its block; it goes false after
+	 * BufFileSeek invalidates the buffer.  highest_dumped_offset is the
+	 * plaintext-space high-water mark across all physical files, used to
+	 * distinguish fresh appends from writes that must first load and preserve
+	 * existing block contents.
+	 */
+	bool		buffer_from_disk;
+	int64		highest_dumped_offset;
 
 	FileSet    *fileset;		/* space for fileset based segment files */
 	const char *name;			/* name of fileset based BufFile */
+
+	/*
+	 * Reusable encryption-side buffers; lazily initialized on first
+	 * encrypted I/O so non-encrypted BufFiles pay no allocator cost.
+	 */
+	StringInfoData enc_ciphertext;
+	StringInfoData enc_plaintext;
 
 	/*
 	 * resowner is the ResourceOwner to use for underlying temp files.  (We
@@ -111,6 +162,14 @@ static void BufFileLoadBuffer(BufFile *file);
 static void BufFileDumpBuffer(BufFile *file);
 static void BufFileFlush(BufFile *file);
 static File MakeNewFileSetSegment(BufFile *buffile, int segment);
+static int	BufFileReadEncryptedBlock(BufFile *file, int fileno,
+									  pgoff_t block_start, bool missing_ok);
+static pgoff_t BufFileWriteEncryptedBlock(BufFile *file, int fileno,
+										  pgoff_t block_start,
+										  const char *data,
+										  uint32 plaintext_len);
+static bool BufFileLoadEncryptedBlock(BufFile *file, bool for_write);
+static void BufFilePrepareEncryptedWrite(BufFile *file);
 
 /*
  * Create BufFile and perform the common initialization.
@@ -123,13 +182,468 @@ makeBufFileCommon(int nfiles)
 	file->numFiles = nfiles;
 	file->isInterXact = false;
 	file->dirty = false;
+	file->encrypted = FileEncryptionEnabled();
+	file->enc_header_size = file->encrypted ? FileEncryptionFileHeaderSize() : 0;
+	file->fstates = NULL;
+	file->buffer_from_disk = false;
+	file->highest_dumped_offset = 0;
 	file->resowner = CurrentResourceOwner;
 	file->curFile = 0;
 	file->curOffset = 0;
 	file->pos = 0;
 	file->nbytes = 0;
+	file->enc_ciphertext.data = NULL;
+	file->enc_plaintext.data = NULL;
 
 	return file;
+}
+
+/*
+ * Maximum logical (plaintext) bytes that fit in one physical component file.
+ *
+ * For the no-encryption path this is MAX_PHYSICAL_FILESIZE, exactly matching
+ * upstream so the on-disk layout is unchanged.  For encrypted BufFiles each
+ * physical file holds:
+ *
+ *	  enc_header_size bytes of module-owned per-file metadata, followed by
+ *	  N fixed-size BUFFILE_PHYSICAL_BLOCK_SIZE blocks
+ *
+ * so the available plaintext space shrinks by both the header and any
+ * partial trailing block.
+ */
+static inline pgoff_t
+BufFilePlaintextPerFile(const BufFile *file)
+{
+	if (!file->encrypted)
+		return (pgoff_t) MAX_PHYSICAL_FILESIZE;
+	return ((pgoff_t) (MAX_PHYSICAL_FILESIZE - file->enc_header_size) /
+			BUFFILE_PHYSICAL_BLOCK_SIZE) * BLCKSZ;
+}
+
+static inline int64
+BufFilePlaintextBlocksPerFile(const BufFile *file)
+{
+	if (!file->encrypted)
+		return (int64) BUFFILE_SEG_SIZE;
+	return ((int64) (MAX_PHYSICAL_FILESIZE - file->enc_header_size) /
+			BUFFILE_PHYSICAL_BLOCK_SIZE);
+}
+
+/*
+ * Translate a plaintext offset within a physical file to the physical
+ * offset where its encrypted representation begins.
+ */
+static inline pgoff_t
+BufFilePhysicalOffset(const BufFile *file, pgoff_t plaintext_offset)
+{
+	Assert((plaintext_offset % BLCKSZ) == 0);
+	return (pgoff_t) file->enc_header_size +
+		(plaintext_offset / BLCKSZ) * BUFFILE_PHYSICAL_BLOCK_SIZE;
+}
+
+/*
+ * Lazily set up the per-BufFile reusable encryption staging buffers.
+ */
+static inline void
+BufFileEnsureEncBuffers(BufFile *file)
+{
+	if (file->enc_ciphertext.data == NULL)
+	{
+		MemoryContext oldcontext;
+
+		oldcontext = MemoryContextSwitchTo(GetMemoryChunkContext(file));
+		initStringInfo(&file->enc_ciphertext);
+		initStringInfo(&file->enc_plaintext);
+		MemoryContextSwitchTo(oldcontext);
+	}
+}
+
+/*
+ * Allocate fstate and write/read the per-file encryption header for one
+ * physical file.  Pass create=true for a brand-new file (the module
+ * produces a header which we persist) and false for an existing file
+ * (we hand the on-disk header to the module).  Returns NULL when
+ * encryption is disabled.
+ */
+static FileEncryptionFileState *
+BufFileInitPhysFile(BufFile *file, File pfile, bool create)
+{
+	FileEncryptionFileState *fstate;
+	char	   *header = NULL;
+
+	if (!file->encrypted)
+		return NULL;
+
+	if (file->enc_header_size > 0)
+		header = palloc(file->enc_header_size);
+
+	if (create)
+	{
+		fstate = FileEncryptionFileCreate(FilePathName(pfile), header);
+		if (file->enc_header_size > 0)
+		{
+			int			n;
+
+			n = FileWrite(pfile, header, file->enc_header_size, 0,
+						  WAIT_EVENT_BUFFILE_WRITE);
+			if (n != (int) file->enc_header_size)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not write encryption header to file \"%s\": %m",
+								FilePathName(pfile))));
+		}
+	}
+	else
+	{
+		if (file->enc_header_size > 0)
+		{
+			int			n;
+
+			n = FileRead(pfile, header, file->enc_header_size, 0,
+						 WAIT_EVENT_BUFFILE_READ);
+			if (n != (int) file->enc_header_size)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not read encryption header from file \"%s\": %m",
+								FilePathName(pfile))));
+		}
+		fstate = FileEncryptionFileOpen(FilePathName(pfile), header);
+	}
+
+	if (header != NULL)
+		pfree(header);
+
+	return fstate;
+}
+
+/*
+ * Compute the logical (plaintext) size of one physical component file.
+ *
+ * For unencrypted BufFiles, this is just FileSize().  For encrypted ones,
+ * we count full physical blocks and probe the trailing partial block (if
+ * any) to read its plaintext length out of the on-disk header.
+ *
+ * This implicitly assumes that every block before the trailing one has
+ * plaintext_len == BLCKSZ.  BufFileDumpBuffer enforces that invariant when
+ * dumping (a partial block can only be the file's high-water mark).  If a
+ * future caller violated it — e.g. by flushing a partial block and then
+ * writing past it without re-loading — this function would understate the
+ * logical size, since it credits each non-trailing block at full BLCKSZ.
+ */
+static int64
+BufFileLogicalSize(BufFile *file, int fileno)
+{
+	int64		phys_size;
+	int64		full_blocks;
+	int64		remainder;
+	char		header[BUFFILE_ENC_HEADER_SIZE];
+	uint32		plaintext_len;
+	int			hdr_read;
+
+	phys_size = FileSize(file->files[fileno]);
+	if (phys_size < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not determine size of temporary file \"%s\" from BufFile \"%s\": %m",
+						FilePathName(file->files[fileno]),
+						file->name)));
+	if (!file->encrypted)
+		return phys_size;
+
+	/* Subtract the per-file encryption header. */
+	if (phys_size <= file->enc_header_size)
+		return 0;
+	phys_size -= file->enc_header_size;
+
+	full_blocks = phys_size / BUFFILE_PHYSICAL_BLOCK_SIZE;
+	remainder = phys_size - full_blocks * BUFFILE_PHYSICAL_BLOCK_SIZE;
+
+	if (remainder == 0)
+		return full_blocks * BLCKSZ;
+
+	hdr_read = FileRead(file->files[fileno], header, sizeof(header),
+						file->enc_header_size +
+						full_blocks * BUFFILE_PHYSICAL_BLOCK_SIZE,
+						WAIT_EVENT_BUFFILE_READ);
+	if (hdr_read != sizeof(header))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("could not read encrypted BufFile header for size of \"%s\"",
+						FilePathName(file->files[fileno]))));
+	memcpy(&plaintext_len, header, sizeof(plaintext_len));
+	if (plaintext_len > BLCKSZ)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("invalid encrypted BufFile header in \"%s\"",
+						FilePathName(file->files[fileno]))));
+
+	return full_blocks * BLCKSZ + plaintext_len;
+}
+
+static int
+BufFileReadEncryptedBlock(BufFile *file, int fileno, pgoff_t block_start,
+						  bool missing_ok)
+{
+	File		thisfile;
+	char		header[BUFFILE_ENC_HEADER_SIZE];
+	uint32		plaintext_len;
+	uint32		ciphertext_len;
+	pgoff_t		phys_offset;
+	int			hdr_read;
+	int			ct_read;
+	instr_time	io_start;
+	instr_time	io_time;
+
+	Assert(file->encrypted);
+	Assert((block_start % BLCKSZ) == 0);
+
+	BufFileEnsureEncBuffers(file);
+
+	thisfile = file->files[fileno];
+	phys_offset = BufFilePhysicalOffset(file, block_start);
+
+	if (track_io_timing)
+		INSTR_TIME_SET_CURRENT(io_start);
+	else
+		INSTR_TIME_SET_ZERO(io_start);
+
+	hdr_read = FileRead(thisfile, header, sizeof(header), phys_offset,
+						WAIT_EVENT_BUFFILE_READ);
+	if (hdr_read == 0 && missing_ok)
+	{
+		if (track_io_timing)
+		{
+			INSTR_TIME_SET_CURRENT(io_time);
+			INSTR_TIME_ACCUM_DIFF(pgBufferUsage.temp_blk_read_time,
+								  io_time, io_start);
+		}
+		return 0;
+	}
+	if (hdr_read < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read file \"%s\": %m",
+						FilePathName(thisfile))));
+	if (hdr_read != sizeof(header))
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("short read of encrypted BufFile header in \"%s\"",
+						FilePathName(thisfile))));
+
+	memcpy(&plaintext_len, header, sizeof(uint32));
+	memcpy(&ciphertext_len, header + sizeof(uint32), sizeof(uint32));
+
+	if (plaintext_len > BLCKSZ ||
+		ciphertext_len > BUFFILE_MAX_CIPHERTEXT)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("invalid encrypted BufFile block header in \"%s\"",
+						FilePathName(thisfile))));
+
+	resetStringInfo(&file->enc_ciphertext);
+	enlargeStringInfo(&file->enc_ciphertext, (int) ciphertext_len);
+
+	ct_read = FileRead(thisfile, file->enc_ciphertext.data,
+					   ciphertext_len, phys_offset + sizeof(header),
+					   WAIT_EVENT_BUFFILE_READ);
+	if (ct_read < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read file \"%s\": %m",
+						FilePathName(thisfile))));
+	if ((uint32) ct_read != ciphertext_len)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("short read of encrypted BufFile body in \"%s\"",
+						FilePathName(thisfile))));
+
+	file->enc_ciphertext.len = ct_read;
+	file->enc_ciphertext.data[ct_read] = '\0';
+
+	FileEncryptionDecrypt(file->fstates[fileno],
+						  FilePathName(thisfile), phys_offset,
+						  file->enc_ciphertext.data, ciphertext_len,
+						  &file->enc_plaintext);
+
+	if ((uint32) file->enc_plaintext.len != plaintext_len)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("decrypted plaintext size %d does not match header %u in \"%s\"",
+						file->enc_plaintext.len, plaintext_len,
+						FilePathName(thisfile))));
+
+	if (track_io_timing)
+	{
+		INSTR_TIME_SET_CURRENT(io_time);
+		INSTR_TIME_ACCUM_DIFF(pgBufferUsage.temp_blk_read_time,
+							  io_time, io_start);
+	}
+
+	if (plaintext_len > 0)
+		pgBufferUsage.temp_blks_read++;
+
+	return plaintext_len;
+}
+
+static pgoff_t
+BufFileWriteEncryptedBlock(BufFile *file, int fileno, pgoff_t block_start,
+						   const char *data, uint32 plaintext_len)
+{
+	File		thisfile;
+	pgoff_t		phys_offset;
+	uint32		ciphertext_len;
+	char		header[BUFFILE_ENC_HEADER_SIZE];
+	instr_time	io_start;
+	instr_time	io_time;
+
+	Assert(file->encrypted);
+	Assert((block_start % BLCKSZ) == 0);
+	Assert(plaintext_len <= BLCKSZ);
+
+	BufFileEnsureEncBuffers(file);
+
+	thisfile = file->files[fileno];
+	phys_offset = BufFilePhysicalOffset(file, block_start);
+
+	resetStringInfo(&file->enc_ciphertext);
+	FileEncryptionEncrypt(file->fstates[fileno],
+						  FilePathName(thisfile), phys_offset,
+						  data, plaintext_len,
+						  &file->enc_ciphertext);
+	ciphertext_len = (uint32) file->enc_ciphertext.len;
+
+	if (ciphertext_len > BUFFILE_MAX_CIPHERTEXT)
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("encryption module produced %u ciphertext bytes, exceeds BufFile limit %d",
+						ciphertext_len, BUFFILE_MAX_CIPHERTEXT)));
+
+	memcpy(header, &plaintext_len, sizeof(uint32));
+	memcpy(header + sizeof(uint32), &ciphertext_len, sizeof(uint32));
+
+	if (track_io_timing)
+		INSTR_TIME_SET_CURRENT(io_start);
+	else
+		INSTR_TIME_SET_ZERO(io_start);
+
+	if (FileWrite(thisfile, header, sizeof(header), phys_offset,
+				  WAIT_EVENT_BUFFILE_WRITE) != sizeof(header))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write to file \"%s\": %m",
+						FilePathName(thisfile))));
+	if ((uint32) FileWrite(thisfile, file->enc_ciphertext.data,
+						   ciphertext_len,
+						   phys_offset + sizeof(header),
+						   WAIT_EVENT_BUFFILE_WRITE) != ciphertext_len)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write to file \"%s\": %m",
+						FilePathName(thisfile))));
+
+	if (track_io_timing)
+	{
+		INSTR_TIME_SET_CURRENT(io_time);
+		INSTR_TIME_ACCUM_DIFF(pgBufferUsage.temp_blk_write_time,
+							  io_time, io_start);
+	}
+	pgBufferUsage.temp_blks_written++;
+
+	return phys_offset + sizeof(header) + ciphertext_len;
+}
+
+static bool
+BufFileLoadEncryptedBlock(BufFile *file, bool for_write)
+{
+	pgoff_t		logical;
+	pgoff_t		block_start;
+	int			intra;
+	pgoff_t		max_per_file;
+	int			plaintext_len;
+
+	Assert(file->encrypted);
+	Assert(!file->dirty);
+
+	logical = file->curOffset + file->pos;
+	max_per_file = BufFilePlaintextPerFile(file);
+
+	if (logical >= max_per_file && file->curFile + 1 < file->numFiles)
+	{
+		file->curFile++;
+		logical -= max_per_file;
+	}
+
+	block_start = (logical / BLCKSZ) * BLCKSZ;
+	intra = (int) (logical - block_start);
+
+	file->curOffset = block_start;
+	file->pos = intra;
+	file->nbytes = 0;
+	file->buffer_from_disk = false;
+
+	plaintext_len = BufFileReadEncryptedBlock(file, file->curFile,
+											  block_start, true);
+	if (plaintext_len > 0)
+	{
+		memcpy(file->buffer.data, file->enc_plaintext.data, plaintext_len);
+		file->nbytes = plaintext_len;
+		file->buffer_from_disk = true;
+	}
+
+	if (for_write)
+	{
+		if (intra > file->nbytes)
+		{
+			MemSet(file->buffer.data + file->nbytes, 0,
+				   intra - file->nbytes);
+			file->nbytes = intra;
+		}
+	}
+	else if (intra >= file->nbytes)
+	{
+		file->nbytes = 0;
+		file->pos = 0;
+	}
+
+	return file->nbytes > 0;
+}
+
+static void
+BufFilePrepareEncryptedWrite(BufFile *file)
+{
+	int			fileno;
+	pgoff_t		max_per_file;
+	pgoff_t		local_offset;
+	pgoff_t		block_start;
+	int			intra;
+	int64		block_total;
+
+	Assert(file->encrypted);
+	Assert(!file->dirty);
+
+	fileno = file->curFile;
+	max_per_file = BufFilePlaintextPerFile(file);
+	local_offset = file->curOffset + file->pos;
+
+	if (local_offset >= max_per_file && fileno + 1 < file->numFiles)
+	{
+		fileno++;
+		local_offset -= max_per_file;
+	}
+
+	block_start = (local_offset / BLCKSZ) * BLCKSZ;
+	intra = (int) (local_offset - block_start);
+	block_total = (int64) fileno * max_per_file + block_start;
+
+	if (file->curFile == fileno &&
+		file->curOffset == block_start &&
+		file->pos == intra &&
+		file->buffer_from_disk &&
+		intra <= file->nbytes)
+		return;
+
+	if (intra != 0 || block_total < file->highest_dumped_offset)
+		BufFileLoadEncryptedBlock(file, true);
 }
 
 /*
@@ -146,6 +660,12 @@ makeBufFile(File firstfile)
 	file->readOnly = false;
 	file->fileset = NULL;
 	file->name = NULL;
+
+	if (file->encrypted)
+	{
+		file->fstates = palloc_object(FileEncryptionFileState *);
+		file->fstates[0] = BufFileInitPhysFile(file, firstfile, true);
+	}
 
 	return file;
 }
@@ -175,6 +695,13 @@ extendBufFile(BufFile *file)
 	file->files = (File *) repalloc(file->files,
 									(file->numFiles + 1) * sizeof(File));
 	file->files[file->numFiles] = pfile;
+	if (file->encrypted)
+	{
+		file->fstates = (FileEncryptionFileState **)
+			repalloc(file->fstates,
+					 (file->numFiles + 1) * sizeof(FileEncryptionFileState *));
+		file->fstates[file->numFiles] = BufFileInitPhysFile(file, pfile, true);
+	}
 	file->numFiles++;
 }
 
@@ -276,6 +803,12 @@ BufFileCreateFileSet(FileSet *fileset, const char *name)
 	file->files[0] = MakeNewFileSetSegment(file, 0);
 	file->readOnly = false;
 
+	if (file->encrypted)
+	{
+		file->fstates = palloc_object(FileEncryptionFileState *);
+		file->fstates[0] = BufFileInitPhysFile(file, file->files[0], true);
+	}
+
 	return file;
 }
 
@@ -345,6 +878,20 @@ BufFileOpenFileSet(FileSet *fileset, const char *name, int mode,
 	file->readOnly = (mode == O_RDONLY);
 	file->fileset = fileset;
 	file->name = pstrdup(name);
+
+	if (file->encrypted)
+	{
+		file->fstates = palloc_array(FileEncryptionFileState *, nfiles);
+		for (int i = 0; i < nfiles; i++)
+			file->fstates[i] = BufFileInitPhysFile(file, file->files[i], false);
+	}
+
+	/*
+	 * Track the existing logical extent so later writes can distinguish
+	 * appending past EOF from overwriting an existing block that must be
+	 * loaded first.
+	 */
+	file->highest_dumped_offset = BufFileSize(file);
 
 	return file;
 }
@@ -419,8 +966,19 @@ BufFileClose(BufFile *file)
 	/* close and delete the underlying file(s) */
 	for (i = 0; i < file->numFiles; i++)
 		FileClose(file->files[i]);
+	if (file->fstates != NULL)
+	{
+		for (i = 0; i < file->numFiles; i++)
+			FileEncryptionFileClose(file->fstates[i]);
+		pfree(file->fstates);
+	}
 	/* release the buffer space */
 	pfree(file->files);
+	if (file->enc_ciphertext.data != NULL)
+	{
+		pfree(file->enc_ciphertext.data);
+		pfree(file->enc_plaintext.data);
+	}
 	pfree(file);
 }
 
@@ -428,8 +986,12 @@ BufFileClose(BufFile *file)
  * BufFileLoadBuffer
  *
  * Load some data into buffer, if possible, starting from curOffset.
- * At call, must have dirty = false, pos and nbytes = 0.
- * On exit, nbytes is number of bytes loaded.
+ * At call, must have dirty = false.  In the non-encrypted path callers
+ * additionally guarantee pos and nbytes = 0; the encrypted path tolerates
+ * any (curOffset + pos) combination and normalizes them to point at the
+ * start of the loaded block.
+ *
+ * On exit, nbytes is the number of bytes loaded into the buffer.
  */
 static void
 BufFileLoadBuffer(BufFile *file)
@@ -437,6 +999,12 @@ BufFileLoadBuffer(BufFile *file)
 	File		thisfile;
 	instr_time	io_start;
 	instr_time	io_time;
+
+	if (file->encrypted)
+	{
+		(void) BufFileLoadEncryptedBlock(file, false);
+		return;
+	}
 
 	/*
 	 * Advance to next component file if necessary and possible.
@@ -497,6 +1065,86 @@ BufFileDumpBuffer(BufFile *file)
 	int64		wpos = 0;
 	int64		bytestowrite;
 	File		thisfile;
+
+	if (file->encrypted)
+	{
+		pgoff_t		max_per_file = BufFilePlaintextPerFile(file);
+		uint32		plaintext_len;
+
+		/*
+		 * Encrypted BufFiles encrypt one BLCKSZ-aligned block at a time.
+		 * BufFileWrite() prepares dirty buffers by loading the current
+		 * block first when needed, so partial writes still preserve any
+		 * existing bytes before or after the write range.
+		 */
+		Assert((file->curOffset % BLCKSZ) == 0);
+
+		/* Roll over to next physical file if this block doesn't fit. */
+		if (file->curOffset >= max_per_file)
+		{
+			while (file->curFile + 1 >= file->numFiles)
+				extendBufFile(file);
+			file->curFile++;
+			file->curOffset = 0;
+		}
+
+		plaintext_len = (uint32) file->nbytes;
+
+		/*
+		 * Partial blocks are only allowed at the file's high-water mark.
+		 * BufFileLogicalSize and the read path assume every block before
+		 * the trailing one is full BLCKSZ; flushing a partial block in the
+		 * middle would silently misreport the logical size and turn reads
+		 * into early EOFs at the partial block's tail.  No current caller
+		 * (logtape, hashjoin, gistbuildbuffers, tuplestore, apply
+		 * streaming) does this, but assert it so a future caller can't
+		 * regress without noticing.
+		 */
+		Assert(plaintext_len == BLCKSZ ||
+			   (int64) file->curFile * max_per_file +
+			   file->curOffset + plaintext_len >= file->highest_dumped_offset);
+
+		(void) BufFileWriteEncryptedBlock(file, file->curFile,
+										  file->curOffset,
+										  file->buffer.data,
+										  plaintext_len);
+
+		file->dirty = false;
+
+		/*
+		 * Track the new highest plaintext-end so later writes can distinguish
+		 * fresh extension from read-modify-write.
+		 */
+		{
+			int64		dump_end_total =
+				(int64) file->curFile * max_per_file +
+				file->curOffset + plaintext_len;
+
+			if (dump_end_total > file->highest_dumped_offset)
+				file->highest_dumped_offset = dump_end_total;
+		}
+
+		/*
+		 * Mirror the upstream post-dump bookkeeping: advance curOffset by
+		 * the plaintext we wrote, then back up to the user's logical
+		 * position (curOffset + pos).  LoadBuffer handles re-aligning the
+		 * resulting curOffset to a block boundary, so we don't enforce
+		 * alignment here.
+		 */
+		file->curOffset += plaintext_len;
+		file->curOffset -= (file->nbytes - file->pos);
+		if (file->curOffset < 0)
+		{
+			file->curFile--;
+			Assert(file->curFile >= 0);
+			file->curOffset += BufFilePlaintextPerFile(file);
+		}
+		file->pos = 0;
+		file->nbytes = 0;
+		/* Buffer is empty now; further writes need their own load or extend. */
+		file->buffer_from_disk = false;
+		return;
+	}
 
 	/*
 	 * Unlike BufFileLoadBuffer, we must dump the whole buffer even if it
@@ -693,8 +1341,12 @@ BufFileWrite(BufFile *file, const void *ptr, size_t size)
 				file->curOffset += file->pos;
 				file->pos = 0;
 				file->nbytes = 0;
+				file->buffer_from_disk = false;
 			}
 		}
+
+		if (file->encrypted && !file->dirty)
+			BufFilePrepareEncryptedWrite(file);
 
 		nthistime = BLCKSZ - file->pos;
 		if (nthistime > size)
@@ -742,6 +1394,7 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 {
 	int			newFile;
 	pgoff_t		newOffset;
+	pgoff_t		max_per_file = BufFilePlaintextPerFile(file);
 
 	switch (whence)
 	{
@@ -764,16 +1417,10 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 
 			/*
 			 * The file size of the last file gives us the end offset of that
-			 * file.
+			 * file (in plaintext bytes for encrypted BufFiles).
 			 */
 			newFile = file->numFiles - 1;
-			newOffset = FileSize(file->files[file->numFiles - 1]);
-			if (newOffset < 0)
-				ereport(ERROR,
-						(errcode_for_file_access(),
-						 errmsg("could not determine size of temporary file \"%s\" from BufFile \"%s\": %m",
-								FilePathName(file->files[file->numFiles - 1]),
-								file->name)));
+			newOffset = BufFileLogicalSize(file, file->numFiles - 1);
 			break;
 		default:
 			elog(ERROR, "invalid whence: %d", whence);
@@ -783,7 +1430,7 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 	{
 		if (--newFile < 0)
 			return EOF;
-		newOffset += MAX_PHYSICAL_FILESIZE;
+		newOffset += max_per_file;
 	}
 	if (newFile == file->curFile &&
 		newOffset >= file->curOffset &&
@@ -811,13 +1458,13 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 	if (newFile == file->numFiles && newOffset == 0)
 	{
 		newFile--;
-		newOffset = MAX_PHYSICAL_FILESIZE;
+		newOffset = max_per_file;
 	}
-	while (newOffset > MAX_PHYSICAL_FILESIZE)
+	while (newOffset > max_per_file)
 	{
 		if (++newFile >= file->numFiles)
 			return EOF;
-		newOffset -= MAX_PHYSICAL_FILESIZE;
+		newOffset -= max_per_file;
 	}
 	if (newFile >= file->numFiles)
 		return EOF;
@@ -826,6 +1473,7 @@ BufFileSeek(BufFile *file, int fileno, pgoff_t offset, int whence)
 	file->curOffset = newOffset;
 	file->pos = 0;
 	file->nbytes = 0;
+	file->buffer_from_disk = false;
 	return 0;
 }
 
@@ -850,9 +1498,11 @@ BufFileTell(BufFile *file, int *fileno, pgoff_t *offset)
 int
 BufFileSeekBlock(BufFile *file, int64 blknum)
 {
+	int64		blocks_per_file = BufFilePlaintextBlocksPerFile(file);
+
 	return BufFileSeek(file,
-					   (int) (blknum / BUFFILE_SEG_SIZE),
-					   (pgoff_t) (blknum % BUFFILE_SEG_SIZE) * BLCKSZ,
+					   (int) (blknum / blocks_per_file),
+					   (pgoff_t) (blknum % blocks_per_file) * BLCKSZ,
 					   SEEK_SET);
 }
 
@@ -865,18 +1515,9 @@ BufFileSeekBlock(BufFile *file, int64 blknum)
 int64
 BufFileSize(BufFile *file)
 {
-	int64		lastFileSize;
+	int64		lastFileSize = BufFileLogicalSize(file, file->numFiles - 1);
 
-	/* Get the size of the last physical file. */
-	lastFileSize = FileSize(file->files[file->numFiles - 1]);
-	if (lastFileSize < 0)
-		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not determine size of temporary file \"%s\" from BufFile \"%s\": %m",
-						FilePathName(file->files[file->numFiles - 1]),
-						file->name)));
-
-	return ((file->numFiles - 1) * (int64) MAX_PHYSICAL_FILESIZE) +
+	return ((file->numFiles - 1) * (int64) BufFilePlaintextPerFile(file)) +
 		lastFileSize;
 }
 
@@ -901,12 +1542,14 @@ BufFileSize(BufFile *file)
 int64
 BufFileAppend(BufFile *target, BufFile *source)
 {
-	int64		startBlock = (int64) target->numFiles * BUFFILE_SEG_SIZE;
+	int64		startBlock = (int64) target->numFiles *
+		BufFilePlaintextBlocksPerFile(target);
 	int			newNumFiles = target->numFiles + source->numFiles;
 	int			i;
 
 	Assert(source->readOnly);
 	Assert(!source->dirty);
+	Assert(target->encrypted == source->encrypted);
 
 	if (target->resowner != source->resowner)
 		elog(ERROR, "could not append BufFile with non-matching resource owner");
@@ -915,7 +1558,21 @@ BufFileAppend(BufFile *target, BufFile *source)
 		repalloc(target->files, sizeof(File) * newNumFiles);
 	for (i = target->numFiles; i < newNumFiles; i++)
 		target->files[i] = source->files[i - target->numFiles];
+
+	if (target->encrypted)
+	{
+		target->fstates = (FileEncryptionFileState **)
+			repalloc(target->fstates,
+					 sizeof(FileEncryptionFileState *) * newNumFiles);
+		for (i = target->numFiles; i < newNumFiles; i++)
+		{
+			target->fstates[i] = source->fstates[i - target->numFiles];
+			source->fstates[i - target->numFiles] = NULL;
+		}
+	}
 	target->numFiles = newNumFiles;
+	if (target->encrypted)
+		target->highest_dumped_offset = BufFileSize(target);
 
 	return startBlock;
 }
@@ -923,6 +1580,10 @@ BufFileAppend(BufFile *target, BufFile *source)
 /*
  * Truncate a BufFile created by BufFileCreateFileSet up to the given fileno
  * and the offset.
+ *
+ * In encrypted mode, offset is a logical plaintext offset.  When the
+ * truncation point lands inside an encrypted block, rewrite that block with
+ * a shorter plaintext payload before truncating the physical file.
  */
 void
 BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset)
@@ -930,8 +1591,36 @@ BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset)
 	int			numFiles = file->numFiles;
 	int			newFile = fileno;
 	pgoff_t		newOffset = file->curOffset;
+	pgoff_t		max_per_file = BufFilePlaintextPerFile(file);
 	char		segment_name[MAXPGPATH];
 	int			i;
+	pgoff_t		physical_offset = offset;
+
+	if (file->encrypted)
+	{
+		pgoff_t		block_start = (offset / BLCKSZ) * BLCKSZ;
+		int			intra = (int) (offset - block_start);
+
+		if (intra == 0)
+			physical_offset = BufFilePhysicalOffset(file, offset);
+		else
+		{
+			int			plaintext_len;
+
+			plaintext_len = BufFileReadEncryptedBlock(file, fileno,
+													  block_start, false);
+			if (plaintext_len < intra)
+				ereport(ERROR,
+						(errcode(ERRCODE_DATA_CORRUPTED),
+						 errmsg("encrypted BufFile block in \"%s\" is shorter than requested truncation offset",
+								FilePathName(file->files[fileno]))));
+
+			physical_offset = BufFileWriteEncryptedBlock(file, fileno,
+														 block_start,
+														 file->enc_plaintext.data,
+														 (uint32) intra);
+		}
+	}
 
 	/*
 	 * Loop over all the files up to the given fileno and remove the files
@@ -945,13 +1634,18 @@ BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset)
 		{
 			FileSetSegmentName(segment_name, file->name, i);
 			FileClose(file->files[i]);
+			if (file->encrypted && file->fstates[i] != NULL)
+			{
+				FileEncryptionFileClose(file->fstates[i]);
+				file->fstates[i] = NULL;
+			}
 			if (!FileSetDelete(file->fileset, segment_name, true))
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not delete fileset \"%s\": %m",
 								segment_name)));
 			numFiles--;
-			newOffset = MAX_PHYSICAL_FILESIZE;
+			newOffset = max_per_file;
 
 			/*
 			 * This is required to indicate that we have deleted the given
@@ -962,7 +1656,7 @@ BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset)
 		}
 		else
 		{
-			if (FileTruncate(file->files[i], offset,
+			if (FileTruncate(file->files[i], physical_offset,
 							 WAIT_EVENT_BUFFILE_TRUNCATE) < 0)
 				ereport(ERROR,
 						(errcode_for_file_access(),
@@ -1013,4 +1707,16 @@ BufFileTruncateFileSet(BufFile *file, int fileno, pgoff_t offset)
 		file->nbytes = 0;
 	}
 	/* Nothing to do, if the truncate point is beyond current file. */
+
+	/*
+	 * Refresh the highest-dumped tracker so a subsequent write still
+	 * recognizes a fresh extension past the truncation point.
+	 */
+	{
+		int64		truncated_eof = (int64) newFile *
+			BufFilePlaintextPerFile(file) + newOffset;
+
+		if (truncated_eof < file->highest_dumped_offset)
+			file->highest_dumped_offset = truncated_eof;
+	}
 }
