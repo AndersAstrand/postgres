@@ -66,6 +66,7 @@
 #include "storage/bufmgr.h"
 #include "storage/ipc.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
 #include "storage/procsignal.h"
@@ -4185,6 +4186,7 @@ PostgresSingleUserMain(int argc, char *argv[],
 	 * process any libraries that should be preloaded at postmaster start
 	 */
 	process_shared_preload_libraries();
+	process_file_encryption_library();
 
 	/* Initialize MaxBackends */
 	InitializeMaxBackends();
