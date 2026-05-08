@@ -25,6 +25,8 @@ tests += {
       't/001_buffile.pl',
       't/002_buffile_corruption.pl',
       't/003_apply_streaming.pl',
+      't/004_logical_decoding.pl',
+      't/005_logical_decoding_corruption.pl',
     ],
   },
 }
