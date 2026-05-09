@@ -27,6 +27,7 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 
+#include "access/xlog.h"
 #include "fmgr.h"
 #include "lib/stringinfo.h"
 #include "port.h"
@@ -39,6 +40,22 @@ PG_MODULE_MAGIC;
 #define BFE_KEY_LEN			32
 #define BFE_IV_LEN			12
 #define BFE_TAG_LEN			16
+
+/*
+ * Per-page trailer layout (when basic_file_encryption is configured for
+ * page-level encryption via --file-encryption-page-reserved-size=32):
+ *
+ *	  bytes [0..11]:   IV     (12 bytes, fresh per encrypt)
+ *	  bytes [12..27]:  tag    (16 bytes, GCM auth tag)
+ *	  bytes [28..31]:  unused (zero-padded; reserved for future use)
+ *
+ * Total: 32 bytes, aligned to MAXIMUM_ALIGNOF.  The cluster's
+ * --file-encryption-page-reserved-size must match BFE_PAGE_TRAILER_SIZE.
+ */
+#define BFE_PAGE_TRAILER_SIZE	32
+#define BFE_PAGE_BODY_SIZE		(BLCKSZ - BFE_PAGE_TRAILER_SIZE)
+#define BFE_PAGE_IV_OFFSET		0
+#define BFE_PAGE_TAG_OFFSET		BFE_IV_LEN
 
 /*
  * Per-file header: a 4-byte magic plus a random salt that is authenticated
@@ -86,8 +103,23 @@ static void bfe_decrypt(const FileEncryptionModuleState *state,
 						const char *path, uint64 file_offset,
 						const char *data, Size data_len,
 						StringInfo dst);
+static void bfe_encrypt_page(const FileEncryptionModuleState *state,
+							 const RelFileLocator *locator,
+							 ForkNumber fork, BlockNumber blocknum,
+							 const char *src, char *dst);
+static void bfe_decrypt_page(const FileEncryptionModuleState *state,
+							 const RelFileLocator *locator,
+							 ForkNumber fork, BlockNumber blocknum,
+							 const char *src, char *dst);
 
-static const FileEncryptionCallbacks basic_file_encryption_callbacks = {
+/*
+ * Module callbacks.  Mutable so _PG_file_encryption_module_init can switch
+ * page-level encryption on or off based on the cluster's
+ * GetPageReservedSize() — that way the same module supports clusters that
+ * are encrypting only spill/BufFile (reserved = 0) and clusters that also
+ * encrypt relation pages (reserved = BFE_PAGE_TRAILER_SIZE).
+ */
+static FileEncryptionCallbacks basic_file_encryption_callbacks = {
 	PG_FILE_ENCRYPTION_MAGIC,
 	.file_header_size = BFE_HEADER_SIZE,
 
@@ -149,12 +181,32 @@ _PG_init(void)
 const FileEncryptionCallbacks *
 _PG_file_encryption_module_init(void)
 {
+	uint32		cluster_reserved = GetPageReservedSize();
+
+	/*
+	 * Adapt to the cluster's reservation: register the page callbacks only
+	 * when initdb reserved exactly BFE_PAGE_TRAILER_SIZE bytes.  When the
+	 * cluster reserved zero bytes, run as a record-stream-only module
+	 * (BufFile and reorderbuffer spill); when it reserved a different size,
+	 * leave the page callbacks unset so load_and_validate_module raises a
+	 * clear "requires N bytes, cluster has M" error.
+	 */
+	if (cluster_reserved == BFE_PAGE_TRAILER_SIZE)
+	{
+		basic_file_encryption_callbacks.page_reserved_size = BFE_PAGE_TRAILER_SIZE;
+		basic_file_encryption_callbacks.encrypt_page_cb = bfe_encrypt_page;
+		basic_file_encryption_callbacks.decrypt_page_cb = bfe_decrypt_page;
+	}
+
 	return &basic_file_encryption_callbacks;
 }
 
 /*
- * Decode the configured hex key into the per-process state.  Errors out if
- * the key is empty or invalid; the module is unusable without one.
+ * Decode the configured hex key into the per-process state.  When the key
+ * is unset, leave private_data NULL and defer the error to the first
+ * encrypt/decrypt call — running ereport(ERROR) here would prevent the
+ * postmaster from starting at all, which makes mis-configurations harder
+ * to recover from than failing only when encryption is actually used.
  */
 static void
 bfe_startup(FileEncryptionModuleState *state)
@@ -164,9 +216,10 @@ bfe_startup(FileEncryptionModuleState *state)
 
 	if (basic_file_encryption_key == NULL ||
 		basic_file_encryption_key[0] == '\0')
-		ereport(ERROR,
-				(errcode(ERRCODE_CONFIG_FILE_ERROR),
-				 errmsg("basic_file_encryption.key is not set")));
+	{
+		state->private_data = NULL;
+		return;
+	}
 
 	priv = palloc0_object(BasicFileEncryptionState);
 
@@ -178,6 +231,23 @@ bfe_startup(FileEncryptionModuleState *state)
 	(void) decoded;
 
 	state->private_data = priv;
+}
+
+/*
+ * Resolve the per-process key, raising the deferred "key not set" error if
+ * bfe_startup didn't manage to decode one.  Called at the top of every
+ * encrypt/decrypt entry point.
+ */
+static inline BasicFileEncryptionState *
+bfe_require_key(const FileEncryptionModuleState *state)
+{
+	BasicFileEncryptionState *priv = state->private_data;
+
+	if (priv == NULL)
+		ereport(ERROR,
+				(errcode(ERRCODE_CONFIG_FILE_ERROR),
+				 errmsg("basic_file_encryption.key is not set")));
+	return priv;
 }
 
 static void
@@ -300,7 +370,7 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 			const char *data, Size data_len,
 			StringInfo dst)
 {
-	BasicFileEncryptionState *priv = state->private_data;
+	BasicFileEncryptionState *priv = bfe_require_key(state);
 	BasicFileEncryptionFilePrivate *file_priv = fstate->private_data;
 	EVP_CIPHER_CTX *ctx;
 	unsigned char iv[BFE_IV_LEN];
@@ -372,7 +442,7 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 			const char *data, Size data_len,
 			StringInfo dst)
 {
-	BasicFileEncryptionState *priv = state->private_data;
+	BasicFileEncryptionState *priv = bfe_require_key(state);
 	BasicFileEncryptionFilePrivate *file_priv = fstate->private_data;
 	EVP_CIPHER_CTX *ctx;
 	const unsigned char *iv;
@@ -441,4 +511,178 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 	PG_END_TRY();
 
 	dst->data[dst->len] = '\0';
+}
+
+/*
+ * Build the AAD blob bound to a relation page: relNumber || fork ||
+ * blocknum, big-endian for portability.
+ *
+ * Notably, dbOid and spcOid are *not* included.  CREATE DATABASE with the
+ * default FILE_COPY strategy clones a source database's catalog files
+ * byte-for-byte into the new database's directory; binding dbOid (or
+ * spcOid, which can change with ALTER DATABASE ... SET TABLESPACE) into
+ * the AAD would make those pages undecryptable in the new location.  We
+ * accept the weaker binding — pages remain swappable between databases
+ * if their relNumber happens to match — to keep file-level operations
+ * working transparently.
+ */
+static int
+bfe_build_page_aad(const RelFileLocator *locator, ForkNumber fork,
+				   BlockNumber blocknum, unsigned char *aad)
+{
+	int			off = 0;
+
+	for (int i = 0; i < 8; i++)
+		aad[off++] = (unsigned char) (locator->relNumber >> ((7 - i) * 8));
+	for (int i = 0; i < 4; i++)
+		aad[off++] = (unsigned char) (((uint32) fork) >> ((3 - i) * 8));
+	for (int i = 0; i < 4; i++)
+		aad[off++] = (unsigned char) (blocknum >> ((3 - i) * 8));
+
+	return off;
+}
+
+/*
+ * Encrypt a relation page with AES-256-GCM.  Lays out the trailer at
+ * the tail of dst as documented at the top of this file.
+ */
+static void
+bfe_encrypt_page(const FileEncryptionModuleState *state,
+				 const RelFileLocator *locator,
+				 ForkNumber fork, BlockNumber blocknum,
+				 const char *src, char *dst)
+{
+	BasicFileEncryptionState *priv = bfe_require_key(state);
+	EVP_CIPHER_CTX *ctx;
+	unsigned char iv[BFE_IV_LEN];
+	unsigned char tag[BFE_TAG_LEN];
+	unsigned char aad[24];
+	int			aad_len;
+	int			outlen;
+	int			finallen;
+
+	if (!pg_strong_random(iv, sizeof(iv)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("basic_file_encryption: could not generate page IV")));
+
+	aad_len = bfe_build_page_aad(locator, fork, blocknum, aad);
+	Assert(aad_len <= (int) sizeof(aad));
+
+	ctx = EVP_CIPHER_CTX_new();
+	if (ctx == NULL)
+		bfe_openssl_error("EVP_CIPHER_CTX_new");
+
+	PG_TRY();
+	{
+		if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1)
+			bfe_openssl_error("EVP_EncryptInit_ex");
+		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, BFE_IV_LEN, NULL) != 1)
+			bfe_openssl_error("EVP_CTRL_GCM_SET_IVLEN");
+		if (EVP_EncryptInit_ex(ctx, NULL, NULL, priv->key, iv) != 1)
+			bfe_openssl_error("EVP_EncryptInit_ex (key/iv)");
+
+		if (EVP_EncryptUpdate(ctx, NULL, &outlen, aad, aad_len) != 1)
+			bfe_openssl_error("EVP_EncryptUpdate (AAD)");
+
+		if (EVP_EncryptUpdate(ctx,
+							  (unsigned char *) dst, &outlen,
+							  (const unsigned char *) src,
+							  BFE_PAGE_BODY_SIZE) != 1)
+			bfe_openssl_error("EVP_EncryptUpdate");
+		Assert(outlen == BFE_PAGE_BODY_SIZE);
+
+		if (EVP_EncryptFinal_ex(ctx,
+								(unsigned char *) dst + outlen,
+								&finallen) != 1)
+			bfe_openssl_error("EVP_EncryptFinal_ex");
+		Assert(finallen == 0);
+
+		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, BFE_TAG_LEN, tag) != 1)
+			bfe_openssl_error("EVP_CTRL_GCM_GET_TAG");
+	}
+	PG_FINALLY();
+	{
+		EVP_CIPHER_CTX_free(ctx);
+	}
+	PG_END_TRY();
+
+	memcpy(dst + BFE_PAGE_BODY_SIZE + BFE_PAGE_IV_OFFSET, iv, BFE_IV_LEN);
+	memcpy(dst + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET, tag, BFE_TAG_LEN);
+	/* Zero any reserved-but-unused bytes in the trailer. */
+	memset(dst + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET + BFE_TAG_LEN, 0,
+		   BFE_PAGE_TRAILER_SIZE - BFE_TAG_LEN - BFE_IV_LEN);
+}
+
+/*
+ * Decrypt a relation page.  Verifies the auth tag (rejects tampering
+ * and wrong-key reads), and zeros the trailer in dst per the
+ * file_encryption.h contract.
+ */
+static void
+bfe_decrypt_page(const FileEncryptionModuleState *state,
+				 const RelFileLocator *locator,
+				 ForkNumber fork, BlockNumber blocknum,
+				 const char *src, char *dst)
+{
+	BasicFileEncryptionState *priv = bfe_require_key(state);
+	EVP_CIPHER_CTX *ctx;
+	const unsigned char *iv;
+	unsigned char tag[BFE_TAG_LEN];
+	unsigned char aad[24];
+	int			aad_len;
+	int			outlen;
+	int			finallen;
+
+	iv = (const unsigned char *) src + BFE_PAGE_BODY_SIZE + BFE_PAGE_IV_OFFSET;
+	memcpy(tag, src + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET, BFE_TAG_LEN);
+
+	aad_len = bfe_build_page_aad(locator, fork, blocknum, aad);
+	Assert(aad_len <= (int) sizeof(aad));
+
+	ctx = EVP_CIPHER_CTX_new();
+	if (ctx == NULL)
+		bfe_openssl_error("EVP_CIPHER_CTX_new");
+
+	PG_TRY();
+	{
+		if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1)
+			bfe_openssl_error("EVP_DecryptInit_ex");
+		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, BFE_IV_LEN, NULL) != 1)
+			bfe_openssl_error("EVP_CTRL_GCM_SET_IVLEN");
+		if (EVP_DecryptInit_ex(ctx, NULL, NULL, priv->key, iv) != 1)
+			bfe_openssl_error("EVP_DecryptInit_ex (key/iv)");
+
+		if (EVP_DecryptUpdate(ctx, NULL, &outlen, aad, aad_len) != 1)
+			bfe_openssl_error("EVP_DecryptUpdate (AAD)");
+
+		if (EVP_DecryptUpdate(ctx,
+							  (unsigned char *) dst, &outlen,
+							  (const unsigned char *) src,
+							  BFE_PAGE_BODY_SIZE) != 1)
+			bfe_openssl_error("EVP_DecryptUpdate");
+		Assert(outlen == BFE_PAGE_BODY_SIZE);
+
+		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG,
+								BFE_TAG_LEN, tag) != 1)
+			bfe_openssl_error("EVP_CTRL_GCM_SET_TAG");
+
+		if (EVP_DecryptFinal_ex(ctx,
+								(unsigned char *) dst + outlen,
+								&finallen) != 1)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("basic_file_encryption: page authentication tag verification failed"),
+					 errdetail("Page (rel %u, fork %d, block %u) was tampered with, or the key has changed.",
+							   locator->relNumber, fork, blocknum)));
+		Assert(finallen == 0);
+	}
+	PG_FINALLY();
+	{
+		EVP_CIPHER_CTX_free(ctx);
+	}
+	PG_END_TRY();
+
+	/* Zero the trailer in plaintext, per the file_encryption.h contract. */
+	memset(dst + BFE_PAGE_BODY_SIZE, 0, BFE_PAGE_TRAILER_SIZE);
 }

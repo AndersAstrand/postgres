@@ -18,6 +18,7 @@
 #include "miscadmin.h"
 #include "storage/file_encryption.h"
 #include "storage/ipc.h"
+#include "storage/md.h"
 #include "utils/memutils.h"
 
 /* GUC */
@@ -31,9 +32,15 @@ char	   *file_encryption_library = NULL;
  */
 static const FileEncryptionCallbacks *LoadedFileEncryptionCallbacks = NULL;
 
-/* Per-process state, initialized lazily on first encrypt/decrypt. */
+/*
+ * Per-process state.  Initialized eagerly from process_file_encryption_library
+ * (which all top-level startup paths call) and re-initialized after fork()
+ * when MyProcPid differs from the value stored at allocation time — fork()
+ * inherits the pointer but on_exit_reset() (called early in every backend)
+ * clears the before_shmem_exit registration, so we have to register again.
+ */
 static FileEncryptionModuleState *file_encryption_module_state = NULL;
-static bool file_encryption_per_process_initialized = false;
+static int	file_encryption_init_pid = 0;
 
 static void load_and_validate_module(void);
 static void ensure_per_process_init(void);
@@ -204,12 +211,43 @@ FileEncryptionDecrypt(FileEncryptionFileState *fstate,
 }
 
 /*
+ * Eager wrapper for ensure_per_process_init().  Called from mdinit() in
+ * each backend so that the per-process module state and shutdown
+ * registration are in place before AIO completion callbacks (which run
+ * inside critical sections and can't allocate) fire.
+ *
+ * No-op when the module hasn't been loaded yet — that's the bootstrap
+ * case, where BaseInit() runs before process_file_encryption_library(),
+ * and we'd otherwise try to dlopen the module and run its _PG_init too
+ * early (PGC_POSTMASTER GUCs can't be defined after startup is complete).
+ * The bootstrap process_file_encryption_library() call will reach back
+ * via md_init_enc_workspace() to do the eager init once the module IS
+ * loaded.
+ */
+void
+FileEncryptionEnsureInit(void)
+{
+	if (!FileEncryptionEnabled())
+		return;
+	if (LoadedFileEncryptionCallbacks == NULL)
+		return;
+	ensure_per_process_init();
+}
+
+/*
  * Returns true when a configured module also registered page callbacks.
+ *
+ * mdinit() (called from smgrinit() in BaseInit()) consults this before
+ * process_file_encryption_library() has run, so we must tolerate a NULL
+ * LoadedFileEncryptionCallbacks: the answer in that case is "not yet, but
+ * we'll be asked again after the module loads".
  */
 bool
 FileEncryptionPagesEnabled(void)
 {
 	if (!FileEncryptionEnabled())
+		return false;
+	if (LoadedFileEncryptionCallbacks == NULL)
 		return false;
 	return LoadedFileEncryptionCallbacks->encrypt_page_cb != NULL;
 }
@@ -295,6 +333,19 @@ process_file_encryption_library(void)
 		process_shared_preload_libraries_in_progress = save_in_progress;
 	}
 	PG_END_TRY();
+
+	/*
+	 * Eagerly run the per-process startup callback now, while we're still
+	 * outside any critical section.  AIO completion callbacks invoke
+	 * encrypt/decrypt from within a critical section and can't tolerate
+	 * the lazy palloc that ensure_per_process_init() would otherwise do
+	 * on first use.  For the same reason, ask md.c to allocate its
+	 * page-encryption workspace now: in bootstrap mode, mdinit() ran
+	 * before this function and saw FileEncryptionPagesEnabled() == false,
+	 * so the workspace is still NULL.
+	 */
+	ensure_per_process_init();
+	md_init_enc_workspace();
 }
 
 static void
@@ -398,8 +449,22 @@ load_and_validate_module(void)
 static void
 ensure_per_process_init(void)
 {
-	if (file_encryption_per_process_initialized)
+	bool		state_inherited;
+
+	/*
+	 * Already initialized for this process?  fork()ed children inherit our
+	 * file_encryption_module_state pointer (and the module's per-process
+	 * private_data via COW), but on_exit_reset() in the child has already
+	 * cleared the inherited before_shmem_exit list — so we still need to
+	 * register the shutdown callback in the child.  Detect the
+	 * fork-but-not-yet-registered case by comparing MyProcPid to the pid
+	 * recorded when the state was first allocated.
+	 */
+	if (file_encryption_module_state != NULL &&
+		file_encryption_init_pid == MyProcPid)
 		return;
+
+	state_inherited = (file_encryption_module_state != NULL);
 
 	/*
 	 * Should already have run from process_file_encryption_library at
@@ -408,32 +473,35 @@ ensure_per_process_init(void)
 	if (LoadedFileEncryptionCallbacks == NULL)
 		load_and_validate_module();
 
-	file_encryption_module_state =
-		MemoryContextAllocZero(TopMemoryContext,
-							   sizeof(FileEncryptionModuleState));
-	file_encryption_module_state->sversion = PG_VERSION_NUM;
-
-	if (LoadedFileEncryptionCallbacks->startup_cb != NULL)
+	if (!state_inherited)
 	{
-		MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+		file_encryption_module_state =
+			MemoryContextAllocZero(TopMemoryContext,
+								   sizeof(FileEncryptionModuleState));
+		file_encryption_module_state->sversion = PG_VERSION_NUM;
 
-		PG_TRY();
+		if (LoadedFileEncryptionCallbacks->startup_cb != NULL)
 		{
-			LoadedFileEncryptionCallbacks->startup_cb(file_encryption_module_state);
-		}
-		PG_CATCH();
-		{
+			MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
+
+			PG_TRY();
+			{
+				LoadedFileEncryptionCallbacks->startup_cb(file_encryption_module_state);
+			}
+			PG_CATCH();
+			{
+				MemoryContextSwitchTo(oldcontext);
+				pfree(file_encryption_module_state);
+				file_encryption_module_state = NULL;
+				PG_RE_THROW();
+			}
+			PG_END_TRY();
+
 			MemoryContextSwitchTo(oldcontext);
-			pfree(file_encryption_module_state);
-			file_encryption_module_state = NULL;
-			PG_RE_THROW();
 		}
-		PG_END_TRY();
-
-		MemoryContextSwitchTo(oldcontext);
 	}
 
-	file_encryption_per_process_initialized = true;
+	file_encryption_init_pid = MyProcPid;
 	before_shmem_exit(file_encryption_shutdown_cb, 0);
 }
 

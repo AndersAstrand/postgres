@@ -222,4 +222,13 @@ extern void FileEncryptionDecryptPage(const RelFileLocator *locator,
 
 extern void process_file_encryption_library(void);
 
+/*
+ * Eagerly run the module's per-process startup callback and register its
+ * shutdown callback for the current process.  Must be called outside any
+ * critical section (the startup callback may palloc) and before any code
+ * path that touches encryption from within a critical section, such as
+ * the AIO read/write completion callbacks in md.c.
+ */
+extern void FileEncryptionEnsureInit(void);
+
 #endif							/* FILE_ENCRYPTION_H */

@@ -31,6 +31,7 @@ tests += {
       't/001_logical_decoding.pl',
       't/002_buffile.pl',
       't/003_per_file_header.pl',
+      't/004_relation_pages.pl',
     ],
   },
 }

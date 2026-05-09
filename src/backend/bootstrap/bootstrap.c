@@ -38,6 +38,7 @@
 #include "storage/bufpage.h"
 #include "storage/checksum.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/shmem_internal.h"
@@ -424,6 +425,14 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	bootstrap_signals();
 	BootStrapXLOG(bootstrap_data_checksum_version,
 				  bootstrap_page_reserved_size);
+
+	/*
+	 * Load the file encryption module after pg_control is in place but
+	 * before any catalog pages are written, so the catalog pages produced
+	 * by the bootstrap script are encrypted with the same module the
+	 * postmaster will later use to read them back.
+	 */
+	process_file_encryption_library();
 
 	/*
 	 * To ensure that src/common/link-canary.c is linked into the backend, we
