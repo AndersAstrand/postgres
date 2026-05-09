@@ -13,7 +13,10 @@
 #ifndef FILE_ENCRYPTION_H
 #define FILE_ENCRYPTION_H
 
+#include "common/relpath.h"
 #include "lib/stringinfo.h"
+#include "storage/block.h"
+#include "storage/relfilelocator.h"
 
 /*
  * The value of the file_encryption_library GUC.
@@ -50,7 +53,7 @@ typedef void (*FileEncryptionShutdownCB) (FileEncryptionModuleState *state);
  *
  * The caller is responsible for slicing data and dst to the right
  * boundaries; the module never has to know whether the call came from a
- * BufFile, a reorderbuffer spill file, or anywhere else.
+ * BufFile, a reorderbuffer spill file, or an md.c relation-page write.
  */
 typedef void (*FileEncryptionEncryptCB) (const FileEncryptionModuleState *state,
 										 const char *path, uint64 file_offset,
@@ -76,6 +79,11 @@ typedef struct FileEncryptionCallbacks
 	/*
 	 * Number of bytes the module appends to every encrypt_cb output (per-call
 	 * overhead, e.g. IV + auth tag).  May be 0 for size-preserving modes.
+	 *
+	 * For relation-page encryption this also serves as the cluster's
+	 * page_reserved_size: pg_control records the value at initdb time, every
+	 * page on disk reserves that many bytes at its tail, and the module's
+	 * declared overhead_size must match the cluster's page_reserved_size.
 	 */
 	Size		overhead_size;
 
@@ -105,6 +113,31 @@ extern void FileEncryptionDecrypt(const char *path, uint64 file_offset,
 								  const char *data, Size data_len,
 								  StringInfo dst);
 
+/*
+ * Page-level encryption.  FileEncryptionPagesEnabled() is true when the
+ * configured module's overhead_size matches the cluster's page_reserved_size
+ * (i.e. relation pages are routed through the module).  The helpers below
+ * wrap encrypt_cb / decrypt_cb with the BLCKSZ-in / BLCKSZ-out contract
+ * that md.c needs.
+ */
+extern bool FileEncryptionPagesEnabled(void);
+extern Size FileEncryptionPageReservedSize(void);
+extern void FileEncryptionEncryptPage(const RelFileLocator *locator,
+									  ForkNumber fork, BlockNumber blocknum,
+									  const char *src, char *dst);
+extern void FileEncryptionDecryptPage(const RelFileLocator *locator,
+									  ForkNumber fork, BlockNumber blocknum,
+									  const char *src, char *dst);
+
 extern void process_file_encryption_library(void);
+
+/*
+ * Eagerly run the module's per-process startup callback and register its
+ * shutdown callback for the current process.  Must be called outside any
+ * critical section (the startup callback may palloc) and before any code
+ * path that touches encryption from within a critical section, such as
+ * the AIO read/write completion callbacks in md.c.
+ */
+extern void FileEncryptionEnsureInit(void);
 
 #endif							/* FILE_ENCRYPTION_H */
