@@ -118,9 +118,11 @@ mask_lp_flags(Page page)
 void
 mask_page_content(Page page)
 {
-	/* Mask Page Content */
+	/* Mask Page Content (excluding the encryption trailer, which is owned
+	 * by the smgr layer and contains module-specific metadata that varies
+	 * between WAL writer and replayer.) */
 	memset(page + SizeOfPageHeaderData, MASK_MARKER,
-		   BLCKSZ - SizeOfPageHeaderData);
+		   BLCKSZ - GetPageReservedSize() - SizeOfPageHeaderData);
 
 	/* Mask pd_lower and pd_upper */
 	memset(&((PageHeader) page)->pd_lower, MASK_MARKER,

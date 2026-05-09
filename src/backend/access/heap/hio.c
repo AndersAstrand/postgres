@@ -527,11 +527,11 @@ RelationGetBufferForTuple(Relation relation, Size len,
 	/*
 	 * If we're gonna fail for oversize tuple, do it right away
 	 */
-	if (len > MaxHeapTupleSize)
+	if (len > MaxHeapTupleSizeForCluster())
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 				 errmsg("row is too big: size %zu, maximum size %zu",
-						len, MaxHeapTupleSize)));
+						len, MaxHeapTupleSizeForCluster())));
 
 	/* Compute desired extra freespace due to fillfactor option */
 	saveFreeSpace = RelationGetTargetPageFreeSpace(relation,
@@ -543,7 +543,7 @@ RelationGetBufferForTuple(Relation relation, Size len,
 	 * somewhat arbitrary, but it should prevent most unnecessary relation
 	 * extensions while inserting large tuples into low-fillfactor tables.
 	 */
-	nearlyEmptyFreeSpace = MaxHeapTupleSize -
+	nearlyEmptyFreeSpace = MaxHeapTupleSizeForCluster() -
 		(MaxHeapTuplesPerPage / 8 * sizeof(ItemIdData));
 	if (len + saveFreeSpace > nearlyEmptyFreeSpace)
 		targetFreeSpace = Max(len, nearlyEmptyFreeSpace);
