@@ -602,6 +602,21 @@ BITMAPLEN(int NATTS)
 #define MinHeapTupleSize  MAXALIGN(SizeofHeapTupleHeader)
 
 /*
+ * Cluster-aware version of MaxHeapTupleSize.  MaxHeapTupleSize is the
+ * compile-time upper bound used to size stack buffers and assertions; when
+ * file_encryption_library reserves bytes at the tail of every page, the
+ * actual largest tuple a cluster can store is correspondingly smaller.
+ * Use this at runtime "is this tuple too big?" check sites so the rejection
+ * happens here with a meaningful error rather than as a later
+ * "could not fit" failure.
+ */
+static inline Size
+MaxHeapTupleSizeForCluster(void)
+{
+	return MaxHeapTupleSize - GetPageReservedSize();
+}
+
+/*
  * MaxHeapTuplesPerPage is an upper bound on the number of tuples that can
  * fit on one heap page.  (Note that indexes could have more, because they
  * use a smaller tuple header.)  We arrive at the divisor because each tuple
