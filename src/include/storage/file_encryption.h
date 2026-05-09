@@ -85,6 +85,34 @@ typedef void (*FileEncryptionOpenFileCB) (const FileEncryptionModuleState *state
 typedef void (*FileEncryptionCloseFileCB) (const FileEncryptionModuleState *state,
 										   FileEncryptionFileState *fstate);
 
+/*
+ * Encrypt / decrypt callbacks.  Used uniformly for both record streams
+ * (BufFile, reorderbuffer spill files) and relation pages (heap, index,
+ * etc.).  The per-call mode is signalled by fstate:
+ *
+ *	 fstate != NULL: record-stream call.  data_len is the variable-length
+ *					 record body; dst grows to hold ciphertext + whatever
+ *					 per-record overhead (IV, auth tag, ...) the module
+ *					 wants.  fstate->private_data carries any per-file
+ *					 metadata the module set up via init_file_cb /
+ *					 open_file_cb.  path is the spill file's filesystem
+ *					 path; file_offset is the byte position of the
+ *					 record within the file.
+ *
+ *	 fstate == NULL: relation-page call.  data_len is exactly BLCKSZ;
+ *					 dst is filled with exactly BLCKSZ bytes of
+ *					 ciphertext + the module's per-page metadata in the
+ *					 trailing page_reserved_size bytes.  path is the
+ *					 segment-relative relation path (e.g.
+ *					 "base/5/1259") and file_offset is blocknum * BLCKSZ.
+ *					 The (path, file_offset) tuple uniquely identifies
+ *					 the page on disk and is the natural AAD context.
+ *
+ * Modules that only encrypt record streams (page_reserved_size == 0)
+ * never see fstate == NULL.  Modules that only encrypt pages (no
+ * file_header_size and no init_file_cb) never see fstate != NULL.
+ * Modules that do both must branch.
+ */
 typedef void (*FileEncryptionEncryptCB) (const FileEncryptionModuleState *state,
 										 FileEncryptionFileState *fstate,
 										 const char *path, uint64 file_offset,
@@ -97,38 +125,12 @@ typedef void (*FileEncryptionDecryptCB) (const FileEncryptionModuleState *state,
 										 StringInfo dst);
 
 /*
- * Page-level callbacks for relation files.  These run on a fixed-size
- * BLCKSZ buffer: src holds the page (including the trailing
- * page_reserved_size bytes), dst is a caller-allocated BLCKSZ buffer that
- * the module fills with the encrypted page (including its own use of the
- * trailing page_reserved_size bytes for IV, auth tag, key version, ...).
- * The cluster-wide page_reserved_size is fixed at initdb time and is
- * checked against the module's value at server start.
- *
- * The (RelFileLocator, fork, blocknum) tuple uniquely identifies the
- * page on disk and is the natural AAD / IV-derivation context.  pd_lsn
- * within the page can also be used (it advances on every WAL-logged
- * modification), but is not passed separately because it's already
- * inside src.
- */
-typedef void (*FileEncryptionEncryptPageCB) (const FileEncryptionModuleState *state,
-											 const RelFileLocator *locator,
-											 ForkNumber fork,
-											 BlockNumber blocknum,
-											 const char *src, char *dst);
-typedef void (*FileEncryptionDecryptPageCB) (const FileEncryptionModuleState *state,
-											 const RelFileLocator *locator,
-											 ForkNumber fork,
-											 BlockNumber blocknum,
-											 const char *src, char *dst);
-
-/*
  * Identifies the compiled ABI version of the file encryption module.
  *
  * Bump this whenever FileEncryptionCallbacks or any of the callback
  * signatures change in an incompatible way.
  */
-#define PG_FILE_ENCRYPTION_MAGIC 0x46454D33		/* "FEM3" */
+#define PG_FILE_ENCRYPTION_MAGIC 0x46454D34		/* "FEM4" */
 
 typedef struct FileEncryptionCallbacks
 {
@@ -136,17 +138,19 @@ typedef struct FileEncryptionCallbacks
 
 	/*
 	 * Number of bytes the core code reserves at the start of every encrypted
-	 * file for the module's per-file header.  May be 0 (no header).  When
-	 * non-zero, init_file_cb and open_file_cb must both be supplied.
+	 * record-stream file for the module's per-file header.  May be 0 (no
+	 * header).  When non-zero, init_file_cb and open_file_cb must both be
+	 * supplied.
 	 */
 	Size		file_header_size;
 
 	/*
 	 * Number of bytes the module needs at the tail of every relation page
 	 * for its per-page metadata (e.g. IV, auth tag, key version).  May be
-	 * 0 (no page-level encryption).  When non-zero, encrypt_page_cb and
-	 * decrypt_page_cb must both be supplied, and the cluster's
-	 * page_reserved_size in pg_control must match this value.
+	 * 0 (the module doesn't encrypt pages).  When non-zero, the cluster's
+	 * page_reserved_size in pg_control must match this value, and
+	 * encrypt_cb / decrypt_cb must accept page calls (signalled by
+	 * fstate == NULL).
 	 */
 	Size		page_reserved_size;
 
@@ -157,8 +161,6 @@ typedef struct FileEncryptionCallbacks
 	FileEncryptionCloseFileCB close_file_cb;
 	FileEncryptionEncryptCB encrypt_cb;
 	FileEncryptionDecryptCB decrypt_cb;
-	FileEncryptionEncryptPageCB encrypt_page_cb;
-	FileEncryptionDecryptPageCB decrypt_page_cb;
 } FileEncryptionCallbacks;
 
 /*

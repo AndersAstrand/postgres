@@ -103,21 +103,15 @@ static void bfe_decrypt(const FileEncryptionModuleState *state,
 						const char *path, uint64 file_offset,
 						const char *data, Size data_len,
 						StringInfo dst);
-static void bfe_encrypt_page(const FileEncryptionModuleState *state,
-							 const RelFileLocator *locator,
-							 ForkNumber fork, BlockNumber blocknum,
-							 const char *src, char *dst);
-static void bfe_decrypt_page(const FileEncryptionModuleState *state,
-							 const RelFileLocator *locator,
-							 ForkNumber fork, BlockNumber blocknum,
-							 const char *src, char *dst);
 
 /*
  * Module callbacks.  Mutable so _PG_file_encryption_module_init can switch
  * page-level encryption on or off based on the cluster's
- * GetPageReservedSize() — that way the same module supports clusters that
- * are encrypting only spill/BufFile (reserved = 0) and clusters that also
- * encrypt relation pages (reserved = BFE_PAGE_TRAILER_SIZE).
+ * GetPageReservedSize() — the unified encrypt_cb / decrypt_cb run for both
+ * record streams (BufFile / spill files; fstate != NULL) and relation
+ * pages (fstate == NULL); turning page mode on means setting
+ * page_reserved_size to BFE_PAGE_TRAILER_SIZE so the bfe_encrypt /
+ * bfe_decrypt page-mode branch is reachable.
  */
 static FileEncryptionCallbacks basic_file_encryption_callbacks = {
 	PG_FILE_ENCRYPTION_MAGIC,
@@ -184,19 +178,16 @@ _PG_file_encryption_module_init(void)
 	uint32		cluster_reserved = GetPageReservedSize();
 
 	/*
-	 * Adapt to the cluster's reservation: register the page callbacks only
+	 * Adapt to the cluster's reservation: opt into page encryption only
 	 * when initdb reserved exactly BFE_PAGE_TRAILER_SIZE bytes.  When the
-	 * cluster reserved zero bytes, run as a record-stream-only module
-	 * (BufFile and reorderbuffer spill); when it reserved a different size,
-	 * leave the page callbacks unset so load_and_validate_module raises a
-	 * clear "requires N bytes, cluster has M" error.
+	 * cluster reserved zero bytes, leave page_reserved_size at zero and
+	 * run as a record-stream-only module (BufFile and reorderbuffer
+	 * spill).  When it reserved a different non-zero size, advertise the
+	 * size we want so load_and_validate_module can raise a clear
+	 * "requires N bytes, cluster has M" error.
 	 */
 	if (cluster_reserved == BFE_PAGE_TRAILER_SIZE)
-	{
 		basic_file_encryption_callbacks.page_reserved_size = BFE_PAGE_TRAILER_SIZE;
-		basic_file_encryption_callbacks.encrypt_page_cb = bfe_encrypt_page;
-		basic_file_encryption_callbacks.decrypt_page_cb = bfe_decrypt_page;
-	}
 
 	return &basic_file_encryption_callbacks;
 }
@@ -348,21 +339,75 @@ bfe_close_file(const FileEncryptionModuleState *state,
 }
 
 /*
- * Build the AAD blob bound to a single record: the file's salt followed
- * by the record's logical file offset (big-endian, so it's
- * platform-portable).  Returns the AAD length.
+ * Mix the AAD bytes into an EVP cipher context.  The AAD differs by mode:
+ *
+ *   record mode (fstate != NULL): per-file salt || file_offset(be64)
+ *	   The salt is generated once per file (init_file_cb) and persisted in
+ *	   the per-file header, so a record from one file doesn't decrypt
+ *	   when substituted into another (even at the same offset, even
+ *	   under the same key).
+ *
+ *   page mode (fstate == NULL):   filename(basename) || file_offset(be64)
+ *	   Only the relation file's basename is bound, NOT the full path.
+ *	   relpath() formats paths as e.g. "base/<dboid>/<relfilenode>" or
+ *	   "pg_tblspc/<spcoid>/<dboid>/<relfilenode>" — the leading
+ *	   directories carry dbOid and spcOid, both of which can change for
+ *	   the same on-disk page bytes (CREATE DATABASE's FILE_COPY strategy
+ *	   clones a database directory byte-for-byte; ALTER DATABASE ... SET
+ *	   TABLESPACE moves files across spcOid trees).  Binding only the
+ *	   basename ("<relfilenode>", "<relfilenode>.<segno>",
+ *	   "<relfilenode>_fsm", ...) keeps the AAD invariant under those
+ *	   operations while still preventing cross-relation page substitution
+ *	   within a database.
+ *
+ * Either way, EVP_*Update with the same AAD bytes yields the same tag.
  */
-static int
-bfe_build_aad(const BasicFileEncryptionFilePrivate *file_priv,
-			  uint64 file_offset,
-			  unsigned char *aad)
+static void
+bfe_aad_update(EVP_CIPHER_CTX *ctx, bool encrypting,
+			   FileEncryptionFileState *fstate,
+			   const char *path, uint64 file_offset)
 {
-	memcpy(aad, file_priv->salt, BFE_SALT_LEN);
+	int			outlen;
+	unsigned char offset_be[8];
+	int (*update) (EVP_CIPHER_CTX *, unsigned char *, int *,
+				   const unsigned char *, int);
+
+	update = encrypting ? EVP_EncryptUpdate : EVP_DecryptUpdate;
+
+	if (fstate != NULL)
+	{
+		BasicFileEncryptionFilePrivate *file_priv = fstate->private_data;
+
+		if (update(ctx, NULL, &outlen, file_priv->salt, BFE_SALT_LEN) != 1)
+			bfe_openssl_error("AAD salt update");
+	}
+	else
+	{
+		const char *basename = strrchr(path, '/');
+
+		basename = basename ? basename + 1 : path;
+		if (update(ctx, NULL, &outlen,
+				   (const unsigned char *) basename, (int) strlen(basename)) != 1)
+			bfe_openssl_error("AAD path update");
+	}
+
 	for (int i = 0; i < 8; i++)
-		aad[BFE_SALT_LEN + i] = (unsigned char) (file_offset >> ((7 - i) * 8));
-	return BFE_SALT_LEN + 8;
+		offset_be[i] = (unsigned char) (file_offset >> ((7 - i) * 8));
+	if (update(ctx, NULL, &outlen, offset_be, 8) != 1)
+		bfe_openssl_error("AAD offset update");
 }
 
+/*
+ * Encrypt one record or one page with AES-256-GCM.
+ *
+ *   record mode (fstate != NULL): produces IV(12) || ciphertext(data_len)
+ *	   || tag(16) into dst, growing dst as needed.
+ *
+ *   page mode (fstate == NULL): caller passes data_len == BLCKSZ; we
+ *	   encrypt the first BFE_PAGE_BODY_SIZE bytes of data into the same
+ *	   prefix of dst, then place IV / tag / zero-padding in the trailing
+ *	   BFE_PAGE_TRAILER_SIZE bytes.  dst->len comes out exactly BLCKSZ.
+ */
 static void
 bfe_encrypt(const FileEncryptionModuleState *state,
 			FileEncryptionFileState *fstate,
@@ -371,26 +416,33 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 			StringInfo dst)
 {
 	BasicFileEncryptionState *priv = bfe_require_key(state);
-	BasicFileEncryptionFilePrivate *file_priv = fstate->private_data;
 	EVP_CIPHER_CTX *ctx;
 	unsigned char iv[BFE_IV_LEN];
 	unsigned char tag[BFE_TAG_LEN];
-	unsigned char aad[BFE_SALT_LEN + 8];
-	int			aad_len;
 	int			outlen;
 	int			finallen;
+	bool		page_mode = (fstate == NULL);
+	int			body_len;
 
 	if (!pg_strong_random(iv, sizeof(iv)))
 		ereport(ERROR,
 				(errcode(ERRCODE_INTERNAL_ERROR),
 				 errmsg("basic_file_encryption: could not generate IV")));
 
-	aad_len = bfe_build_aad(file_priv, file_offset, aad);
-
-	enlargeStringInfo(dst, BFE_IV_LEN + (int) data_len + BFE_TAG_LEN);
-
-	memcpy(dst->data + dst->len, iv, BFE_IV_LEN);
-	dst->len += BFE_IV_LEN;
+	if (page_mode)
+	{
+		Assert(data_len == BLCKSZ);
+		body_len = BFE_PAGE_BODY_SIZE;
+		enlargeStringInfo(dst, BLCKSZ);
+	}
+	else
+	{
+		body_len = (int) data_len;
+		enlargeStringInfo(dst, BFE_IV_LEN + body_len + BFE_TAG_LEN);
+		/* Record-mode layout puts IV at the start of dst. */
+		memcpy(dst->data + dst->len, iv, BFE_IV_LEN);
+		dst->len += BFE_IV_LEN;
+	}
 
 	ctx = EVP_CIPHER_CTX_new();
 	if (ctx == NULL)
@@ -405,20 +457,20 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 		if (EVP_EncryptInit_ex(ctx, NULL, NULL, priv->key, iv) != 1)
 			bfe_openssl_error("EVP_EncryptInit_ex (key/iv)");
 
-		/* Bind the file's salt and the record's offset as AAD. */
-		if (EVP_EncryptUpdate(ctx, NULL, &outlen, aad, aad_len) != 1)
-			bfe_openssl_error("EVP_EncryptUpdate (AAD)");
+		bfe_aad_update(ctx, true, fstate, path, file_offset);
 
 		if (EVP_EncryptUpdate(ctx,
 							  (unsigned char *) dst->data + dst->len, &outlen,
-							  (const unsigned char *) data, (int) data_len) != 1)
+							  (const unsigned char *) data, body_len) != 1)
 			bfe_openssl_error("EVP_EncryptUpdate");
+		Assert(outlen == body_len);
 		dst->len += outlen;
 
 		if (EVP_EncryptFinal_ex(ctx,
 								(unsigned char *) dst->data + dst->len,
 								&finallen) != 1)
 			bfe_openssl_error("EVP_EncryptFinal_ex");
+		Assert(finallen == 0);
 		dst->len += finallen;
 
 		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, BFE_TAG_LEN, tag) != 1)
@@ -430,11 +482,41 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 	}
 	PG_END_TRY();
 
-	memcpy(dst->data + dst->len, tag, BFE_TAG_LEN);
-	dst->len += BFE_TAG_LEN;
+	if (page_mode)
+	{
+		/* Lay out the trailer: IV || tag || zero pad. */
+		memcpy(dst->data + BFE_PAGE_BODY_SIZE + BFE_PAGE_IV_OFFSET,
+			   iv, BFE_IV_LEN);
+		memcpy(dst->data + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET,
+			   tag, BFE_TAG_LEN);
+		memset(dst->data + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET + BFE_TAG_LEN,
+			   0, BFE_PAGE_TRAILER_SIZE - BFE_IV_LEN - BFE_TAG_LEN);
+		dst->len = BLCKSZ;
+	}
+	else
+	{
+		memcpy(dst->data + dst->len, tag, BFE_TAG_LEN);
+		dst->len += BFE_TAG_LEN;
+	}
 	dst->data[dst->len] = '\0';
 }
 
+/*
+ * Decrypt one record or one page with AES-256-GCM.
+ *
+ *   record mode (fstate != NULL): expects data to be IV(12) ||
+ *	   ciphertext(N) || tag(16); writes the N decrypted plaintext bytes
+ *	   into dst.
+ *
+ *   page mode (fstate == NULL): expects data_len == BLCKSZ; the IV and
+ *	   tag live in the trailing BFE_PAGE_TRAILER_SIZE bytes; the body is
+ *	   data[0..BFE_PAGE_BODY_SIZE).  On success dst->len is exactly
+ *	   BLCKSZ, with the trailing BFE_PAGE_TRAILER_SIZE bytes of dst
+ *	   zeroed (per the file_encryption.h contract: plaintext pages have
+ *	   zero trailers so pd_checksum verifies on the read side).
+ *
+ * On tag-verification failure, raises ERRCODE_DATA_CORRUPTED.
+ */
 static void
 bfe_decrypt(const FileEncryptionModuleState *state,
 			FileEncryptionFileState *fstate,
@@ -443,31 +525,45 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 			StringInfo dst)
 {
 	BasicFileEncryptionState *priv = bfe_require_key(state);
-	BasicFileEncryptionFilePrivate *file_priv = fstate->private_data;
 	EVP_CIPHER_CTX *ctx;
 	const unsigned char *iv;
 	const unsigned char *ciphertext;
-	const unsigned char *tag;
-	unsigned char aad[BFE_SALT_LEN + 8];
-	int			aad_len;
-	Size		ciphertext_len;
+	unsigned char tag[BFE_TAG_LEN];
 	int			outlen;
 	int			finallen;
+	bool		page_mode = (fstate == NULL);
+	int			ciphertext_len;
 
-	if (data_len < BFE_IV_LEN + BFE_TAG_LEN)
-		ereport(ERROR,
-				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("basic_file_encryption: encrypted record is too short (%zu bytes)",
-						data_len)));
+	if (page_mode)
+	{
+		if (data_len != BLCKSZ)
+			ereport(ERROR,
+					(errcode(ERRCODE_INTERNAL_ERROR),
+					 errmsg("basic_file_encryption: page-mode decrypt got %zu bytes, expected %d",
+							data_len, BLCKSZ)));
+		ciphertext_len = BFE_PAGE_BODY_SIZE;
+		ciphertext = (const unsigned char *) data;
+		iv = (const unsigned char *) data + BFE_PAGE_BODY_SIZE +
+			BFE_PAGE_IV_OFFSET;
+		memcpy(tag, data + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET,
+			   BFE_TAG_LEN);
 
-	iv = (const unsigned char *) data;
-	ciphertext = iv + BFE_IV_LEN;
-	ciphertext_len = data_len - BFE_IV_LEN - BFE_TAG_LEN;
-	tag = ciphertext + ciphertext_len;
+		enlargeStringInfo(dst, BLCKSZ);
+	}
+	else
+	{
+		if (data_len < BFE_IV_LEN + BFE_TAG_LEN)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("basic_file_encryption: encrypted record is too short (%zu bytes)",
+							data_len)));
+		iv = (const unsigned char *) data;
+		ciphertext = iv + BFE_IV_LEN;
+		ciphertext_len = (int) (data_len - BFE_IV_LEN - BFE_TAG_LEN);
+		memcpy(tag, ciphertext + ciphertext_len, BFE_TAG_LEN);
 
-	aad_len = bfe_build_aad(file_priv, file_offset, aad);
-
-	enlargeStringInfo(dst, (int) ciphertext_len);
+		enlargeStringInfo(dst, ciphertext_len);
+	}
 
 	ctx = EVP_CIPHER_CTX_new();
 	if (ctx == NULL)
@@ -482,17 +578,17 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 		if (EVP_DecryptInit_ex(ctx, NULL, NULL, priv->key, iv) != 1)
 			bfe_openssl_error("EVP_DecryptInit_ex (key/iv)");
 
-		if (EVP_DecryptUpdate(ctx, NULL, &outlen, aad, aad_len) != 1)
-			bfe_openssl_error("EVP_DecryptUpdate (AAD)");
+		bfe_aad_update(ctx, false, fstate, path, file_offset);
 
 		if (EVP_DecryptUpdate(ctx,
 							  (unsigned char *) dst->data + dst->len, &outlen,
-							  ciphertext, (int) ciphertext_len) != 1)
+							  ciphertext, ciphertext_len) != 1)
 			bfe_openssl_error("EVP_DecryptUpdate");
+		Assert(outlen == ciphertext_len);
 		dst->len += outlen;
 
 		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG,
-								BFE_TAG_LEN, (void *) tag) != 1)
+								BFE_TAG_LEN, tag) != 1)
 			bfe_openssl_error("EVP_CTRL_GCM_SET_TAG");
 
 		if (EVP_DecryptFinal_ex(ctx,
@@ -501,7 +597,9 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
 					 errmsg("basic_file_encryption: authentication tag verification failed"),
-					 errdetail("File contents may have been tampered with, or the key has changed.")));
+					 errdetail("Path \"%s\" offset %llu was tampered with, or the key has changed.",
+							   path, (unsigned long long) file_offset)));
+		Assert(finallen == 0);
 		dst->len += finallen;
 	}
 	PG_FINALLY();
@@ -510,179 +608,12 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 	}
 	PG_END_TRY();
 
+	if (page_mode)
+	{
+		/* Zero the trailer per the file_encryption.h contract. */
+		memset(dst->data + BFE_PAGE_BODY_SIZE, 0, BFE_PAGE_TRAILER_SIZE);
+		dst->len = BLCKSZ;
+	}
 	dst->data[dst->len] = '\0';
 }
 
-/*
- * Build the AAD blob bound to a relation page: relNumber || fork ||
- * blocknum, big-endian for portability.
- *
- * Notably, dbOid and spcOid are *not* included.  CREATE DATABASE with the
- * default FILE_COPY strategy clones a source database's catalog files
- * byte-for-byte into the new database's directory; binding dbOid (or
- * spcOid, which can change with ALTER DATABASE ... SET TABLESPACE) into
- * the AAD would make those pages undecryptable in the new location.  We
- * accept the weaker binding — pages remain swappable between databases
- * if their relNumber happens to match — to keep file-level operations
- * working transparently.
- */
-static int
-bfe_build_page_aad(const RelFileLocator *locator, ForkNumber fork,
-				   BlockNumber blocknum, unsigned char *aad)
-{
-	int			off = 0;
-
-	for (int i = 0; i < 8; i++)
-		aad[off++] = (unsigned char) (locator->relNumber >> ((7 - i) * 8));
-	for (int i = 0; i < 4; i++)
-		aad[off++] = (unsigned char) (((uint32) fork) >> ((3 - i) * 8));
-	for (int i = 0; i < 4; i++)
-		aad[off++] = (unsigned char) (blocknum >> ((3 - i) * 8));
-
-	return off;
-}
-
-/*
- * Encrypt a relation page with AES-256-GCM.  Lays out the trailer at
- * the tail of dst as documented at the top of this file.
- */
-static void
-bfe_encrypt_page(const FileEncryptionModuleState *state,
-				 const RelFileLocator *locator,
-				 ForkNumber fork, BlockNumber blocknum,
-				 const char *src, char *dst)
-{
-	BasicFileEncryptionState *priv = bfe_require_key(state);
-	EVP_CIPHER_CTX *ctx;
-	unsigned char iv[BFE_IV_LEN];
-	unsigned char tag[BFE_TAG_LEN];
-	unsigned char aad[24];
-	int			aad_len;
-	int			outlen;
-	int			finallen;
-
-	if (!pg_strong_random(iv, sizeof(iv)))
-		ereport(ERROR,
-				(errcode(ERRCODE_INTERNAL_ERROR),
-				 errmsg("basic_file_encryption: could not generate page IV")));
-
-	aad_len = bfe_build_page_aad(locator, fork, blocknum, aad);
-	Assert(aad_len <= (int) sizeof(aad));
-
-	ctx = EVP_CIPHER_CTX_new();
-	if (ctx == NULL)
-		bfe_openssl_error("EVP_CIPHER_CTX_new");
-
-	PG_TRY();
-	{
-		if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1)
-			bfe_openssl_error("EVP_EncryptInit_ex");
-		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, BFE_IV_LEN, NULL) != 1)
-			bfe_openssl_error("EVP_CTRL_GCM_SET_IVLEN");
-		if (EVP_EncryptInit_ex(ctx, NULL, NULL, priv->key, iv) != 1)
-			bfe_openssl_error("EVP_EncryptInit_ex (key/iv)");
-
-		if (EVP_EncryptUpdate(ctx, NULL, &outlen, aad, aad_len) != 1)
-			bfe_openssl_error("EVP_EncryptUpdate (AAD)");
-
-		if (EVP_EncryptUpdate(ctx,
-							  (unsigned char *) dst, &outlen,
-							  (const unsigned char *) src,
-							  BFE_PAGE_BODY_SIZE) != 1)
-			bfe_openssl_error("EVP_EncryptUpdate");
-		Assert(outlen == BFE_PAGE_BODY_SIZE);
-
-		if (EVP_EncryptFinal_ex(ctx,
-								(unsigned char *) dst + outlen,
-								&finallen) != 1)
-			bfe_openssl_error("EVP_EncryptFinal_ex");
-		Assert(finallen == 0);
-
-		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, BFE_TAG_LEN, tag) != 1)
-			bfe_openssl_error("EVP_CTRL_GCM_GET_TAG");
-	}
-	PG_FINALLY();
-	{
-		EVP_CIPHER_CTX_free(ctx);
-	}
-	PG_END_TRY();
-
-	memcpy(dst + BFE_PAGE_BODY_SIZE + BFE_PAGE_IV_OFFSET, iv, BFE_IV_LEN);
-	memcpy(dst + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET, tag, BFE_TAG_LEN);
-	/* Zero any reserved-but-unused bytes in the trailer. */
-	memset(dst + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET + BFE_TAG_LEN, 0,
-		   BFE_PAGE_TRAILER_SIZE - BFE_TAG_LEN - BFE_IV_LEN);
-}
-
-/*
- * Decrypt a relation page.  Verifies the auth tag (rejects tampering
- * and wrong-key reads), and zeros the trailer in dst per the
- * file_encryption.h contract.
- */
-static void
-bfe_decrypt_page(const FileEncryptionModuleState *state,
-				 const RelFileLocator *locator,
-				 ForkNumber fork, BlockNumber blocknum,
-				 const char *src, char *dst)
-{
-	BasicFileEncryptionState *priv = bfe_require_key(state);
-	EVP_CIPHER_CTX *ctx;
-	const unsigned char *iv;
-	unsigned char tag[BFE_TAG_LEN];
-	unsigned char aad[24];
-	int			aad_len;
-	int			outlen;
-	int			finallen;
-
-	iv = (const unsigned char *) src + BFE_PAGE_BODY_SIZE + BFE_PAGE_IV_OFFSET;
-	memcpy(tag, src + BFE_PAGE_BODY_SIZE + BFE_PAGE_TAG_OFFSET, BFE_TAG_LEN);
-
-	aad_len = bfe_build_page_aad(locator, fork, blocknum, aad);
-	Assert(aad_len <= (int) sizeof(aad));
-
-	ctx = EVP_CIPHER_CTX_new();
-	if (ctx == NULL)
-		bfe_openssl_error("EVP_CIPHER_CTX_new");
-
-	PG_TRY();
-	{
-		if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1)
-			bfe_openssl_error("EVP_DecryptInit_ex");
-		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, BFE_IV_LEN, NULL) != 1)
-			bfe_openssl_error("EVP_CTRL_GCM_SET_IVLEN");
-		if (EVP_DecryptInit_ex(ctx, NULL, NULL, priv->key, iv) != 1)
-			bfe_openssl_error("EVP_DecryptInit_ex (key/iv)");
-
-		if (EVP_DecryptUpdate(ctx, NULL, &outlen, aad, aad_len) != 1)
-			bfe_openssl_error("EVP_DecryptUpdate (AAD)");
-
-		if (EVP_DecryptUpdate(ctx,
-							  (unsigned char *) dst, &outlen,
-							  (const unsigned char *) src,
-							  BFE_PAGE_BODY_SIZE) != 1)
-			bfe_openssl_error("EVP_DecryptUpdate");
-		Assert(outlen == BFE_PAGE_BODY_SIZE);
-
-		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG,
-								BFE_TAG_LEN, tag) != 1)
-			bfe_openssl_error("EVP_CTRL_GCM_SET_TAG");
-
-		if (EVP_DecryptFinal_ex(ctx,
-								(unsigned char *) dst + outlen,
-								&finallen) != 1)
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("basic_file_encryption: page authentication tag verification failed"),
-					 errdetail("Page (rel %u, fork %d, block %u) was tampered with, or the key has changed.",
-							   locator->relNumber, fork, blocknum)));
-		Assert(finallen == 0);
-	}
-	PG_FINALLY();
-	{
-		EVP_CIPHER_CTX_free(ctx);
-	}
-	PG_END_TRY();
-
-	/* Zero the trailer in plaintext, per the file_encryption.h contract. */
-	memset(dst + BFE_PAGE_BODY_SIZE, 0, BFE_PAGE_TRAILER_SIZE);
-}

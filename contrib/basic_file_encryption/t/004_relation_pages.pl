@@ -139,7 +139,7 @@ my ($ret, $tampered_stdout, $tampered_stderr) = $node->psql('postgres',
 	'SELECT count(*) FROM t;');
 isnt($ret, 0, 'tampered heap page fails the read');
 like($tampered_stderr,
-	 qr/page authentication tag verification failed|could not read|exceeds|invalid|corrupted/,
+	 qr/authentication tag verification failed|could not read|exceeds|invalid|corrupted/,
 	 'tampered page surfaces an error');
 
 # The PANIC during the tampered read takes the postmaster down, so we
