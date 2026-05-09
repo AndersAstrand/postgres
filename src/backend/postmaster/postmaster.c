@@ -111,6 +111,7 @@
 #include "replication/walsender.h"
 #include "storage/aio_subsys.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/io_worker.h"
 #include "storage/ipc.h"
 #include "storage/pmsignal.h"
@@ -934,6 +935,12 @@ PostmasterMain(int argc, char *argv[])
 	 * process any libraries that should be preloaded at postmaster start
 	 */
 	process_shared_preload_libraries();
+
+	/*
+	 * Load the file encryption module, if configured, so that its _PG_init
+	 * runs at postmaster start (matching shared_preload_libraries' timing).
+	 */
+	process_file_encryption_library();
 
 	/*
 	 * Initialize SSL library, if specified.
