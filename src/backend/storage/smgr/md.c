@@ -35,6 +35,7 @@
 #include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/md.h"
 #include "storage/relfilelocator.h"
 #include "storage/smgr.h"
@@ -171,6 +172,53 @@ const PgAioHandleCallbacks aio_md_readv_cb = {
 	.complete_shared = md_readv_complete,
 	.report = md_readv_report,
 };
+
+/*
+ * Per-backend workspace for page encryption.  Lazily allocated to
+ * MAX_IO_COMBINE_LIMIT * BLCKSZ bytes the first time we need it; reused
+ * across all encrypted reads/writes from this process.  Sized large enough
+ * for the maximum batched-IO width so mdwritev / md_readv_complete don't
+ * have to chunk the workspace.
+ */
+static char *md_enc_workspace = NULL;
+
+static inline char *
+md_get_enc_workspace(void)
+{
+	if (md_enc_workspace == NULL)
+		md_enc_workspace = MemoryContextAllocAligned(TopMemoryContext,
+													 (Size) MAX_IO_COMBINE_LIMIT * BLCKSZ,
+													 PG_IO_ALIGN_SIZE,
+													 0);
+	return md_enc_workspace;
+}
+
+/*
+ * Whether this fork's pages are routed through the file-encryption module.
+ * FSM and VM forks carry only metadata (free-space estimates, all-visible
+ * bits); leaving them as plaintext keeps fsmpage.c / visibilitymap.c free
+ * of crypto plumbing while encrypting everything that holds user data.
+ * The cluster-wide page_reserved_size still applies to FSM/VM pages so
+ * their on-disk layout stays uniform with the rest of the cluster.
+ */
+static inline bool
+md_fork_is_encrypted(ForkNumber forknum)
+{
+	if (!FileEncryptionPagesEnabled())
+		return false;
+	return forknum == MAIN_FORKNUM || forknum == INIT_FORKNUM;
+}
+
+static inline bool
+md_block_is_zero(const char *block)
+{
+	const uint64 *p = (const uint64 *) block;
+
+	for (Size i = 0; i < BLCKSZ / sizeof(uint64); i++)
+		if (p[i] != 0)
+			return false;
+	return true;
+}
 
 
 static inline int
@@ -519,6 +567,19 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	seekpos = (pgoff_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
 
 	Assert(seekpos < (pgoff_t) BLCKSZ * RELSEG_SIZE);
+
+	/*
+	 * Encrypt into the per-backend workspace, then write the workspace.
+	 * The buffer pool's plaintext page must not be mutated.
+	 */
+	if (md_fork_is_encrypted(forknum))
+	{
+		char	   *workspace = md_get_enc_workspace();
+
+		FileEncryptionEncryptPage(&reln->smgr_rlocator.locator, forknum,
+								  blocknum, buffer, workspace);
+		buffer = workspace;
+	}
 
 	if ((nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
 	{
@@ -984,6 +1045,30 @@ mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			iovcnt = compute_remaining_iovec(iov, iov, iovcnt, nbytes);
 		}
 
+		/*
+		 * Decrypt each block in place, when this fork's pages are routed
+		 * through the encryption module.  All-zero pages on disk (e.g. from
+		 * mdzeroextend) are passed through unchanged so PageIsNew can
+		 * recognise them.
+		 */
+		if (md_fork_is_encrypted(forknum))
+		{
+			char	   *workspace = md_get_enc_workspace();
+
+			for (BlockNumber b = 0; b < nblocks_this_segment; b++)
+			{
+				char	   *blk = (char *) buffers[b];
+
+				if (md_block_is_zero(blk))
+					continue;
+
+				memcpy(workspace, blk, BLCKSZ);
+				FileEncryptionDecryptPage(&reln->smgr_rlocator.locator,
+										  forknum, blocknum + b,
+										  workspace, blk);
+			}
+		}
+
 		nblocks -= nblocks_this_segment;
 		buffers += nblocks_this_segment;
 		blocknum += nblocks_this_segment;
@@ -1103,6 +1188,30 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			elog(ERROR, "write crosses segment boundary");
 
 		iovcnt = buffers_to_iovec(iov, (void **) buffers, nblocks_this_segment);
+
+		/*
+		 * If this fork is encrypted, build a separate ciphertext copy in the
+		 * per-backend workspace and point the iovec at it.  The buffer pool's
+		 * plaintext pages must not be mutated, so we always need a separate
+		 * destination; doing it here lets the FileWriteV below remain
+		 * batched.
+		 */
+		if (md_fork_is_encrypted(forknum))
+		{
+			char	   *workspace = md_get_enc_workspace();
+
+			for (BlockNumber b = 0; b < nblocks_this_segment; b++)
+			{
+				char	   *slot = workspace + (Size) b * BLCKSZ;
+
+				FileEncryptionEncryptPage(&reln->smgr_rlocator.locator,
+										  forknum, blocknum + b,
+										  buffers[b], slot);
+				iov[b].iov_base = slot;
+				iov[b].iov_len = BLCKSZ;
+			}
+		}
+
 		size_this_segment = nblocks_this_segment * BLCKSZ;
 		transferred_this_segment = 0;
 
@@ -2041,6 +2150,36 @@ md_readv_complete(PgAioHandle *ioh, PgAioResult prior_result, uint8 cb_data)
 		/* partial reads should be retried at upper level */
 		result.status = PGAIO_RS_PARTIAL;
 		result.id = PGAIO_HCB_MD_READV;
+	}
+
+	/*
+	 * Decrypt successfully-read blocks in place.  Mirrors the post-read
+	 * loop in mdreadv() for the synchronous path.  Only blocks that
+	 * actually came back from disk are decrypted; partial reads leave the
+	 * unread tail untouched (the upper level will retry).  All-zero
+	 * ciphertext is passed through unchanged so PageIsNew can recognise
+	 * fresh pages produced by mdzeroextend().
+	 */
+	if (md_fork_is_encrypted(td->smgr.forkNum) && result.result > 0)
+	{
+		struct iovec *iov;
+		char	   *workspace = md_get_enc_workspace();
+
+		(void) pgaio_io_get_iovec(ioh, &iov);
+
+		for (uint32 b = 0; b < result.result; b++)
+		{
+			char	   *blk = (char *) iov[b].iov_base;
+
+			if (md_block_is_zero(blk))
+				continue;
+
+			memcpy(workspace, blk, BLCKSZ);
+			FileEncryptionDecryptPage(&td->smgr.rlocator,
+									  td->smgr.forkNum,
+									  td->smgr.blockNum + b,
+									  workspace, blk);
+		}
 	}
 
 	return result;

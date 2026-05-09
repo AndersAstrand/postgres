@@ -37,11 +37,18 @@ static void pgaio_io_before_start(PgAioHandle *ioh);
 /*
  * Scatter/gather IO needs to associate an iovec with the Handle. To support
  * worker mode this data needs to be in shared memory.
+ *
+ * Callable from the issuing backend during IO setup (HANDED_OUT) and from
+ * shared completion callbacks (COMPLETED_IO / COMPLETED_SHARED), which need
+ * to inspect the buffer pointers to perform per-block post-processing such
+ * as decryption.  The iovec slot persists until the handle is reused.
  */
 int
 pgaio_io_get_iovec(PgAioHandle *ioh, struct iovec **iov)
 {
-	Assert(ioh->state == PGAIO_HS_HANDED_OUT);
+	Assert(ioh->state == PGAIO_HS_HANDED_OUT ||
+		   ioh->state == PGAIO_HS_COMPLETED_IO ||
+		   ioh->state == PGAIO_HS_COMPLETED_SHARED);
 
 	*iov = &pgaio_ctl->iovecs[ioh->iovec_off];
 
