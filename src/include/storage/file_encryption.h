@@ -13,7 +13,10 @@
 #ifndef FILE_ENCRYPTION_H
 #define FILE_ENCRYPTION_H
 
+#include "common/relpath.h"
 #include "lib/stringinfo.h"
+#include "storage/block.h"
+#include "storage/relfilelocator.h"
 
 /*
  * The value of the file_encryption_library GUC.
@@ -94,12 +97,38 @@ typedef void (*FileEncryptionDecryptCB) (const FileEncryptionModuleState *state,
 										 StringInfo dst);
 
 /*
+ * Page-level callbacks for relation files.  These run on a fixed-size
+ * BLCKSZ buffer: src holds the page (including the trailing
+ * page_reserved_size bytes), dst is a caller-allocated BLCKSZ buffer that
+ * the module fills with the encrypted page (including its own use of the
+ * trailing page_reserved_size bytes for IV, auth tag, key version, ...).
+ * The cluster-wide page_reserved_size is fixed at initdb time and is
+ * checked against the module's value at server start.
+ *
+ * The (RelFileLocator, fork, blocknum) tuple uniquely identifies the
+ * page on disk and is the natural AAD / IV-derivation context.  pd_lsn
+ * within the page can also be used (it advances on every WAL-logged
+ * modification), but is not passed separately because it's already
+ * inside src.
+ */
+typedef void (*FileEncryptionEncryptPageCB) (const FileEncryptionModuleState *state,
+											 const RelFileLocator *locator,
+											 ForkNumber fork,
+											 BlockNumber blocknum,
+											 const char *src, char *dst);
+typedef void (*FileEncryptionDecryptPageCB) (const FileEncryptionModuleState *state,
+											 const RelFileLocator *locator,
+											 ForkNumber fork,
+											 BlockNumber blocknum,
+											 const char *src, char *dst);
+
+/*
  * Identifies the compiled ABI version of the file encryption module.
  *
  * Bump this whenever FileEncryptionCallbacks or any of the callback
  * signatures change in an incompatible way.
  */
-#define PG_FILE_ENCRYPTION_MAGIC 0x46454D32		/* "FEM2" */
+#define PG_FILE_ENCRYPTION_MAGIC 0x46454D33		/* "FEM3" */
 
 typedef struct FileEncryptionCallbacks
 {
@@ -112,6 +141,15 @@ typedef struct FileEncryptionCallbacks
 	 */
 	Size		file_header_size;
 
+	/*
+	 * Number of bytes the module needs at the tail of every relation page
+	 * for its per-page metadata (e.g. IV, auth tag, key version).  May be
+	 * 0 (no page-level encryption).  When non-zero, encrypt_page_cb and
+	 * decrypt_page_cb must both be supplied, and the cluster's
+	 * page_reserved_size in pg_control must match this value.
+	 */
+	Size		page_reserved_size;
+
 	FileEncryptionStartupCB startup_cb;
 	FileEncryptionShutdownCB shutdown_cb;
 	FileEncryptionInitFileCB init_file_cb;
@@ -119,6 +157,8 @@ typedef struct FileEncryptionCallbacks
 	FileEncryptionCloseFileCB close_file_cb;
 	FileEncryptionEncryptCB encrypt_cb;
 	FileEncryptionDecryptCB decrypt_cb;
+	FileEncryptionEncryptPageCB encrypt_page_cb;
+	FileEncryptionDecryptPageCB decrypt_page_cb;
 } FileEncryptionCallbacks;
 
 /*
@@ -163,6 +203,23 @@ extern void FileEncryptionDecrypt(FileEncryptionFileState *fstate,
 								  const char *path, uint64 file_offset,
 								  const char *data, Size data_len,
 								  StringInfo dst);
+
+/*
+ * Page-level encryption.  FileEncryptionPagesEnabled() is true when a
+ * configured module also registered the page callbacks.  The reserved
+ * size returned here is authoritative at runtime; callers laying out
+ * page contents must use it instead of FileEncryptionCallbacks-> to
+ * remain agnostic to which module is loaded.
+ */
+extern bool FileEncryptionPagesEnabled(void);
+extern Size FileEncryptionPageReservedSize(void);
+extern void FileEncryptionEncryptPage(const RelFileLocator *locator,
+									  ForkNumber fork, BlockNumber blocknum,
+									  const char *src, char *dst);
+extern void FileEncryptionDecryptPage(const RelFileLocator *locator,
+									  ForkNumber fork, BlockNumber blocknum,
+									  const char *src, char *dst);
+
 extern void process_file_encryption_library(void);
 
 #endif							/* FILE_ENCRYPTION_H */

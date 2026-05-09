@@ -13,6 +13,7 @@
 
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "storage/file_encryption.h"
@@ -203,6 +204,65 @@ FileEncryptionDecrypt(FileEncryptionFileState *fstate,
 }
 
 /*
+ * Returns true when a configured module also registered page callbacks.
+ */
+bool
+FileEncryptionPagesEnabled(void)
+{
+	if (!FileEncryptionEnabled())
+		return false;
+	return LoadedFileEncryptionCallbacks->encrypt_page_cb != NULL;
+}
+
+/*
+ * Number of bytes the configured module reserves at the tail of every
+ * relation page.  Returns 0 when no page-level module is configured.
+ */
+Size
+FileEncryptionPageReservedSize(void)
+{
+	if (!FileEncryptionPagesEnabled())
+		return 0;
+	return LoadedFileEncryptionCallbacks->page_reserved_size;
+}
+
+/*
+ * Encrypt a relation page.  src and dst are both BLCKSZ-sized buffers; the
+ * module fills dst with the encrypted page (consuming the trailing
+ * page_reserved_size bytes for its own metadata).
+ */
+void
+FileEncryptionEncryptPage(const RelFileLocator *locator,
+						  ForkNumber fork, BlockNumber blocknum,
+						  const char *src, char *dst)
+{
+	if (!FileEncryptionPagesEnabled())
+		elog(ERROR, "page encryption is not configured");
+	ensure_per_process_init();
+	LoadedFileEncryptionCallbacks->encrypt_page_cb(file_encryption_module_state,
+												   locator, fork, blocknum,
+												   src, dst);
+}
+
+/*
+ * Decrypt a relation page.  src and dst are both BLCKSZ-sized buffers; the
+ * module reads the trailing page_reserved_size bytes of src to recover
+ * IV/tag/key material before producing dst.
+ */
+void
+FileEncryptionDecryptPage(const RelFileLocator *locator,
+						  ForkNumber fork, BlockNumber blocknum,
+						  const char *src, char *dst)
+{
+	if (!FileEncryptionPagesEnabled())
+		elog(ERROR, "page encryption is not configured");
+	ensure_per_process_init();
+	LoadedFileEncryptionCallbacks->decrypt_page_cb(file_encryption_module_state,
+												   locator, fork, blocknum,
+												   src, dst);
+}
+
+/*
  * Load the configured file encryption library and validate its callbacks.
  *
  * Called at the same point as process_shared_preload_libraries() so that
@@ -298,6 +358,30 @@ load_and_validate_module(void)
 		(callbacks->open_file_cb == NULL))
 		ereport(ERROR,
 				(errmsg("file encryption modules must register init_file_cb and open_file_cb together")));
+
+	/*
+	 * Page-level callbacks: encrypt/decrypt come together, and any non-zero
+	 * page_reserved_size requires both.  The reservation must also match the
+	 * cluster-wide value chosen at initdb time, since pages on disk already
+	 * have that many bytes carved off.
+	 */
+	if ((callbacks->encrypt_page_cb == NULL) !=
+		(callbacks->decrypt_page_cb == NULL))
+		ereport(ERROR,
+				(errmsg("file encryption modules must register encrypt_page_cb and decrypt_page_cb together")));
+	if (callbacks->page_reserved_size > 0 &&
+		callbacks->encrypt_page_cb == NULL)
+		ereport(ERROR,
+				(errmsg("file encryption module \"%s\" reserves %zu page bytes but did not register page callbacks",
+						file_encryption_library,
+						callbacks->page_reserved_size)));
+	if (callbacks->encrypt_page_cb != NULL &&
+		callbacks->page_reserved_size != GetPageReservedSize())
+		ereport(ERROR,
+				(errmsg("file encryption module \"%s\" requires %zu page-reserved bytes, but the cluster was initialized with %u",
+						file_encryption_library,
+						callbacks->page_reserved_size,
+						GetPageReservedSize())));
 
 	LoadedFileEncryptionCallbacks = callbacks;
 }
