@@ -71,127 +71,26 @@ FileEncryptionEnabled(void)
 }
 
 /*
- * Number of header bytes the configured module reserves at the start of
- * every encrypted file.  Returns 0 when no module is configured or the
- * module doesn't request a header.
+ * Per-call ciphertext overhead the configured module declares.  Returns 0
+ * when no module is configured.
  */
 Size
-FileEncryptionFileHeaderSize(void)
+FileEncryptionOverheadSize(void)
 {
 	if (!FileEncryptionEnabled())
 		return 0;
-
-	ensure_per_process_init();
-	return LoadedFileEncryptionCallbacks->file_header_size;
+	if (LoadedFileEncryptionCallbacks == NULL)
+		return 0;
+	return LoadedFileEncryptionCallbacks->overhead_size;
 }
 
 /*
- * Allocate a per-file FileEncryptionFileState, with private_data zeroed.
- * Lives in TopMemoryContext so its lifetime is independent of whatever
- * transient context the caller happens to be in.
- */
-static FileEncryptionFileState *
-allocate_file_state(void)
-{
-	return MemoryContextAllocZero(TopMemoryContext,
-								  sizeof(FileEncryptionFileState));
-}
-
-/*
- * Drive init_file_cb for a brand-new encrypted file and return the
- * per-file state.  header_buf must point at a buffer of at least
- * FileEncryptionFileHeaderSize() bytes; on return it holds the bytes the
- * caller must persist at the start of the file.
- */
-FileEncryptionFileState *
-FileEncryptionFileCreate(const char *path, char *header_buf)
-{
-	FileEncryptionFileState *fstate;
-
-	if (!FileEncryptionEnabled())
-		elog(ERROR, "file encryption module is not configured");
-
-	ensure_per_process_init();
-
-	fstate = allocate_file_state();
-
-	if (LoadedFileEncryptionCallbacks->init_file_cb != NULL)
-	{
-		MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-
-		PG_TRY();
-		{
-			LoadedFileEncryptionCallbacks->init_file_cb(file_encryption_module_state,
-														fstate, path, header_buf);
-		}
-		PG_FINALLY();
-		{
-			MemoryContextSwitchTo(oldcontext);
-		}
-		PG_END_TRY();
-	}
-
-	return fstate;
-}
-
-/*
- * Drive open_file_cb for an existing encrypted file.  header_buf must hold
- * the FileEncryptionFileHeaderSize() bytes the caller already read from
- * offset 0 of the file.
- */
-FileEncryptionFileState *
-FileEncryptionFileOpen(const char *path, const char *header_buf)
-{
-	FileEncryptionFileState *fstate;
-
-	if (!FileEncryptionEnabled())
-		elog(ERROR, "file encryption module is not configured");
-
-	ensure_per_process_init();
-
-	fstate = allocate_file_state();
-
-	if (LoadedFileEncryptionCallbacks->open_file_cb != NULL)
-	{
-		MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-
-		PG_TRY();
-		{
-			LoadedFileEncryptionCallbacks->open_file_cb(file_encryption_module_state,
-														fstate, path, header_buf);
-		}
-		PG_FINALLY();
-		{
-			MemoryContextSwitchTo(oldcontext);
-		}
-		PG_END_TRY();
-	}
-
-	return fstate;
-}
-
-/*
- * Release per-file state.  Safe to pass NULL.
+ * Encrypt data_len plaintext bytes into dst.  On success, dst contains
+ * exactly data_len + overhead_size bytes (the module appends its overhead
+ * at the tail).
  */
 void
-FileEncryptionFileClose(FileEncryptionFileState *fstate)
-{
-	if (fstate == NULL)
-		return;
-
-	if (LoadedFileEncryptionCallbacks != NULL &&
-		LoadedFileEncryptionCallbacks->close_file_cb != NULL)
-		LoadedFileEncryptionCallbacks->close_file_cb(file_encryption_module_state,
-													 fstate);
-	pfree(fstate);
-}
-
-/*
- * Encrypt a record for storage on disk.
- */
-void
-FileEncryptionEncrypt(FileEncryptionFileState *fstate,
-					  const char *path, uint64 file_offset,
+FileEncryptionEncrypt(const char *path, uint64 file_offset,
 					  const char *data, Size data_len, StringInfo dst)
 {
 	if (!FileEncryptionEnabled())
@@ -200,17 +99,16 @@ FileEncryptionEncrypt(FileEncryptionFileState *fstate,
 	ensure_per_process_init();
 	resetStringInfo(dst);
 	LoadedFileEncryptionCallbacks->encrypt_cb(file_encryption_module_state,
-											  fstate,
 											  path, file_offset, data, data_len,
 											  dst);
 }
 
 /*
- * Decrypt a record read from disk.
+ * Decrypt data_len bytes (which the module produced via encrypt_cb,
+ * including its trailing overhead) into dst.
  */
 void
-FileEncryptionDecrypt(FileEncryptionFileState *fstate,
-					  const char *path, uint64 file_offset,
+FileEncryptionDecrypt(const char *path, uint64 file_offset,
 					  const char *data, Size data_len, StringInfo dst)
 {
 	if (!FileEncryptionEnabled())
@@ -219,7 +117,6 @@ FileEncryptionDecrypt(FileEncryptionFileState *fstate,
 	ensure_per_process_init();
 	resetStringInfo(dst);
 	LoadedFileEncryptionCallbacks->decrypt_cb(file_encryption_module_state,
-											  fstate,
 											  path, file_offset, data, data_len,
 											  dst);
 }
@@ -247,13 +144,14 @@ FileEncryptionEnsureInit(void)
 	if (LoadedFileEncryptionCallbacks == NULL)
 		return;
 	ensure_per_process_init();
-	if (LoadedFileEncryptionCallbacks->page_reserved_size > 0)
+	if (FileEncryptionPagesEnabled())
 		ensure_page_scratch();
 }
 
 /*
- * Returns true when the configured module declares non-zero
- * page_reserved_size, i.e. it knows how to encrypt relation pages.
+ * Returns true when the configured module's overhead_size matches the
+ * cluster's page_reserved_size, i.e. relation pages are routed through
+ * the module.
  *
  * mdinit() (called from smgrinit() in BaseInit()) consults this before
  * process_file_encryption_library() has run, so we must tolerate a NULL
@@ -267,7 +165,8 @@ FileEncryptionPagesEnabled(void)
 		return false;
 	if (LoadedFileEncryptionCallbacks == NULL)
 		return false;
-	return LoadedFileEncryptionCallbacks->page_reserved_size > 0;
+	return LoadedFileEncryptionCallbacks->overhead_size > 0 &&
+		LoadedFileEncryptionCallbacks->overhead_size == GetPageReservedSize();
 }
 
 /*
@@ -279,18 +178,17 @@ FileEncryptionPageReservedSize(void)
 {
 	if (!FileEncryptionPagesEnabled())
 		return 0;
-	return LoadedFileEncryptionCallbacks->page_reserved_size;
+	return LoadedFileEncryptionCallbacks->overhead_size;
 }
 
 /*
- * Encrypt a relation page.  src and dst are both BLCKSZ-sized buffers;
- * the module fills dst with the encrypted page (consuming the trailing
- * page_reserved_size bytes for its own metadata).
+ * Encrypt a relation page.  src and dst are both BLCKSZ-sized buffers; the
+ * module fills dst with the encrypted page (the trailing overhead_size
+ * bytes are its own metadata).
  *
- * Internally this drives encrypt_cb with fstate == NULL so the module's
- * page-mode branch runs.  The path string is built on the fly from the
- * relfilelocator + fork; callers that already have a path string can
- * skip this helper and call FileEncryptionEncrypt directly.
+ * The (path, file_offset) pair we pass to encrypt_cb is the natural
+ * AAD-derivation context for AEAD modules: path is the segment-relative
+ * relation path (e.g. "base/5/1259") and file_offset is blocknum * BLCKSZ.
  */
 void
 FileEncryptionEncryptPage(const RelFileLocator *locator,
@@ -299,6 +197,7 @@ FileEncryptionEncryptPage(const RelFileLocator *locator,
 {
 	StringInfoData si;
 	RelPathStr	relpath_str;
+	Size		body_len;
 
 	if (!FileEncryptionPagesEnabled())
 		elog(ERROR, "page encryption is not configured");
@@ -306,6 +205,7 @@ FileEncryptionEncryptPage(const RelFileLocator *locator,
 	ensure_page_scratch();
 
 	relpath_str = relpathbackend(*locator, INVALID_PROC_NUMBER, fork);
+	body_len = BLCKSZ - LoadedFileEncryptionCallbacks->overhead_size;
 
 	/*
 	 * Wrap the per-process page scratch buffer as a fixed-size StringInfo.
@@ -319,10 +219,9 @@ FileEncryptionEncryptPage(const RelFileLocator *locator,
 	si.cursor = 0;
 
 	LoadedFileEncryptionCallbacks->encrypt_cb(file_encryption_module_state,
-											  NULL, /* page mode */
 											  relpath_str.str,
 											  (uint64) blocknum * BLCKSZ,
-											  src, BLCKSZ, &si);
+											  src, body_len, &si);
 	if (si.len != BLCKSZ)
 		elog(ERROR,
 			 "page encryption module produced %d bytes, expected %d",
@@ -332,8 +231,10 @@ FileEncryptionEncryptPage(const RelFileLocator *locator,
 
 /*
  * Decrypt a relation page.  src and dst are both BLCKSZ-sized buffers; the
- * module reads the trailing page_reserved_size bytes of src to recover
- * IV/tag/key material before producing dst.
+ * module reads the trailing overhead_size bytes of src to recover
+ * IV/tag/key material before producing dst.  On return, the trailing
+ * overhead_size bytes of dst are zeroed (per the file_encryption.h
+ * contract: plaintext pages have zero trailers so pd_checksum verifies).
  */
 void
 FileEncryptionDecryptPage(const RelFileLocator *locator,
@@ -342,6 +243,8 @@ FileEncryptionDecryptPage(const RelFileLocator *locator,
 {
 	StringInfoData si;
 	RelPathStr	relpath_str;
+	Size		overhead;
+	Size		body_len;
 
 	if (!FileEncryptionPagesEnabled())
 		elog(ERROR, "page encryption is not configured");
@@ -349,6 +252,8 @@ FileEncryptionDecryptPage(const RelFileLocator *locator,
 	ensure_page_scratch();
 
 	relpath_str = relpathbackend(*locator, INVALID_PROC_NUMBER, fork);
+	overhead = LoadedFileEncryptionCallbacks->overhead_size;
+	body_len = BLCKSZ - overhead;
 
 	si.data = page_scratch_buffer;
 	si.len = 0;
@@ -356,15 +261,17 @@ FileEncryptionDecryptPage(const RelFileLocator *locator,
 	si.cursor = 0;
 
 	LoadedFileEncryptionCallbacks->decrypt_cb(file_encryption_module_state,
-											  NULL, /* page mode */
 											  relpath_str.str,
 											  (uint64) blocknum * BLCKSZ,
 											  src, BLCKSZ, &si);
-	if (si.len != BLCKSZ)
+	if (si.len != body_len)
 		elog(ERROR,
-			 "page decryption module produced %d bytes, expected %d",
-			 si.len, BLCKSZ);
-	memcpy(dst, page_scratch_buffer, BLCKSZ);
+			 "page decryption module produced %d bytes, expected %zu",
+			 si.len, body_len);
+
+	memcpy(dst, page_scratch_buffer, body_len);
+	/* Zero the trailer in plaintext, per the file_encryption.h contract. */
+	memset(dst + body_len, 0, overhead);
 }
 
 /*
@@ -460,35 +367,21 @@ load_and_validate_module(void)
 				(errmsg("file encryption modules must register encrypt and decrypt callbacks")));
 
 	/*
-	 * If the module reserves a per-file header, init/open are mandatory; the
-	 * core code can't write or parse the header on its own.  When no header
-	 * is requested either both or neither may be supplied, depending on
-	 * whether the module wants per-file state derived from the path.
+	 * If the module declares a non-zero overhead_size and the cluster
+	 * reserves bytes per page, the two values must match exactly: pages
+	 * on disk already have GetPageReservedSize() bytes carved off, and
+	 * encrypt_cb is required to fill exactly that much trailing overhead.
+	 *
+	 * A non-zero overhead with a zero cluster reservation is also valid
+	 * (the module is used only for record streams; pages stay plaintext).
 	 */
-	if (callbacks->file_header_size > 0 &&
-		(callbacks->init_file_cb == NULL ||
-		 callbacks->open_file_cb == NULL))
+	if (callbacks->overhead_size > 0 &&
+		GetPageReservedSize() != 0 &&
+		callbacks->overhead_size != GetPageReservedSize())
 		ereport(ERROR,
-				(errmsg("file encryption module \"%s\" reserves %zu header bytes per file but did not register init_file_cb and open_file_cb",
+				(errmsg("file encryption module \"%s\" declares overhead_size %zu, but the cluster was initialized with page_reserved_size %u",
 						file_encryption_library,
-						callbacks->file_header_size)));
-	if ((callbacks->init_file_cb == NULL) !=
-		(callbacks->open_file_cb == NULL))
-		ereport(ERROR,
-				(errmsg("file encryption modules must register init_file_cb and open_file_cb together")));
-
-	/*
-	 * Page-level encryption is signalled by a non-zero page_reserved_size
-	 * (the cluster's reservation in pg_control must match exactly).
-	 * Modules that opt in are then expected to handle encrypt_cb /
-	 * decrypt_cb calls with fstate == NULL.
-	 */
-	if (callbacks->page_reserved_size > 0 &&
-		callbacks->page_reserved_size != GetPageReservedSize())
-		ereport(ERROR,
-				(errmsg("file encryption module \"%s\" requires %zu page-reserved bytes, but the cluster was initialized with %u",
-						file_encryption_library,
-						callbacks->page_reserved_size,
+						callbacks->overhead_size,
 						GetPageReservedSize())));
 
 	LoadedFileEncryptionCallbacks = callbacks;

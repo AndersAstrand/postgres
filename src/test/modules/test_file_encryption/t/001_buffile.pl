@@ -49,8 +49,8 @@ is($sort_ok, 't', 'sort spilled and round-tripped through encrypted BufFile');
 $node->stop;
 
 ok($node->log_contains(
-	qr/test_file_encryption: encrypt_calls=[1-9][0-9]* decrypt_calls=[1-9][0-9]* .* init_files=[1-9][0-9]*/
+	qr/test_file_encryption: encrypt_calls=[1-9][0-9]* decrypt_calls=[1-9][0-9]*/
    ),
-	'init_file/encrypt/decrypt callbacks were exercised');
+	'encrypt/decrypt callbacks were exercised');
 
 done_testing();

@@ -36,90 +36,30 @@ typedef struct FileEncryptionModuleState
 } FileEncryptionModuleState;
 
 /*
- * Per-file state.  Each opened encrypted file gets one of these; the module
- * owns ->private_data and is responsible for releasing it from
- * close_file_cb (if any).
- */
-typedef struct FileEncryptionFileState
-{
-	void	   *private_data;
-} FileEncryptionFileState;
-
-/*
- * File encryption module callbacks.
- *
- * The file_offset argument to encrypt_cb / decrypt_cb identifies where the
- * encrypted record will be stored in the underlying file (offsets are
- * inclusive of any per-file header reserved by the core code).  Modules
- * can use it, together with the path and the per-file state, to derive
- * per-record IVs or nonces.
+ * Optional per-process lifecycle callbacks.  startup_cb runs once when the
+ * module's per-process state is first needed (or eagerly at postmaster
+ * startup); shutdown_cb runs once at process exit.  Both may be NULL.
  */
 typedef void (*FileEncryptionStartupCB) (FileEncryptionModuleState *state);
 typedef void (*FileEncryptionShutdownCB) (FileEncryptionModuleState *state);
 
 /*
- * Per-file callbacks.  init_file_cb is called once when a brand-new file is
- * being created; the module fills "header" with file_header_size bytes of
- * metadata that the core code writes verbatim at the start of the file,
- * and stows whatever per-file state it needs in fstate->private_data.
+ * Encrypt / decrypt callbacks.  The module sees a single uniform call
+ * shape: encrypt the data_len plaintext bytes at "data" into dst,
+ * producing exactly data_len + overhead_size output bytes (with the
+ * overhead bytes laid out at the tail of dst).  The (path, file_offset)
+ * pair identifies where the bytes will live on disk and is the natural
+ * AAD-derivation context for AEAD modules.
  *
- * open_file_cb is called once when an existing file is opened; the module
- * receives the file_header_size bytes the core code already read from
- * disk and reconstructs fstate->private_data.
- *
- * close_file_cb is called when the file is no longer needed; the module
- * releases anything it allocated for fstate->private_data.
- *
- * If file_header_size is 0, init_file_cb / open_file_cb may still be
- * supplied to set up per-file state derived from the path alone, and
- * "header" is then unused.
- */
-typedef void (*FileEncryptionInitFileCB) (const FileEncryptionModuleState *state,
-										  FileEncryptionFileState *fstate,
-										  const char *path,
-										  char *header);
-typedef void (*FileEncryptionOpenFileCB) (const FileEncryptionModuleState *state,
-										  FileEncryptionFileState *fstate,
-										  const char *path,
-										  const char *header);
-typedef void (*FileEncryptionCloseFileCB) (const FileEncryptionModuleState *state,
-										   FileEncryptionFileState *fstate);
-
-/*
- * Encrypt / decrypt callbacks.  Used uniformly for both record streams
- * (BufFile, reorderbuffer spill files) and relation pages (heap, index,
- * etc.).  The per-call mode is signalled by fstate:
- *
- *	 fstate != NULL: record-stream call.  data_len is the variable-length
- *					 record body; dst grows to hold ciphertext + whatever
- *					 per-record overhead (IV, auth tag, ...) the module
- *					 wants.  fstate->private_data carries any per-file
- *					 metadata the module set up via init_file_cb /
- *					 open_file_cb.  path is the spill file's filesystem
- *					 path; file_offset is the byte position of the
- *					 record within the file.
- *
- *	 fstate == NULL: relation-page call.  data_len is exactly BLCKSZ;
- *					 dst is filled with exactly BLCKSZ bytes of
- *					 ciphertext + the module's per-page metadata in the
- *					 trailing page_reserved_size bytes.  path is the
- *					 segment-relative relation path (e.g.
- *					 "base/5/1259") and file_offset is blocknum * BLCKSZ.
- *					 The (path, file_offset) tuple uniquely identifies
- *					 the page on disk and is the natural AAD context.
- *
- * Modules that only encrypt record streams (page_reserved_size == 0)
- * never see fstate == NULL.  Modules that only encrypt pages (no
- * file_header_size and no init_file_cb) never see fstate != NULL.
- * Modules that do both must branch.
+ * The caller is responsible for slicing data and dst to the right
+ * boundaries; the module never has to know whether the call came from a
+ * BufFile, a reorderbuffer spill file, or an md.c relation-page write.
  */
 typedef void (*FileEncryptionEncryptCB) (const FileEncryptionModuleState *state,
-										 FileEncryptionFileState *fstate,
 										 const char *path, uint64 file_offset,
 										 const char *data, Size data_len,
 										 StringInfo dst);
 typedef void (*FileEncryptionDecryptCB) (const FileEncryptionModuleState *state,
-										 FileEncryptionFileState *fstate,
 										 const char *path, uint64 file_offset,
 										 const char *data, Size data_len,
 										 StringInfo dst);
@@ -130,35 +70,25 @@ typedef void (*FileEncryptionDecryptCB) (const FileEncryptionModuleState *state,
  * Bump this whenever FileEncryptionCallbacks or any of the callback
  * signatures change in an incompatible way.
  */
-#define PG_FILE_ENCRYPTION_MAGIC 0x46454D34		/* "FEM4" */
+#define PG_FILE_ENCRYPTION_MAGIC 0x46454D35		/* "FEM5" */
 
 typedef struct FileEncryptionCallbacks
 {
 	uint32		magic;			/* must be set to PG_FILE_ENCRYPTION_MAGIC */
 
 	/*
-	 * Number of bytes the core code reserves at the start of every encrypted
-	 * record-stream file for the module's per-file header.  May be 0 (no
-	 * header).  When non-zero, init_file_cb and open_file_cb must both be
-	 * supplied.
+	 * Number of bytes the module appends to every encrypt_cb output (per-call
+	 * overhead, e.g. IV + auth tag).  May be 0 for size-preserving modes.
+	 *
+	 * For relation-page encryption this also serves as the cluster's
+	 * page_reserved_size: pg_control records the value at initdb time, every
+	 * page on disk reserves that many bytes at its tail, and the module's
+	 * declared overhead_size must match the cluster's page_reserved_size.
 	 */
-	Size		file_header_size;
-
-	/*
-	 * Number of bytes the module needs at the tail of every relation page
-	 * for its per-page metadata (e.g. IV, auth tag, key version).  May be
-	 * 0 (the module doesn't encrypt pages).  When non-zero, the cluster's
-	 * page_reserved_size in pg_control must match this value, and
-	 * encrypt_cb / decrypt_cb must accept page calls (signalled by
-	 * fstate == NULL).
-	 */
-	Size		page_reserved_size;
+	Size		overhead_size;
 
 	FileEncryptionStartupCB startup_cb;
 	FileEncryptionShutdownCB shutdown_cb;
-	FileEncryptionInitFileCB init_file_cb;
-	FileEncryptionOpenFileCB open_file_cb;
-	FileEncryptionCloseFileCB close_file_cb;
 	FileEncryptionEncryptCB encrypt_cb;
 	FileEncryptionDecryptCB decrypt_cb;
 } FileEncryptionCallbacks;
@@ -173,45 +103,22 @@ extern PGDLLEXPORT const FileEncryptionCallbacks *_PG_file_encryption_module_ini
 
 extern bool FileEncryptionEnabled(void);
 
-/*
- * Number of header bytes the configured module reserves per file.  Callers
- * that physically lay out encrypted files use this to skip past the header
- * when computing record offsets.
- */
-extern Size FileEncryptionFileHeaderSize(void);
+/* Per-call ciphertext overhead size declared by the loaded module. */
+extern Size FileEncryptionOverheadSize(void);
 
-/*
- * Per-file lifecycle.  Callers do the actual file I/O for the header bytes;
- * these helpers just drive the module callbacks.
- *
- *	- FileEncryptionFileCreate is for a brand-new file.  On return,
- *	  header_buf has been populated with FileEncryptionFileHeaderSize() bytes
- *	  the caller must persist at offset 0.
- *	- FileEncryptionFileOpen is for an existing file.  Caller supplies the
- *	  FileEncryptionFileHeaderSize() bytes already read from offset 0.
- *	- FileEncryptionFileClose releases per-file state.
- */
-extern FileEncryptionFileState *FileEncryptionFileCreate(const char *path,
-														 char *header_buf);
-extern FileEncryptionFileState *FileEncryptionFileOpen(const char *path,
-													   const char *header_buf);
-extern void FileEncryptionFileClose(FileEncryptionFileState *fstate);
-
-extern void FileEncryptionEncrypt(FileEncryptionFileState *fstate,
-								  const char *path, uint64 file_offset,
+extern void FileEncryptionEncrypt(const char *path, uint64 file_offset,
 								  const char *data, Size data_len,
 								  StringInfo dst);
-extern void FileEncryptionDecrypt(FileEncryptionFileState *fstate,
-								  const char *path, uint64 file_offset,
+extern void FileEncryptionDecrypt(const char *path, uint64 file_offset,
 								  const char *data, Size data_len,
 								  StringInfo dst);
 
 /*
- * Page-level encryption.  FileEncryptionPagesEnabled() is true when a
- * configured module also registered the page callbacks.  The reserved
- * size returned here is authoritative at runtime; callers laying out
- * page contents must use it instead of FileEncryptionCallbacks-> to
- * remain agnostic to which module is loaded.
+ * Page-level encryption.  FileEncryptionPagesEnabled() is true when the
+ * configured module's overhead_size matches the cluster's page_reserved_size
+ * (i.e. relation pages are routed through the module).  The helpers below
+ * wrap encrypt_cb / decrypt_cb with the BLCKSZ-in / BLCKSZ-out contract
+ * that md.c needs.
  */
 extern bool FileEncryptionPagesEnabled(void);
 extern Size FileEncryptionPageReservedSize(void);

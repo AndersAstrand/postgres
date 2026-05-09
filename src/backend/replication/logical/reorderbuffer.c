@@ -156,7 +156,6 @@ typedef struct TXNEntryFile
 	File		vfd;			/* -1 when the file is closed */
 	off_t		curOffset;		/* offset for next write or read. Reset to 0
 								 * when vfd is opened. */
-	FileEncryptionFileState *fstate;	/* per-file encryption state, or NULL */
 } TXNEntryFile;
 
 /* k-way in-order change iteration support structures */
@@ -283,7 +282,6 @@ static void ReorderBufferCheckMemoryLimit(ReorderBuffer *rb);
 static void ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn);
 static void ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 										 const char *path, int fd,
-										 FileEncryptionFileState *fstate,
 										 pgoff_t *write_offset,
 										 StringInfo ciphertext,
 										 StringInfo writebuf,
@@ -1349,7 +1347,6 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn,
 	for (off = 0; off < state->nr_txns; off++)
 	{
 		state->entries[off].file.vfd = -1;
-		state->entries[off].file.fstate = NULL;
 		state->entries[off].segno = 0;
 	}
 
@@ -1533,11 +1530,6 @@ ReorderBufferIterTXNFinish(ReorderBuffer *rb,
 	{
 		if (state->entries[off].file.vfd != -1)
 			FileClose(state->entries[off].file.vfd);
-		if (state->entries[off].file.fstate != NULL)
-		{
-			FileEncryptionFileClose(state->entries[off].file.fstate);
-			state->entries[off].file.fstate = NULL;
-		}
 	}
 
 	/* free memory we might have "leaked" in the last *Next call */
@@ -4032,8 +4024,6 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	StringInfoData ciphertext;
 	StringInfoData writebuf;
 	pgoff_t		write_offset = 0;
-	Size		hdr_size = encrypted ? FileEncryptionFileHeaderSize() : 0;
-	FileEncryptionFileState *write_fstate = NULL;
 
 	elog(DEBUG2, "spill %u changes in XID %u to disk",
 		 (uint32) txn->nentries_mem, txn->xid);
@@ -4073,11 +4063,6 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		{
 			if (fd != -1)
 				CloseTransientFile(fd);
-			if (write_fstate != NULL)
-			{
-				FileEncryptionFileClose(write_fstate);
-				write_fstate = NULL;
-			}
 
 			XLByteToSeg(change->lsn, curOpenSegNo, wal_segment_size);
 
@@ -4088,15 +4073,8 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 			ReorderBufferSerializedPath(path, MyReplicationSlot, txn->xid,
 										curOpenSegNo);
 
-			/*
-			 * Open segment, create it if necessary.  Use O_RDWR so the
-			 * encryption header at the start of the file can be read back
-			 * if the file already exists from a previous spill of the same
-			 * xid in this segment.
-			 */
 			fd = OpenTransientFile(path,
-								   O_CREAT | (encrypted ? O_RDWR : O_WRONLY) |
-								   O_APPEND | PG_BINARY);
+								   O_CREAT | O_WRONLY | O_APPEND | PG_BINARY);
 
 			if (fd < 0)
 				ereport(ERROR,
@@ -4104,11 +4082,10 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 						 errmsg("could not open file \"%s\": %m", path)));
 
 			/*
-			 * Encryption modules may use the file offset of each record to
-			 * derive a per-record IV.  The file is opened O_APPEND, so writes
-			 * always go to the end; learn the current end once here, then
-			 * advance our local cursor with each write to avoid an extra
-			 * syscall per change.
+			 * Encryption modules use the file offset of each record to
+			 * derive a per-record IV.  The file is opened O_APPEND, so
+			 * writes always go to the end; learn the current end once
+			 * here, then advance our local cursor with each write.
 			 */
 			if (encrypted)
 			{
@@ -4118,56 +4095,10 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 							(errcode_for_file_access(),
 							 errmsg("could not determine end of spill file \"%s\": %m",
 									path)));
-
-				if (write_offset == 0)
-				{
-					/*
-					 * Brand-new file: ask the module for a header and write
-					 * it as the first bytes of the file.
-					 */
-					char	   *header = hdr_size > 0 ? palloc(hdr_size) : NULL;
-
-					write_fstate = FileEncryptionFileCreate(path, header);
-
-					if (hdr_size > 0)
-					{
-						if (write(fd, header, hdr_size) != hdr_size)
-						{
-							int			save_errno = errno;
-
-							CloseTransientFile(fd);
-							errno = save_errno ? save_errno : ENOSPC;
-							ereport(ERROR,
-									(errcode_for_file_access(),
-									 errmsg("could not write encryption header to file \"%s\": %m",
-											path)));
-						}
-						pfree(header);
-					}
-					write_offset = hdr_size;
-				}
-				else
-				{
-					/* Existing file: read header back and parse it. */
-					char	   *header = hdr_size > 0 ? palloc(hdr_size) : NULL;
-
-					if (hdr_size > 0)
-					{
-						if (pg_pread(fd, header, hdr_size, 0) != hdr_size)
-							ereport(ERROR,
-									(errcode_for_file_access(),
-									 errmsg("could not read encryption header from file \"%s\": %m",
-											path)));
-					}
-					write_fstate = FileEncryptionFileOpen(path, header);
-					if (header != NULL)
-						pfree(header);
-				}
 			}
 		}
 
 		ReorderBufferSerializeChange(rb, txn, path, fd,
-									 encrypted ? write_fstate : NULL,
 									 encrypted ? &write_offset : NULL,
 									 encrypted ? &ciphertext : NULL,
 									 encrypted ? &writebuf : NULL,
@@ -4201,9 +4132,6 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 
 	if (fd != -1)
 		CloseTransientFile(fd);
-	if (write_fstate != NULL)
-		FileEncryptionFileClose(write_fstate);
-
 	if (encrypted)
 	{
 		pfree(ciphertext.data);
@@ -4222,7 +4150,6 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 static void
 ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 							 const char *path, int fd,
-							 FileEncryptionFileState *fstate,
 							 pgoff_t *write_offset,
 							 StringInfo ciphertext,
 							 StringInfo writebuf,
@@ -4416,7 +4343,7 @@ ReorderBufferSerializeChange(ReorderBuffer *rb, ReorderBufferTXN *txn,
 		encrypted_record.plaintext_size = ondisk->size;
 
 		resetStringInfo(ciphertext);
-		FileEncryptionEncrypt(fstate, path, *write_offset,
+		FileEncryptionEncrypt(path, *write_offset,
 							  rb->outbuf, ondisk->size, ciphertext);
 
 		encrypted_record.ciphertext_size = ciphertext->len;
@@ -4827,34 +4754,6 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 						 errmsg("could not open file \"%s\": %m",
 								path)));
 
-			/*
-			 * Read the per-file encryption header (if any) and hand it to
-			 * the module so it can reconstruct per-file state.  Records
-			 * start immediately after the header.
-			 */
-			if (encrypted)
-			{
-				Size		hdr_size = FileEncryptionFileHeaderSize();
-				char	   *header = NULL;
-
-				if (hdr_size > 0)
-				{
-					int			n;
-
-					header = palloc(hdr_size);
-					n = FileRead(*fd, header, hdr_size, 0,
-								 WAIT_EVENT_REORDER_BUFFER_READ);
-					if (n != hdr_size)
-						ereport(ERROR,
-								(errcode_for_file_access(),
-								 errmsg("could not read file encryption header from \"%s\"",
-										path)));
-				}
-				file->fstate = FileEncryptionFileOpen(path, header);
-				if (header != NULL)
-					pfree(header);
-				file->curOffset = hdr_size;
-			}
 		}
 
 		/*
@@ -4872,8 +4771,6 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			{
 				FileClose(*fd);
 				*fd = -1;
-				FileEncryptionFileClose(file->fstate);
-				file->fstate = NULL;
 				(*segno)++;
 				continue;
 			}
@@ -4892,7 +4789,7 @@ ReorderBufferRestoreChanges(ReorderBuffer *rb, ReorderBufferTXN *txn,
 			ciphertext.len = encrypted_record.ciphertext_size;
 			ciphertext.data[ciphertext.len] = '\0';
 
-			FileEncryptionDecrypt(file->fstate, path, record_offset,
+			FileEncryptionDecrypt(path, record_offset,
 								  ciphertext.data, ciphertext.len,
 								  &plaintext);
 
