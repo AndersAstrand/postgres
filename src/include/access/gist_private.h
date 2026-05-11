@@ -471,8 +471,14 @@ extern void gistadjustmembers(Oid opfamilyoid,
 
 /* gistutil.c */
 
+/*
+ * GiSTPageSize is a runtime expression once file_encryption_library reserves
+ * bytes at the tail of every page; the runtime call to GetPageReservedSize()
+ * is a one-line lookup.
+ */
 #define GiSTPageSize   \
-	( BLCKSZ - SizeOfPageHeaderData - MAXALIGN(sizeof(GISTPageOpaqueData)) )
+	( BLCKSZ - GetPageReservedSize() - SizeOfPageHeaderData - \
+	  MAXALIGN(sizeof(GISTPageOpaqueData)) )
 
 #define GIST_MIN_FILLFACTOR			10
 #define GIST_DEFAULT_FILLFACTOR		90

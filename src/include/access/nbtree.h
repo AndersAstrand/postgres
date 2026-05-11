@@ -162,13 +162,19 @@ typedef struct BTMetaPageData
  * a heap index tuple to make space for a tiebreaker heap TID
  * attribute, which we account for here.
  */
+/*
+ * BTMaxItemSize and BTMaxItemSizeNoHeapTid are runtime expressions when a
+ * file_encryption_library has reserved bytes at the tail of every page;
+ * GetPageReservedSize() is a one-line lookup so the cost is negligible at
+ * the call sites (insert, dedup, sort).
+ */
 #define BTMaxItemSize \
-	(MAXALIGN_DOWN((BLCKSZ - \
+	(MAXALIGN_DOWN((BLCKSZ - GetPageReservedSize() - \
 					MAXALIGN(SizeOfPageHeaderData + 3*sizeof(ItemIdData)) - \
 					MAXALIGN(sizeof(BTPageOpaqueData))) / 3) - \
 					MAXALIGN(sizeof(ItemPointerData)))
 #define BTMaxItemSizeNoHeapTid \
-	MAXALIGN_DOWN((BLCKSZ - \
+	MAXALIGN_DOWN((BLCKSZ - GetPageReservedSize() - \
 				   MAXALIGN(SizeOfPageHeaderData + 3*sizeof(ItemIdData)) - \
 				   MAXALIGN(sizeof(BTPageOpaqueData))) / 3)
 
