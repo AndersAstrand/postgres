@@ -243,8 +243,14 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 													 &forkNum, &segno))
 				continue;
 
-			/* We never remove the init fork. */
-			if (forkNum == INIT_FORKNUM)
+			/*
+			 * We never remove the init fork.  We also keep the key fork:
+			 * its wrapped DEK belongs to the relation as a unit (the data
+			 * we're about to wipe was encrypted under it; new data after
+			 * reset re-encrypts under the same DEK).  Re-creating it would
+			 * require module-side wrap, which we don't do during reinit.
+			 */
+			if (forkNum == INIT_FORKNUM || forkNum == KEY_FORKNUM)
 				continue;
 
 			/*

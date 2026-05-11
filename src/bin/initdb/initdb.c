@@ -68,6 +68,7 @@
 #include "catalog/pg_authid_d.h"
 #include "catalog/pg_class_d.h"
 #include "catalog/pg_collation_d.h"
+#include "catalog/pg_control.h"
 #include "catalog/pg_database_d.h"
 #include "common/file_perm.h"
 #include "common/file_utils.h"
@@ -165,6 +166,7 @@ static bool do_sync = true;
 static bool sync_only = false;
 static bool show_setting = false;
 static bool data_checksums = true;
+static int	page_reserved_size = 0;
 static char *xlog_dir = NULL;
 static int	wal_segment_size_mb = (DEFAULT_XLOG_SEG_SIZE) / (1024 * 1024);
 static DataDirSyncMethod sync_method = DATA_DIR_SYNC_METHOD_FSYNC;
@@ -1636,6 +1638,8 @@ bootstrap_template1(void)
 	appendPQExpBuffer(&cmd, " -X %d", wal_segment_size_mb * (1024 * 1024));
 	if (data_checksums)
 		appendPQExpBufferStr(&cmd, " -k");
+	if (page_reserved_size > 0)
+		appendPQExpBuffer(&cmd, " -R %d", page_reserved_size);
 	if (debug)
 		appendPQExpBufferStr(&cmd, " -d 5");
 
@@ -2563,6 +2567,9 @@ usage(const char *progname)
 	printf(_("      --locale-provider={builtin|libc|icu}\n"
 			 "                            set default locale provider for new databases\n"));
 	printf(_("      --no-data-checksums   do not use data page checksums\n"));
+	printf(_("      --file-encryption-page-reserved-size=N\n"
+			 "                            reserve N bytes at the tail of every relation page\n"
+			 "                            for a file encryption module's per-page metadata\n"));
 	printf(_("      --pwfile=FILE         read password for the new superuser from file\n"));
 	printf(_("  -T, --text-search-config=CFG\n"
 			 "                            default text search configuration\n"));
@@ -3223,6 +3230,7 @@ main(int argc, char *argv[])
 		{"sync-method", required_argument, NULL, 19},
 		{"no-data-checksums", no_argument, NULL, 20},
 		{"no-sync-data-files", no_argument, NULL, 21},
+		{"file-encryption-page-reserved-size", required_argument, NULL, 22},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3420,6 +3428,15 @@ main(int argc, char *argv[])
 			case 21:
 				sync_data_files = false;
 				break;
+			case 22:
+				if (!option_parse_int(optarg, "--file-encryption-page-reserved-size",
+									  0, MAX_PAGE_RESERVED_SIZE,
+									  &page_reserved_size))
+					exit(1);
+				if ((page_reserved_size % MAXIMUM_ALIGNOF) != 0)
+					pg_fatal("argument of --file-encryption-page-reserved-size must be a multiple of %d",
+							 MAXIMUM_ALIGNOF);
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -3522,6 +3539,10 @@ main(int argc, char *argv[])
 		printf(_("Data page checksums are enabled.\n"));
 	else
 		printf(_("Data page checksums are disabled.\n"));
+
+	if (page_reserved_size > 0)
+		printf(_("File encryption page-reserved size is %d bytes.\n"),
+			   page_reserved_size);
 
 	if (pwprompt || pwfilename)
 		get_su_pwd();

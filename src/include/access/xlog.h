@@ -260,8 +260,10 @@ extern const char *get_checksum_state_string(uint32 state);
 extern void InitLocalDataChecksumState(void);
 extern void SetLocalDataChecksumState(uint32 data_checksum_version);
 extern bool GetDefaultCharSignedness(void);
+extern uint32 GetPageReservedSize(void);
 extern XLogRecPtr GetFakeLSNForUnloggedRel(void);
-extern void BootStrapXLOG(uint32 data_checksum_version);
+extern void BootStrapXLOG(uint32 data_checksum_version,
+						  uint32 page_reserved_size);
 extern void InitializeWalConsistencyChecking(void);
 extern void LocalProcessControlFile(bool reset);
 extern WalLevel GetActiveWalLevelOnStandby(void);

@@ -46,6 +46,14 @@ typedef struct SMgrRelationData
 	BlockNumber smgr_targblock; /* current insertion target block */
 	BlockNumber smgr_cached_nblocks[MAX_FORKNUM + 1];	/* last known size */
 
+	/*
+	 * File encryption per-relation state.  Lazily populated by
+	 * FileEncryptionOpenObject() on first page encrypt/decrypt for this
+	 * relation; released by FileEncryptionCloseObject() from smgrclose().
+	 * Opaque to smgr; the loaded encryption module owns the value.
+	 */
+	void	   *encryption_object_state;
+
 	/* additional public fields may someday exist here */
 
 	/*

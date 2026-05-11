@@ -347,6 +347,8 @@ main(int argc, char *argv[])
 		   (ControlFile->float8ByVal ? _("by value") : _("by reference")));
 	printf(_("Data page checksum version:           %u\n"),
 		   ControlFile->data_checksum_version);
+	printf(_("File encryption page-reserved size:   %u\n"),
+		   ControlFile->page_reserved_size);
 	printf(_("Default char data signedness:         %s\n"),
 		   (ControlFile->default_char_signedness ? _("signed") : _("unsigned")));
 	printf(_("Mock authentication nonce:            %s\n"),
