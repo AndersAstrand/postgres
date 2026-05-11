@@ -13,6 +13,7 @@
 
 #include "postgres.h"
 
+#include "access/xlog.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "storage/file_encryption.h"
@@ -39,6 +40,20 @@ static const FileEncryptionCallbacks *LoadedFileEncryptionCallbacks = NULL;
  */
 static FileEncryptionModuleState *file_encryption_module_state = NULL;
 static int	file_encryption_init_pid = 0;
+
+/*
+ * Page-level scratch StringInfo buffer.  Pages need a BLCKSZ-sized output
+ * but StringInfo writes a trailing null at data[len], so the backing
+ * buffer is BLCKSZ + 1.  Reused across calls in the current process.
+ */
+static char *page_scratch_buffer = NULL;
+
+static inline void
+ensure_page_scratch(void)
+{
+	if (page_scratch_buffer == NULL)
+		page_scratch_buffer = MemoryContextAlloc(TopMemoryContext, BLCKSZ + 1);
+}
 
 static void load_and_validate_module(void);
 static void ensure_per_process_init(void);
@@ -103,6 +118,159 @@ FileEncryptionDecrypt(const char *path, uint64 file_offset,
 	LoadedFileEncryptionCallbacks->decrypt_cb(file_encryption_module_state,
 											  path, file_offset, data, data_len,
 											  dst);
+}
+
+/*
+ * Eager wrapper for ensure_per_process_init() and the page-scratch
+ * allocation.  Called from mdinit() in each backend so that the
+ * per-process module state, shutdown registration, and BLCKSZ-sized
+ * scratch buffer are all in place before AIO completion callbacks
+ * (which run inside critical sections and can't allocate) fire.
+ *
+ * No-op when the module hasn't been loaded yet — that's the bootstrap
+ * case, where BaseInit() runs before process_file_encryption_library(),
+ * and we'd otherwise try to dlopen the module and run its _PG_init too
+ * early (PGC_POSTMASTER GUCs can't be defined after startup is complete).
+ * The bootstrap process_file_encryption_library() call will reach back
+ * via md_init_enc_workspace() to do the eager init once the module IS
+ * loaded.
+ */
+void
+FileEncryptionEnsureInit(void)
+{
+	if (!FileEncryptionEnabled())
+		return;
+	if (LoadedFileEncryptionCallbacks == NULL)
+		return;
+	ensure_per_process_init();
+	if (FileEncryptionPagesEnabled())
+		ensure_page_scratch();
+}
+
+/*
+ * Returns true when the configured module's overhead_size matches the
+ * cluster's page_reserved_size, i.e. relation pages are routed through
+ * the module.
+ *
+ * mdinit() (called from smgrinit() in BaseInit()) consults this before
+ * process_file_encryption_library() has run, so we must tolerate a NULL
+ * LoadedFileEncryptionCallbacks: the answer in that case is "not yet, but
+ * we'll be asked again after the module loads".
+ */
+bool
+FileEncryptionPagesEnabled(void)
+{
+	if (!FileEncryptionEnabled())
+		return false;
+	if (LoadedFileEncryptionCallbacks == NULL)
+		return false;
+	return LoadedFileEncryptionCallbacks->overhead_size > 0 &&
+		LoadedFileEncryptionCallbacks->overhead_size == GetPageReservedSize();
+}
+
+/*
+ * Number of bytes the configured module reserves at the tail of every
+ * relation page.  Returns 0 when no page-level module is configured.
+ */
+Size
+FileEncryptionPageReservedSize(void)
+{
+	if (!FileEncryptionPagesEnabled())
+		return 0;
+	return LoadedFileEncryptionCallbacks->overhead_size;
+}
+
+/*
+ * Encrypt a relation page.  src and dst are both BLCKSZ-sized buffers; the
+ * module fills dst with the encrypted page (the trailing overhead_size
+ * bytes are its own metadata).
+ *
+ * The (path, file_offset) pair we pass to encrypt_cb is the natural
+ * AAD-derivation context for AEAD modules: path is the segment-relative
+ * relation path (e.g. "base/5/1259") and file_offset is blocknum * BLCKSZ.
+ */
+void
+FileEncryptionEncryptPage(const RelFileLocator *locator,
+						  ForkNumber fork, BlockNumber blocknum,
+						  const char *src, char *dst)
+{
+	StringInfoData si;
+	RelPathStr	relpath_str;
+	Size		body_len;
+
+	if (!FileEncryptionPagesEnabled())
+		elog(ERROR, "page encryption is not configured");
+	ensure_per_process_init();
+	ensure_page_scratch();
+
+	relpath_str = relpathbackend(*locator, INVALID_PROC_NUMBER, fork);
+	body_len = BLCKSZ - LoadedFileEncryptionCallbacks->overhead_size;
+
+	/*
+	 * Wrap the per-process page scratch buffer as a fixed-size StringInfo.
+	 * The module fills BLCKSZ bytes; we then memcpy out to dst.  We can't
+	 * use dst directly because StringInfo writes a trailing null terminator
+	 * one byte past dst->len, which would overflow a strict BLCKSZ buffer.
+	 */
+	si.data = page_scratch_buffer;
+	si.len = 0;
+	si.maxlen = BLCKSZ + 1;
+	si.cursor = 0;
+
+	LoadedFileEncryptionCallbacks->encrypt_cb(file_encryption_module_state,
+											  relpath_str.str,
+											  (uint64) blocknum * BLCKSZ,
+											  src, body_len, &si);
+	if (si.len != BLCKSZ)
+		elog(ERROR,
+			 "page encryption module produced %d bytes, expected %d",
+			 si.len, BLCKSZ);
+	memcpy(dst, page_scratch_buffer, BLCKSZ);
+}
+
+/*
+ * Decrypt a relation page.  src and dst are both BLCKSZ-sized buffers; the
+ * module reads the trailing overhead_size bytes of src to recover
+ * IV/tag/key material before producing dst.  On return, the trailing
+ * overhead_size bytes of dst are zeroed (per the file_encryption.h
+ * contract: plaintext pages have zero trailers so pd_checksum verifies).
+ */
+void
+FileEncryptionDecryptPage(const RelFileLocator *locator,
+						  ForkNumber fork, BlockNumber blocknum,
+						  const char *src, char *dst)
+{
+	StringInfoData si;
+	RelPathStr	relpath_str;
+	Size		overhead;
+	Size		body_len;
+
+	if (!FileEncryptionPagesEnabled())
+		elog(ERROR, "page encryption is not configured");
+	ensure_per_process_init();
+	ensure_page_scratch();
+
+	relpath_str = relpathbackend(*locator, INVALID_PROC_NUMBER, fork);
+	overhead = LoadedFileEncryptionCallbacks->overhead_size;
+	body_len = BLCKSZ - overhead;
+
+	si.data = page_scratch_buffer;
+	si.len = 0;
+	si.maxlen = BLCKSZ + 1;
+	si.cursor = 0;
+
+	LoadedFileEncryptionCallbacks->decrypt_cb(file_encryption_module_state,
+											  relpath_str.str,
+											  (uint64) blocknum * BLCKSZ,
+											  src, BLCKSZ, &si);
+	if (si.len != body_len)
+		elog(ERROR,
+			 "page decryption module produced %d bytes, expected %zu",
+			 si.len, body_len);
+
+	memcpy(dst, page_scratch_buffer, body_len);
+	/* Zero the trailer in plaintext, per the file_encryption.h contract. */
+	memset(dst + body_len, 0, overhead);
 }
 
 /*
@@ -189,6 +357,24 @@ load_and_validate_module(void)
 		callbacks->decrypt_cb == NULL)
 		ereport(ERROR,
 				(errmsg("file encryption modules must register encrypt and decrypt callbacks")));
+
+	/*
+	 * If the module declares a non-zero overhead_size and the cluster
+	 * reserves bytes per page, the two values must match exactly: pages
+	 * on disk already have GetPageReservedSize() bytes carved off, and
+	 * encrypt_cb is required to fill exactly that much trailing overhead.
+	 *
+	 * A non-zero overhead with a zero cluster reservation is also valid
+	 * (the module is used only for record streams; pages stay plaintext).
+	 */
+	if (callbacks->overhead_size > 0 &&
+		GetPageReservedSize() != 0 &&
+		callbacks->overhead_size != GetPageReservedSize())
+		ereport(ERROR,
+				(errmsg("file encryption module \"%s\" declares overhead_size %zu, but the cluster was initialized with page_reserved_size %u",
+						file_encryption_library,
+						callbacks->overhead_size,
+						GetPageReservedSize())));
 
 	LoadedFileEncryptionCallbacks = callbacks;
 }
