@@ -27,6 +27,7 @@
 #include "catalog/index.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_control.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "common/link-canary.h"
@@ -37,6 +38,7 @@
 #include "storage/bufpage.h"
 #include "storage/checksum.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/shmem_internal.h"
@@ -242,6 +244,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	int			flag;
 	char	   *userDoption = NULL;
 	uint32		bootstrap_data_checksum_version = PG_DATA_CHECKSUM_OFF;
+	uint32		bootstrap_page_reserved_size = 0;
 	yyscan_t	scanner;
 
 	Assert(!IsUnderPostmaster);
@@ -258,7 +261,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	argv++;
 	argc--;
 
-	pg_getopt_start(&optctx, argc, argv, "B:c:d:D:Fkr:X:-:");
+	pg_getopt_start(&optctx, argc, argv, "B:c:d:D:FkR:r:X:-:");
 	while ((flag = pg_getopt_next(&optctx)) != -1)
 	{
 		switch (flag)
@@ -326,6 +329,21 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 				break;
 			case 'k':
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
+				break;
+			case 'R':
+				{
+					int			val = atoi(optctx.optarg);
+
+					if (val < 0 || val > MAX_PAGE_RESERVED_SIZE ||
+						(val % MAXIMUM_ALIGNOF) != 0)
+						ereport(ERROR,
+								(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								 errmsg("invalid file-encryption page-reserved size: %s",
+										optctx.optarg),
+								 errdetail("Must be a multiple of %d between 0 and %d.",
+										   MAXIMUM_ALIGNOF, MAX_PAGE_RESERVED_SIZE)));
+					bootstrap_page_reserved_size = (uint32) val;
+				}
 				break;
 			case 'r':
 				strlcpy(OutputFileName, optctx.optarg, MAXPGPATH);
@@ -405,7 +423,16 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	BaseInit();
 
 	bootstrap_signals();
-	BootStrapXLOG(bootstrap_data_checksum_version);
+	BootStrapXLOG(bootstrap_data_checksum_version,
+				  bootstrap_page_reserved_size);
+
+	/*
+	 * Load the file encryption module after pg_control is in place but
+	 * before any catalog pages are written, so the catalog pages produced
+	 * by the bootstrap script are encrypted with the same module the
+	 * postmaster will later use to read them back.
+	 */
+	process_file_encryption_library();
 
 	/*
 	 * To ensure that src/common/link-canary.c is linked into the backend, we
