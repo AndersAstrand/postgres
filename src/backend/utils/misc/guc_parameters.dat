@@ -1092,6 +1092,12 @@
   options => 'file_copy_method_options',
 },
 
+{ name => 'file_encryption_library', type => 'string', context => 'PGC_POSTMASTER', group => 'RESOURCES_DISK',
+  short_desc => 'Sets the library that will be used to encrypt supported files at rest.',
+  variable => 'file_encryption_library',
+  boot_val => '""',
+},
+
 { name => 'file_extend_method', type => 'enum', context => 'PGC_SIGHUP', group => 'RESOURCES_DISK',
   short_desc => 'Selects the method used for extending data files.',
   variable => 'file_extend_method',
