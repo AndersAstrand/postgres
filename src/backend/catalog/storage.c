@@ -29,6 +29,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/bulk_write.h"
+#include "storage/file_encryption.h"
 #include "storage/freespace.h"
 #include "storage/proc.h"
 #include "storage/smgr.h"
@@ -152,6 +153,30 @@ RelationCreateStorage(RelFileLocator rlocator, char relpersistence,
 
 	if (needs_wal)
 		log_smgrcreate(&srel->smgr_rlocator.locator, MAIN_FORKNUM);
+
+	/*
+	 * If page encryption is configured, give the relation a KEY fork holding
+	 * the wrapped per-relation data-encryption key.  This must happen at
+	 * relation-create time, while we still know that no encrypted page has
+	 * yet been written for this rlocator and the module can mint a fresh
+	 * DEK.  The fork is one BLCKSZ block long, written verbatim (not
+	 * page-formatted) and exempt from md.c-level encryption.
+	 */
+	if (FileEncryptionPagesEnabled())
+	{
+		PGIOAlignedBlock keyblock;
+
+		smgrcreate(srel, KEY_FORKNUM, false);
+		FileEncryptionGenerateObjectKey(&srel->smgr_rlocator.locator,
+										keyblock.data);
+		smgrextend(srel, KEY_FORKNUM, 0, keyblock.data, true);
+		if (needs_wal)
+		{
+			log_smgrcreate(&srel->smgr_rlocator.locator, KEY_FORKNUM);
+			log_newpage(&srel->smgr_rlocator.locator, KEY_FORKNUM, 0,
+						keyblock.data, false);
+		}
+	}
 
 	/*
 	 * Add the relation to the list of stuff to delete at abort, if we are
@@ -796,6 +821,20 @@ smgrDoPendingSyncs(bool isCommit, bool isParallelWorker)
 		{
 			for (fork = 0; fork <= MAX_FORKNUM; fork++)
 			{
+				/*
+				 * KEY fork is owned by the file-encryption framework, not
+				 * page-formatted, and already WAL-logged at create time via
+				 * log_newpage in RelationCreateStorage.  Exclude it from both
+				 * the size-accounting and (below) the log_newpage_range loop.
+				 * smgrdosyncall picks it up normally if the relation lands in
+				 * the fsync path.
+				 */
+				if (fork == KEY_FORKNUM)
+				{
+					nblocks[fork] = InvalidBlockNumber;
+					continue;
+				}
+
 				if (smgrexists(srel, fork))
 				{
 					BlockNumber n = smgrnblocks(srel, fork);
