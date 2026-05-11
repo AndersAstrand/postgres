@@ -18,6 +18,7 @@
 #include "miscadmin.h"
 #include "storage/file_encryption.h"
 #include "storage/ipc.h"
+#include "storage/md.h"
 #include "utils/memutils.h"
 
 /* GUC */
@@ -309,9 +310,16 @@ process_file_encryption_library(void)
 
 	/*
 	 * Eagerly run the per-process startup callback now, while we're still
-	 * outside any critical section.
+	 * outside any critical section.  AIO completion callbacks invoke
+	 * encrypt/decrypt from within a critical section and can't tolerate
+	 * the lazy palloc that ensure_per_process_init() would otherwise do
+	 * on first use.  For the same reason, ask md.c to allocate its
+	 * page-encryption workspace now: in bootstrap mode, mdinit() ran
+	 * before this function and saw FileEncryptionPagesEnabled() == false,
+	 * so the workspace is still NULL.
 	 */
 	ensure_per_process_init();
+	md_init_enc_workspace();
 }
 
 static void
