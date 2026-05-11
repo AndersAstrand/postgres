@@ -3,34 +3,37 @@
  * basic_file_encryption.c
  *	  Reference implementation of a file encryption module.
  *
- * Uses the hex-encoded key configured through the
- * basic_file_encryption.key GUC as a key-encryption key.  Each encryption
- * call gets a fresh 256-bit data-encryption key, which encrypts the
- * caller's plaintext with AES-256-GCM.  The data key is then wrapped with
- * AES-256-GCM under the configured key and stored in the trailer.  The
- * configured key therefore never encrypts relation or spill-file bytes
- * directly.
+ * The hex-encoded key in the basic_file_encryption.key GUC is a
+ * key-encryption key (KEK).  It never encrypts user bytes directly; it
+ * only wraps data-encryption keys (DEKs).
  *
- * The on-disk layout the module produces is the same regardless of who's
- * calling (BufFile, reorderbuffer spill, md.c relation pages):
+ * Two encryption flows share the same KEK:
  *
- *	  [ ciphertext N bytes ]
- *	  [ data IV 12 bytes ] [ data tag 16 bytes ]
- *	  [ wrap IV 12 bytes ] [ wrapped data key 32 bytes ]
- *	  [ wrap tag 16 bytes ] [ format 4 bytes ] [ pad 4 bytes ]
+ *   * Record-stream encryption (BufFile, reorderbuffer spill files) uses a
+ *     fresh DEK per call.  The DEK is wrapped under the KEK and stored in
+ *     the per-record trailer.  Per-call overhead: 96 bytes.
  *
- * The 4 bytes of zero padding bring the per-call overhead to 96, which is
- * a multiple of MAXIMUM_ALIGNOF and is therefore a legal value for the
- * cluster's --file-encryption-page-reserved-size.
+ *   * Per-relation page encryption uses one DEK per RelFileLocator,
+ *     generated at relation-create time and wrapped under the KEK into
+ *     the relation's KEY fork.  Each page's trailer holds only the
+ *     per-page IV, tag, and a format marker.  Per-page overhead: 32 bytes.
  *
- * AAD = basename(path) || file_offset(be64).  Using only the basename
- * (not the full path) keeps CREATE DATABASE FILE_COPY and ALTER DATABASE
- * SET TABLESPACE working — both clone files into a directory whose
- * leading components carry dbOid / spcOid that change for the same
- * on-disk bytes.  The basename ("<relfilenode>[.<seg>]" for relation
- * files; "<xid>-<lsn>.snap" for reorderbuffer spill files; the segment
- * basename for BufFile) stays invariant under those operations while
- * still preventing cross-relation page substitution within a database.
+ * AAD bindings:
+ *
+ *   * Record-stream encrypt/decrypt binds basename(path) || file_offset(be64).
+ *     Using only the basename keeps CREATE DATABASE FILE_COPY and ALTER
+ *     DATABASE SET TABLESPACE working — both clone files into directories
+ *     whose leading components change for the same on-disk bytes.
+ *
+ *   * Object-key wrap (DEK ciphertext stored in the KEY fork) binds
+ *     relNumber(be32).  Only the relfilenode is bound, so the same
+ *     restrictions on CROSS-database operations apply: a KEY blob is
+ *     valid for any relation with that relfilenode.  Within a database
+ *     the relfilenode is unique enough to detect substitution.
+ *
+ *   * Page encrypt/decrypt binds fork(be32) || blocknum(be32) only.  The
+ *     per-relation DEK already pins which relation we're decrypting; the
+ *     AAD prevents intra-relation block substitution.
  *
  * Authentication-tag verification on decrypt detects tampering and key
  * mismatch.
@@ -55,33 +58,58 @@
 #include "storage/file_encryption.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/memutils.h"
 
 PG_MODULE_MAGIC;
 
 #define BFE_KEY_LEN			32
 #define BFE_IV_LEN			12
 #define BFE_TAG_LEN			16
-#define BFE_FORMAT_MAGIC	0x31454642	/* "BFE1" in native byte order */
+#define BFE_FORMAT_LEN		sizeof(uint32)
+#define BFE_FORMAT_MAGIC	0x31454642	/* "BFE1" - record-stream format */
+#define BFE_PAGE_FORMAT_MAGIC 0x50454642	/* "BFEP" - page format */
+#define BFE_OBJ_FORMAT_MAGIC  0x4F454642	/* "BFEO" - object-key wrap format */
 
 /*
- * Per-call ciphertext overhead.  Equal to a data-encryption IV/tag, a
- * wrapped data-encryption key with its own IV/tag, a format marker, and
- * zero padding so the overhead is a multiple of MAXIMUM_ALIGNOF (8) and
- * the value is an acceptable --file-encryption-page-reserved-size.
+ * Record-stream overhead: per-call DEK wrapped under the KEK alongside the
+ * record body.  IV + tag + wrap IV + wrapped DEK + wrap tag + format + pad.
  */
-#define BFE_FORMAT_LEN		sizeof(uint32)
 #define BFE_OVERHEAD_SIZE	96
 #define BFE_PAD_SIZE		(BFE_OVERHEAD_SIZE - \
 							 (2 * BFE_IV_LEN) - \
 							 (2 * BFE_TAG_LEN) - \
 							 BFE_KEY_LEN - \
 							 BFE_FORMAT_LEN)
-StaticAssertDecl(BFE_PAD_SIZE == 4, "unexpected basic_file_encryption padding");
+StaticAssertDecl(BFE_PAD_SIZE == 4, "unexpected basic_file_encryption record padding");
+
+/*
+ * Per-page overhead: the DEK comes from per-relation state, so the trailer
+ * only needs the per-page IV, tag, and format marker.
+ */
+#define BFE_PAGE_OVERHEAD_SIZE	32
+#define BFE_PAGE_PAD_SIZE	(BFE_PAGE_OVERHEAD_SIZE - BFE_IV_LEN - BFE_TAG_LEN - BFE_FORMAT_LEN)
+StaticAssertDecl(BFE_PAGE_PAD_SIZE == 0, "unexpected basic_file_encryption page padding");
+
+/*
+ * Per-relation key-wrap blob written to KEY_FORKNUM block 0:
+ *
+ *   [ IV 12B ][ wrapped DEK 32B ][ wrap tag 16B ][ format 4B ]
+ *
+ * Total 64 bytes.  The core wraps this in its FEKeyBlockHeader; the module
+ * only sees the 64-byte payload.
+ */
+#define BFE_OBJ_WRAP_SIZE	(BFE_IV_LEN + BFE_KEY_LEN + BFE_TAG_LEN + BFE_FORMAT_LEN)
 
 typedef struct BasicFileEncryptionState
 {
 	unsigned char kek[BFE_KEY_LEN];
 } BasicFileEncryptionState;
+
+/* Cached per-relation DEK, opaque to the core. */
+typedef struct BFEObjectState
+{
+	unsigned char dek[BFE_KEY_LEN];
+} BFEObjectState;
 
 /* GUC */
 static char *basic_file_encryption_key = NULL;
@@ -96,31 +124,60 @@ static void bfe_decrypt(const FileEncryptionModuleState *state,
 						const char *path, uint64 file_offset,
 						const char *data, Size data_len,
 						StringInfo dst);
+static void bfe_generate_object_key(FileEncryptionModuleState *state,
+									const RelFileLocator *locator,
+									StringInfo dst);
+static void *bfe_object_open(FileEncryptionModuleState *state,
+							 const RelFileLocator *locator,
+							 const char *wrapped, Size wrapped_len);
+static void bfe_object_close(FileEncryptionModuleState *state,
+							 void *object_state);
+static void bfe_encrypt_page(FileEncryptionModuleState *state,
+							 void *object_state,
+							 ForkNumber fork, BlockNumber blocknum,
+							 const char *src, char *dst);
+static void bfe_decrypt_page(FileEncryptionModuleState *state,
+							 void *object_state,
+							 ForkNumber fork, BlockNumber blocknum,
+							 const char *src, char *dst);
+
 static inline BasicFileEncryptionState *bfe_require_kek(const FileEncryptionModuleState *state);
 static pg_noreturn void bfe_openssl_error(const char *op);
-static void bfe_aad_update(EVP_CIPHER_CTX *ctx, bool encrypting,
-						   const char *path, uint64 file_offset);
-static void bfe_encrypt_with_key(const unsigned char *key,
-								 const unsigned char *iv,
-								 const char *path, uint64 file_offset,
-								 const unsigned char *data, int data_len,
-								 StringInfo dst,
-								 unsigned char *tag);
-static void bfe_decrypt_with_key(const unsigned char *key,
-								 const unsigned char *iv,
-								 const unsigned char *tag,
-								 const char *path, uint64 file_offset,
-								 const unsigned char *data, int data_len,
-								 StringInfo dst);
+static void bfe_aad_update_record(EVP_CIPHER_CTX *ctx, bool encrypting,
+								  const char *path, uint64 file_offset);
+static void bfe_aad_update_object(EVP_CIPHER_CTX *ctx, bool encrypting,
+								  const RelFileLocator *locator);
+static void bfe_aad_update_page(EVP_CIPHER_CTX *ctx, bool encrypting,
+								ForkNumber fork, BlockNumber blocknum);
+typedef void (*BFEAadFn) (EVP_CIPHER_CTX *ctx, bool encrypting, void *ctx_data);
+static void bfe_aes_gcm_encrypt(const unsigned char *key,
+								const unsigned char *iv,
+								BFEAadFn aad_fn, void *aad_ctx,
+								const unsigned char *data, int data_len,
+								unsigned char *out,
+								unsigned char *tag);
+static void bfe_aes_gcm_decrypt(const unsigned char *key,
+								const unsigned char *iv,
+								const unsigned char *tag,
+								BFEAadFn aad_fn, void *aad_ctx,
+								const unsigned char *data, int data_len,
+								unsigned char *out);
 
 static const FileEncryptionCallbacks basic_file_encryption_callbacks = {
 	PG_FILE_ENCRYPTION_MAGIC,
 	.overhead_size = BFE_OVERHEAD_SIZE,
+	.page_overhead_size = BFE_PAGE_OVERHEAD_SIZE,
 
 	.startup_cb = bfe_startup,
 	.shutdown_cb = bfe_shutdown,
 	.encrypt_cb = bfe_encrypt,
 	.decrypt_cb = bfe_decrypt,
+
+	.generate_object_key_cb = bfe_generate_object_key,
+	.object_open_cb = bfe_object_open,
+	.object_close_cb = bfe_object_close,
+	.encrypt_page_cb = bfe_encrypt_page,
+	.decrypt_page_cb = bfe_decrypt_page,
 };
 
 /*
@@ -222,8 +279,7 @@ bfe_shutdown(FileEncryptionModuleState *state)
 
 /*
  * Resolve the per-process key-encryption key, raising the deferred
- * "key not set" error
- * if bfe_startup didn't manage to decode one.
+ * "key not set" error if bfe_startup didn't manage to decode one.
  */
 static inline BasicFileEncryptionState *
 bfe_require_kek(const FileEncryptionModuleState *state)
@@ -237,9 +293,6 @@ bfe_require_kek(const FileEncryptionModuleState *state)
 	return priv;
 }
 
-/*
- * Raise an error using the latest queued OpenSSL error, if any.
- */
 static pg_noreturn void
 bfe_openssl_error(const char *op)
 {
@@ -258,28 +311,36 @@ bfe_openssl_error(const char *op)
 }
 
 /*
- * Mix the AAD bytes into an EVP cipher context.
- *
- * AAD = basename(path) || file_offset(be64).  Only the basename is
- * bound, NOT the full path, so file-level operations that change the
- * path's leading components (CREATE DATABASE FILE_COPY moves a clone
- * to a new dboid directory; ALTER DATABASE SET TABLESPACE moves files
- * across spcOid trees) keep producing decryptable bytes.  Within a
- * given namespace the basename is unique enough — relation segments
- * are "<relfilenode>[.<seg>]", reorderbuffer spill files are
- * "xid-<xid>-lsn-...snap", BufFile fileset segments embed the per-set
- * name — so this still prevents cross-file substitution at the same
- * offset.
+ * AAD-update callbacks.  Each flow has its own AAD shape; using a single
+ * function-pointer entry point keeps bfe_aes_gcm_{encrypt,decrypt} agnostic
+ * to the caller.
  */
+typedef struct RecordAadCtx
+{
+	const char *path;
+	uint64		file_offset;
+} RecordAadCtx;
+
+typedef struct ObjectAadCtx
+{
+	const RelFileLocator *locator;
+} ObjectAadCtx;
+
+typedef struct PageAadCtx
+{
+	ForkNumber	fork;
+	BlockNumber blocknum;
+} PageAadCtx;
+
 static void
-bfe_aad_update(EVP_CIPHER_CTX *ctx, bool encrypting,
-			   const char *path, uint64 file_offset)
+bfe_aad_update_record(EVP_CIPHER_CTX *ctx, bool encrypting,
+					  const char *path, uint64 file_offset)
 {
 	int			outlen;
 	const char *basename = strrchr(path, '/');
 	unsigned char offset_be[8];
-	int (*update) (EVP_CIPHER_CTX *, unsigned char *, int *,
-				   const unsigned char *, int);
+	int			(*update) (EVP_CIPHER_CTX *, unsigned char *, int *,
+						   const unsigned char *, int);
 
 	update = encrypting ? EVP_EncryptUpdate : EVP_DecryptUpdate;
 
@@ -294,17 +355,80 @@ bfe_aad_update(EVP_CIPHER_CTX *ctx, bool encrypting,
 		bfe_openssl_error("AAD offset update");
 }
 
+static void
+bfe_aad_update_object(EVP_CIPHER_CTX *ctx, bool encrypting,
+					  const RelFileLocator *locator)
+{
+	int			outlen;
+	unsigned char buf[4];
+	int			(*update) (EVP_CIPHER_CTX *, unsigned char *, int *,
+						   const unsigned char *, int);
+
+	update = encrypting ? EVP_EncryptUpdate : EVP_DecryptUpdate;
+
+	for (int i = 0; i < 4; i++)
+		buf[i] = (unsigned char) (locator->relNumber >> ((3 - i) * 8));
+	if (update(ctx, NULL, &outlen, buf, 4) != 1)
+		bfe_openssl_error("AAD object update");
+}
+
+static void
+bfe_aad_update_page(EVP_CIPHER_CTX *ctx, bool encrypting,
+					ForkNumber fork, BlockNumber blocknum)
+{
+	int			outlen;
+	unsigned char buf[8];
+	int			(*update) (EVP_CIPHER_CTX *, unsigned char *, int *,
+						   const unsigned char *, int);
+	uint32		fork_be = (uint32) fork;
+
+	update = encrypting ? EVP_EncryptUpdate : EVP_DecryptUpdate;
+
+	for (int i = 0; i < 4; i++)
+		buf[i] = (unsigned char) (fork_be >> ((3 - i) * 8));
+	for (int i = 0; i < 4; i++)
+		buf[4 + i] = (unsigned char) (blocknum >> ((3 - i) * 8));
+	if (update(ctx, NULL, &outlen, buf, 8) != 1)
+		bfe_openssl_error("AAD page update");
+}
+
+/* Adapter functions matching BFEAadFn. */
+static void
+record_aad_adapter(EVP_CIPHER_CTX *ctx, bool encrypting, void *p)
+{
+	RecordAadCtx *c = p;
+
+	bfe_aad_update_record(ctx, encrypting, c->path, c->file_offset);
+}
+
+static void
+object_aad_adapter(EVP_CIPHER_CTX *ctx, bool encrypting, void *p)
+{
+	ObjectAadCtx *c = p;
+
+	bfe_aad_update_object(ctx, encrypting, c->locator);
+}
+
+static void
+page_aad_adapter(EVP_CIPHER_CTX *ctx, bool encrypting, void *p)
+{
+	PageAadCtx *c = p;
+
+	bfe_aad_update_page(ctx, encrypting, c->fork, c->blocknum);
+}
+
 /*
  * Encrypt data_len bytes with the supplied AES-256-GCM key and IV.  The
- * ciphertext is appended to dst and tag receives the authentication tag.
+ * ciphertext is written to 'out' (data_len bytes); 'tag' receives the
+ * 16-byte authentication tag.
  */
 static void
-bfe_encrypt_with_key(const unsigned char *key,
-					 const unsigned char *iv,
-					 const char *path, uint64 file_offset,
-					 const unsigned char *data, int data_len,
-					 StringInfo dst,
-					 unsigned char *tag)
+bfe_aes_gcm_encrypt(const unsigned char *key,
+					const unsigned char *iv,
+					BFEAadFn aad_fn, void *aad_ctx,
+					const unsigned char *data, int data_len,
+					unsigned char *out,
+					unsigned char *tag)
 {
 	EVP_CIPHER_CTX *ctx;
 	int			outlen;
@@ -323,21 +447,16 @@ bfe_encrypt_with_key(const unsigned char *key,
 		if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, iv) != 1)
 			bfe_openssl_error("EVP_EncryptInit_ex (key/iv)");
 
-		bfe_aad_update(ctx, true, path, file_offset);
+		if (aad_fn != NULL)
+			aad_fn(ctx, true, aad_ctx);
 
-		if (EVP_EncryptUpdate(ctx,
-							  (unsigned char *) dst->data + dst->len, &outlen,
-							  data, data_len) != 1)
+		if (EVP_EncryptUpdate(ctx, out, &outlen, data, data_len) != 1)
 			bfe_openssl_error("EVP_EncryptUpdate");
 		Assert(outlen == data_len);
-		dst->len += outlen;
 
-		if (EVP_EncryptFinal_ex(ctx,
-								(unsigned char *) dst->data + dst->len,
-								&finallen) != 1)
+		if (EVP_EncryptFinal_ex(ctx, out + outlen, &finallen) != 1)
 			bfe_openssl_error("EVP_EncryptFinal_ex");
 		Assert(finallen == 0);
-		dst->len += finallen;
 
 		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, BFE_TAG_LEN, tag) != 1)
 			bfe_openssl_error("EVP_CTRL_GCM_GET_TAG");
@@ -350,16 +469,17 @@ bfe_encrypt_with_key(const unsigned char *key,
 }
 
 /*
- * Decrypt data_len bytes with the supplied AES-256-GCM key and IV.  The
- * plaintext is appended to dst.
+ * Decrypt data_len bytes with the supplied AES-256-GCM key, IV, and
+ * expected tag.  Plaintext is written to 'out'.  Raises
+ * ERRCODE_DATA_CORRUPTED on tag-verification failure.
  */
 static void
-bfe_decrypt_with_key(const unsigned char *key,
-					 const unsigned char *iv,
-					 const unsigned char *tag,
-					 const char *path, uint64 file_offset,
-					 const unsigned char *data, int data_len,
-					 StringInfo dst)
+bfe_aes_gcm_decrypt(const unsigned char *key,
+					const unsigned char *iv,
+					const unsigned char *tag,
+					BFEAadFn aad_fn, void *aad_ctx,
+					const unsigned char *data, int data_len,
+					unsigned char *out)
 {
 	EVP_CIPHER_CTX *ctx;
 	int			outlen;
@@ -378,29 +498,22 @@ bfe_decrypt_with_key(const unsigned char *key,
 		if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, iv) != 1)
 			bfe_openssl_error("EVP_DecryptInit_ex (key/iv)");
 
-		bfe_aad_update(ctx, false, path, file_offset);
+		if (aad_fn != NULL)
+			aad_fn(ctx, false, aad_ctx);
 
-		if (EVP_DecryptUpdate(ctx,
-							  (unsigned char *) dst->data + dst->len, &outlen,
-							  data, data_len) != 1)
+		if (EVP_DecryptUpdate(ctx, out, &outlen, data, data_len) != 1)
 			bfe_openssl_error("EVP_DecryptUpdate");
 		Assert(outlen == data_len);
-		dst->len += outlen;
 
 		if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG,
 								BFE_TAG_LEN, (unsigned char *) tag) != 1)
 			bfe_openssl_error("EVP_CTRL_GCM_SET_TAG");
 
-		if (EVP_DecryptFinal_ex(ctx,
-								(unsigned char *) dst->data + dst->len,
-								&finallen) != 1)
+		if (EVP_DecryptFinal_ex(ctx, out + outlen, &finallen) != 1)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("basic_file_encryption: authentication tag verification failed"),
-					 errdetail("Path \"%s\" offset %llu was tampered with, or the key has changed.",
-							   path, (unsigned long long) file_offset)));
+					 errmsg("basic_file_encryption: authentication tag verification failed")));
 		Assert(finallen == 0);
-		dst->len += finallen;
 	}
 	PG_FINALLY();
 	{
@@ -410,8 +523,11 @@ bfe_decrypt_with_key(const unsigned char *key,
 }
 
 /*
- * Encrypt data_len plaintext bytes into dst, producing exactly
- * data_len + BFE_OVERHEAD_SIZE output bytes.  Layout:
+ * ============================================================
+ *	  Record-stream encryption (BufFile, reorderbuffer spill)
+ * ============================================================
+ *
+ * Layout (caller plaintext: data_len bytes):
  *
  *	  dst[0 .. data_len)                                ciphertext
  *	  dst[data_len     .. data_len+12)                  data IV
@@ -436,7 +552,7 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 	unsigned char wrap_tag[BFE_TAG_LEN];
 	uint32		format = BFE_FORMAT_MAGIC;
 	int			body_len = (int) data_len;
-	int			wrapped_key_start;
+	RecordAadCtx aad = {.path = path,.file_offset = file_offset};
 
 	if (!pg_strong_random(data_key, sizeof(data_key)) ||
 		!pg_strong_random(data_iv, sizeof(data_iv)) ||
@@ -449,9 +565,10 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 
 	PG_TRY();
 	{
-		bfe_encrypt_with_key(data_key, data_iv, path, file_offset,
-							 (const unsigned char *) data, body_len,
-							 dst, data_tag);
+		bfe_aes_gcm_encrypt(data_key, data_iv, record_aad_adapter, &aad,
+							(const unsigned char *) data, body_len,
+							(unsigned char *) dst->data + dst->len, data_tag);
+		dst->len += body_len;
 
 		memcpy(dst->data + dst->len, data_iv, BFE_IV_LEN);
 		dst->len += BFE_IV_LEN;
@@ -460,10 +577,10 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 		memcpy(dst->data + dst->len, wrap_iv, BFE_IV_LEN);
 		dst->len += BFE_IV_LEN;
 
-		wrapped_key_start = dst->len;
-		bfe_encrypt_with_key(priv->kek, wrap_iv, path, file_offset,
-							 data_key, BFE_KEY_LEN, dst, wrap_tag);
-		Assert(dst->len == wrapped_key_start + BFE_KEY_LEN);
+		bfe_aes_gcm_encrypt(priv->kek, wrap_iv, record_aad_adapter, &aad,
+							data_key, BFE_KEY_LEN,
+							(unsigned char *) dst->data + dst->len, wrap_tag);
+		dst->len += BFE_KEY_LEN;
 
 		memcpy(dst->data + dst->len, wrap_tag, BFE_TAG_LEN);
 		dst->len += BFE_TAG_LEN;
@@ -485,12 +602,6 @@ bfe_encrypt(const FileEncryptionModuleState *state,
 	PG_END_TRY();
 }
 
-/*
- * Decrypt data_len bytes (which must include BFE_OVERHEAD_SIZE bytes of
- * trailer that bfe_encrypt produced) into dst.  On success, dst contains
- * exactly data_len - BFE_OVERHEAD_SIZE plaintext bytes.  Raises
- * ERRCODE_DATA_CORRUPTED on tag-verification failure.
- */
 static void
 bfe_decrypt(const FileEncryptionModuleState *state,
 			const char *path, uint64 file_offset,
@@ -504,10 +615,9 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 	const unsigned char *wrapped_key;
 	const unsigned char *wrap_tag;
 	unsigned char data_key[BFE_KEY_LEN];
-	StringInfoData unwrapped_key;
-	char		unwrapped_key_buf[BFE_KEY_LEN + 1];
 	uint32		format;
 	int			body_len;
+	RecordAadCtx aad = {.path = path,.file_offset = file_offset};
 
 	if (data_len < BFE_OVERHEAD_SIZE)
 		ereport(ERROR,
@@ -528,33 +638,224 @@ bfe_decrypt(const FileEncryptionModuleState *state,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("basic_file_encryption: encrypted blob has an unrecognized format")));
 
-	unwrapped_key.data = unwrapped_key_buf;
-	unwrapped_key.len = 0;
-	unwrapped_key.maxlen = sizeof(unwrapped_key_buf);
-	unwrapped_key.cursor = 0;
 	enlargeStringInfo(dst, body_len);
 
 	PG_TRY();
 	{
-		bfe_decrypt_with_key(priv->kek, wrap_iv, wrap_tag, path, file_offset,
-							 wrapped_key, BFE_KEY_LEN, &unwrapped_key);
-		if (unwrapped_key.len != BFE_KEY_LEN)
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("basic_file_encryption: wrapped key decrypted to %d bytes, expected %d",
-							unwrapped_key.len, BFE_KEY_LEN)));
-
-		memcpy(data_key, unwrapped_key.data, BFE_KEY_LEN);
-		bfe_decrypt_with_key(data_key, data_iv, data_tag, path, file_offset,
-							 (const unsigned char *) data, body_len, dst);
-		Assert(dst->len == body_len);
+		bfe_aes_gcm_decrypt(priv->kek, wrap_iv, wrap_tag,
+							record_aad_adapter, &aad,
+							wrapped_key, BFE_KEY_LEN, data_key);
+		bfe_aes_gcm_decrypt(data_key, data_iv, data_tag,
+							record_aad_adapter, &aad,
+							(const unsigned char *) data, body_len,
+							(unsigned char *) dst->data + dst->len);
+		dst->len += body_len;
 	}
 	PG_FINALLY();
 	{
 		explicit_bzero(data_key, sizeof(data_key));
-		explicit_bzero(unwrapped_key_buf, sizeof(unwrapped_key_buf));
 	}
 	PG_END_TRY();
 
 	dst->data[dst->len] = '\0';
+}
+
+/*
+ * ============================================================
+ *	  Per-relation page encryption
+ * ============================================================
+ *
+ * Object-key wrap layout (64 bytes, written to KEY fork block payload):
+ *
+ *	  wrapped[0  .. 12)   wrap IV
+ *	  wrapped[12 .. 44)   wrapped DEK
+ *	  wrapped[44 .. 60)   wrap tag
+ *	  wrapped[60 .. 64)   format magic
+ */
+static void
+bfe_generate_object_key(FileEncryptionModuleState *state,
+						const RelFileLocator *locator,
+						StringInfo dst)
+{
+	BasicFileEncryptionState *priv = bfe_require_kek(state);
+	unsigned char dek[BFE_KEY_LEN];
+	unsigned char wrap_iv[BFE_IV_LEN];
+	unsigned char wrap_tag[BFE_TAG_LEN];
+	uint32		format = BFE_OBJ_FORMAT_MAGIC;
+	ObjectAadCtx aad = {.locator = locator};
+
+	if (!pg_strong_random(dek, sizeof(dek)) ||
+		!pg_strong_random(wrap_iv, sizeof(wrap_iv)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("basic_file_encryption: could not generate object key material")));
+
+	enlargeStringInfo(dst, BFE_OBJ_WRAP_SIZE);
+
+	PG_TRY();
+	{
+		memcpy(dst->data + dst->len, wrap_iv, BFE_IV_LEN);
+		dst->len += BFE_IV_LEN;
+
+		bfe_aes_gcm_encrypt(priv->kek, wrap_iv, object_aad_adapter, &aad,
+							dek, BFE_KEY_LEN,
+							(unsigned char *) dst->data + dst->len, wrap_tag);
+		dst->len += BFE_KEY_LEN;
+
+		memcpy(dst->data + dst->len, wrap_tag, BFE_TAG_LEN);
+		dst->len += BFE_TAG_LEN;
+		memcpy(dst->data + dst->len, &format, sizeof(format));
+		dst->len += sizeof(format);
+
+		Assert(dst->len == BFE_OBJ_WRAP_SIZE);
+		dst->data[dst->len] = '\0';
+	}
+	PG_FINALLY();
+	{
+		explicit_bzero(dek, sizeof(dek));
+		explicit_bzero(wrap_iv, sizeof(wrap_iv));
+		explicit_bzero(wrap_tag, sizeof(wrap_tag));
+	}
+	PG_END_TRY();
+}
+
+static void *
+bfe_object_open(FileEncryptionModuleState *state,
+				const RelFileLocator *locator,
+				const char *wrapped, Size wrapped_len)
+{
+	BasicFileEncryptionState *priv = bfe_require_kek(state);
+	BFEObjectState *obj;
+	const unsigned char *wrap_iv;
+	const unsigned char *wrapped_dek;
+	const unsigned char *wrap_tag;
+	uint32		format;
+	ObjectAadCtx aad = {.locator = locator};
+
+	if (wrapped_len != BFE_OBJ_WRAP_SIZE)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("basic_file_encryption: wrapped object key has unexpected length %zu (want %zu)",
+						wrapped_len, (Size) BFE_OBJ_WRAP_SIZE)));
+
+	wrap_iv = (const unsigned char *) wrapped;
+	wrapped_dek = wrap_iv + BFE_IV_LEN;
+	wrap_tag = wrapped_dek + BFE_KEY_LEN;
+	memcpy(&format, wrap_tag + BFE_TAG_LEN, sizeof(format));
+
+	if (format != BFE_OBJ_FORMAT_MAGIC)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("basic_file_encryption: wrapped object key has unrecognized format 0x%08x",
+						format)));
+
+	obj = MemoryContextAllocZero(TopMemoryContext, sizeof(BFEObjectState));
+
+	PG_TRY();
+	{
+		bfe_aes_gcm_decrypt(priv->kek, wrap_iv, wrap_tag,
+							object_aad_adapter, &aad,
+							wrapped_dek, BFE_KEY_LEN, obj->dek);
+	}
+	PG_CATCH();
+	{
+		explicit_bzero(obj->dek, sizeof(obj->dek));
+		pfree(obj);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	return obj;
+}
+
+static void
+bfe_object_close(FileEncryptionModuleState *state, void *object_state)
+{
+	BFEObjectState *obj = object_state;
+
+	if (obj == NULL)
+		return;
+	explicit_bzero(obj->dek, sizeof(obj->dek));
+	pfree(obj);
+}
+
+/*
+ * Page layout (BLCKSZ bytes):
+ *
+ *	  dst[0 .. BLCKSZ - 32)             ciphertext (body)
+ *	  dst[BLCKSZ - 32 .. BLCKSZ - 20)   data IV (12B)
+ *	  dst[BLCKSZ - 20 .. BLCKSZ -  4)   data tag (16B)
+ *	  dst[BLCKSZ -  4 .. BLCKSZ)        format magic (4B)
+ */
+static void
+bfe_encrypt_page(FileEncryptionModuleState *state,
+				 void *object_state,
+				 ForkNumber fork, BlockNumber blocknum,
+				 const char *src, char *dst)
+{
+	BFEObjectState *obj = object_state;
+	unsigned char data_iv[BFE_IV_LEN];
+	unsigned char data_tag[BFE_TAG_LEN];
+	uint32		format = BFE_PAGE_FORMAT_MAGIC;
+	int			body_len = BLCKSZ - BFE_PAGE_OVERHEAD_SIZE;
+	PageAadCtx	aad = {.fork = fork,.blocknum = blocknum};
+
+	Assert(obj != NULL);
+
+	if (!pg_strong_random(data_iv, sizeof(data_iv)))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("basic_file_encryption: could not generate page IV")));
+
+	PG_TRY();
+	{
+		bfe_aes_gcm_encrypt(obj->dek, data_iv, page_aad_adapter, &aad,
+							(const unsigned char *) src, body_len,
+							(unsigned char *) dst, data_tag);
+
+		memcpy(dst + body_len, data_iv, BFE_IV_LEN);
+		memcpy(dst + body_len + BFE_IV_LEN, data_tag, BFE_TAG_LEN);
+		memcpy(dst + body_len + BFE_IV_LEN + BFE_TAG_LEN, &format, sizeof(format));
+	}
+	PG_FINALLY();
+	{
+		explicit_bzero(data_iv, sizeof(data_iv));
+		explicit_bzero(data_tag, sizeof(data_tag));
+	}
+	PG_END_TRY();
+}
+
+static void
+bfe_decrypt_page(FileEncryptionModuleState *state,
+				 void *object_state,
+				 ForkNumber fork, BlockNumber blocknum,
+				 const char *src, char *dst)
+{
+	BFEObjectState *obj = object_state;
+	const unsigned char *data_iv;
+	const unsigned char *data_tag;
+	uint32		format;
+	int			body_len = BLCKSZ - BFE_PAGE_OVERHEAD_SIZE;
+	PageAadCtx	aad = {.fork = fork,.blocknum = blocknum};
+
+	Assert(obj != NULL);
+
+	data_iv = (const unsigned char *) src + body_len;
+	data_tag = data_iv + BFE_IV_LEN;
+	memcpy(&format, data_tag + BFE_TAG_LEN, sizeof(format));
+
+	if (format != BFE_PAGE_FORMAT_MAGIC)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("basic_file_encryption: encrypted page has unrecognized format 0x%08x",
+						format)));
+
+	bfe_aes_gcm_decrypt(obj->dek, data_iv, data_tag,
+						page_aad_adapter, &aad,
+						(const unsigned char *) src, body_len,
+						(unsigned char *) dst);
+
+	/* Zero the plaintext trailer so pd_checksum verifies (the writer's
+	 * trailer is zeros per PageInit, and the decrypt output must match). */
+	memset(dst + body_len, 0, BFE_PAGE_OVERHEAD_SIZE);
 }

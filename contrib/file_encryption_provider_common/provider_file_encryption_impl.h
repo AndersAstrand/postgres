@@ -8,6 +8,18 @@
  * PFEM_DIGEST_DEFAULT, PFEM_KEY_LEN, PFEM_FORMAT_MAGIC,
  * PFEM_OVERHEAD_SIZE, and PFEM_PROVIDER_HINT.
  *
+ * Two encryption flows share the same configured KEK:
+ *
+ *   * Record-stream encryption (BufFile, reorderbuffer spill) uses a fresh
+ *     DEK + MAC key pair per call.  Both are wrapped under the KEK and
+ *     stored in the trailer.  Per-call overhead: PFEM_OVERHEAD_SIZE.
+ *
+ *   * Per-relation page encryption uses one (DEK, MAC key) pair per
+ *     RelFileLocator, generated at relation-create time and wrapped under
+ *     the KEK into the relation's KEY fork.  Each page's trailer holds
+ *     only the per-page IV, HMAC tag, and a format marker.  Per-page
+ *     overhead: 56 bytes (uniform across modules using this impl).
+ *
  * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -38,6 +50,7 @@
 #include "storage/file_encryption.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/memutils.h"
 
 PG_MODULE_MAGIC;
 
@@ -54,10 +67,35 @@ PG_MODULE_MAGIC;
 StaticAssertDecl(PFEM_KEY_LEN > 0, "invalid provider module key length");
 StaticAssertDecl(PFEM_PAD_SIZE >= 0, "invalid provider module overhead");
 
+/*
+ * Per-page overhead: IV slot + HMAC tag + format marker.  The DEK and MAC
+ * key for a page come from the per-relation state cached on SMgrRelation,
+ * so the trailer doesn't carry a wrapped key.  Uniform 56 bytes across
+ * modules using this impl; cluster page_reserved_size must equal this.
+ */
+#define PFEM_PAGE_OVERHEAD_SIZE	56
+#define PFEM_PAGE_PAD_SIZE	(PFEM_PAGE_OVERHEAD_SIZE - PFEM_IV_SLOT_LEN - \
+							 PFEM_TAG_LEN - PFEM_FORMAT_LEN)
+StaticAssertDecl(PFEM_PAGE_PAD_SIZE >= 0, "invalid provider page overhead");
+
 #define PFEM_KEY_GUC		PFEM_GUC_PREFIX ".key"
 #define PFEM_PROVIDER_GUC	PFEM_GUC_PREFIX ".provider"
 #define PFEM_CIPHER_GUC		PFEM_GUC_PREFIX ".cipher"
 #define PFEM_DIGEST_GUC		PFEM_GUC_PREFIX ".digest"
+
+/*
+ * Object-key wrap blob written to the KEY fork:
+ *
+ *	  [ wrap IV  PFEM_IV_SLOT_LEN ]
+ *	  [ wrapped (data_key || mac_key)  PFEM_KEY_MATERIAL_LEN ]
+ *	  [ HMAC tag  PFEM_TAG_LEN ]
+ *	  [ format magic  4B ]
+ *
+ * Total: IV_SLOT + KEY_MATERIAL + TAG + 4.  The KEK never encrypts user
+ * bytes; this is the only place it's used as a cipher key.
+ */
+#define PFEM_OBJ_WRAP_SIZE	(PFEM_IV_SLOT_LEN + PFEM_KEY_MATERIAL_LEN + \
+							 PFEM_TAG_LEN + PFEM_FORMAT_LEN)
 
 typedef struct ProviderFileEncryptionState
 {
@@ -70,6 +108,13 @@ typedef struct ProviderFileEncryptionState
 #endif
 	int			iv_len;
 } ProviderFileEncryptionState;
+
+/* Per-relation state cached on SMgrRelation.encryption_object_state. */
+typedef struct PFEObjectState
+{
+	unsigned char data_key[PFEM_KEY_LEN];
+	unsigned char mac_key[PFEM_KEY_LEN];
+} PFEObjectState;
 
 static char *pfem_key = NULL;
 static char *pfem_provider = NULL;
@@ -86,6 +131,23 @@ static void pfem_decrypt(const FileEncryptionModuleState *state,
 						 const char *path, uint64 file_offset,
 						 const char *data, Size data_len,
 						 StringInfo dst);
+static void pfem_generate_object_key(FileEncryptionModuleState *state,
+									 const RelFileLocator *locator,
+									 StringInfo dst);
+static void *pfem_object_open(FileEncryptionModuleState *state,
+							  const RelFileLocator *locator,
+							  const char *wrapped, Size wrapped_len);
+static void pfem_object_close(FileEncryptionModuleState *state,
+							  void *object_state);
+static void pfem_encrypt_page(FileEncryptionModuleState *state,
+							  void *object_state,
+							  ForkNumber fork, BlockNumber blocknum,
+							  const char *src, char *dst);
+static void pfem_decrypt_page(FileEncryptionModuleState *state,
+							  void *object_state,
+							  ForkNumber fork, BlockNumber blocknum,
+							  const char *src, char *dst);
+
 static inline ProviderFileEncryptionState *pfem_require_state(const FileEncryptionModuleState *state);
 static pg_noreturn void pfem_openssl_error(const char *op);
 static pg_noreturn void pfem_missing_algorithm(const char *kind,
@@ -98,6 +160,17 @@ static void pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 							  const unsigned char iv[PFEM_IV_SLOT_LEN],
 							  const unsigned char *data, int data_len,
 							  StringInfo dst);
+static void pfem_cipher_crypt_raw(const ProviderFileEncryptionState *priv,
+								  bool encrypting,
+								  const unsigned char *key,
+								  const unsigned char iv[PFEM_IV_SLOT_LEN],
+								  const unsigned char *data, int data_len,
+								  unsigned char *out);
+static void pfem_hmac_raw(const ProviderFileEncryptionState *priv,
+						  const unsigned char *key, int key_len,
+						  const unsigned char *aad, int aad_len,
+						  const unsigned char *data, int data_len,
+						  unsigned char tag[PFEM_TAG_LEN]);
 static void pfem_hmac(const ProviderFileEncryptionState *priv,
 					  const unsigned char *key, int key_len,
 					  const char *path, uint64 file_offset,
@@ -107,11 +180,18 @@ static void pfem_hmac(const ProviderFileEncryptionState *priv,
 static const FileEncryptionCallbacks provider_file_encryption_callbacks = {
 	PG_FILE_ENCRYPTION_MAGIC,
 	.overhead_size = PFEM_OVERHEAD_SIZE,
+	.page_overhead_size = PFEM_PAGE_OVERHEAD_SIZE,
 
 	.startup_cb = pfem_startup,
 	.shutdown_cb = pfem_shutdown,
 	.encrypt_cb = pfem_encrypt,
 	.decrypt_cb = pfem_decrypt,
+
+	.generate_object_key_cb = pfem_generate_object_key,
+	.object_open_cb = pfem_object_open,
+	.object_close_cb = pfem_object_close,
+	.encrypt_page_cb = pfem_encrypt_page,
+	.decrypt_page_cb = pfem_decrypt_page,
 };
 
 static bool
@@ -382,7 +462,7 @@ pfem_load_crypto(ProviderFileEncryptionState *priv)
 						PFEM_MODULE_NAME, pfem_cipher),
 				 errhint("Use a provider cipher in CTR, CFB, OFB, or stream mode.")));
 
-	pfem_hmac(priv, priv->kek, PFEM_KEY_LEN, "", 0, NULL, 0, tag);
+	pfem_hmac_raw(priv, priv->kek, PFEM_KEY_LEN, NULL, 0, NULL, 0, tag);
 }
 
 static void
@@ -422,18 +502,29 @@ pfem_store64_be(unsigned char *dst, uint64 v)
 }
 
 static void
-pfem_hmac(const ProviderFileEncryptionState *priv,
-		  const unsigned char *key, int key_len,
-		  const char *path, uint64 file_offset,
-		  const unsigned char *data, int data_len,
-		  unsigned char tag[PFEM_TAG_LEN])
+pfem_store32_be(unsigned char *dst, uint32 v)
 {
-	const char *basename = pfem_basename(path);
-	unsigned char offset_be[8];
+	for (int i = 0; i < 4; i++)
+		dst[i] = (unsigned char) (v >> ((3 - i) * 8));
+}
+
+/*
+ * HMAC-of-(AAD || data) under 'key'.  AAD is an arbitrary byte string; the
+ * caller assembles the right shape for its flow:
+ *
+ *   * Record stream:   basename(path) || file_offset(be64)
+ *   * Object key wrap: relNumber(be32)
+ *   * Page:            fork(be32) || blocknum(be32)
+ */
+static void
+pfem_hmac_raw(const ProviderFileEncryptionState *priv,
+			  const unsigned char *key, int key_len,
+			  const unsigned char *aad, int aad_len,
+			  const unsigned char *data, int data_len,
+			  unsigned char tag[PFEM_TAG_LEN])
+{
 	unsigned char fulltag[EVP_MAX_MD_SIZE];
 	size_t		tag_len = 0;
-
-	pfem_store64_be(offset_be, file_offset);
 
 #if PFEM_OPENSSL3
 	{
@@ -451,9 +542,8 @@ pfem_hmac(const ProviderFileEncryptionState *priv,
 		PG_TRY();
 		{
 			if (EVP_MAC_init(ctx, key, key_len, params) != 1 ||
-				EVP_MAC_update(ctx, (const unsigned char *) basename,
-							   strlen(basename)) != 1 ||
-				EVP_MAC_update(ctx, offset_be, sizeof(offset_be)) != 1 ||
+				(aad_len > 0 &&
+				 EVP_MAC_update(ctx, aad, aad_len) != 1) ||
 				(data_len > 0 &&
 				 EVP_MAC_update(ctx, data, data_len) != 1) ||
 				EVP_MAC_final(ctx, fulltag, &tag_len, sizeof(fulltag)) != 1)
@@ -477,9 +567,8 @@ pfem_hmac(const ProviderFileEncryptionState *priv,
 		PG_TRY();
 		{
 			if (HMAC_Init_ex(ctx, key, key_len, priv->digest, NULL) != 1 ||
-				HMAC_Update(ctx, (const unsigned char *) basename,
-							strlen(basename)) != 1 ||
-				HMAC_Update(ctx, offset_be, sizeof(offset_be)) != 1 ||
+				(aad_len > 0 &&
+				 HMAC_Update(ctx, aad, aad_len) != 1) ||
 				(data_len > 0 &&
 				 HMAC_Update(ctx, data, data_len) != 1) ||
 				HMAC_Final(ctx, fulltag, &outlen) != 1)
@@ -504,6 +593,42 @@ pfem_hmac(const ProviderFileEncryptionState *priv,
 	explicit_bzero(fulltag, sizeof(fulltag));
 }
 
+/*
+ * Record-stream HMAC: AAD = basename(path) || file_offset(be64).
+ */
+static void
+pfem_hmac(const ProviderFileEncryptionState *priv,
+		  const unsigned char *key, int key_len,
+		  const char *path, uint64 file_offset,
+		  const unsigned char *data, int data_len,
+		  unsigned char tag[PFEM_TAG_LEN])
+{
+	const char *basename = pfem_basename(path);
+	size_t		baselen = strlen(basename);
+	unsigned char *aad;
+	int			aad_len;
+
+	aad_len = (int) baselen + 8;
+	aad = palloc(aad_len);
+	memcpy(aad, basename, baselen);
+	pfem_store64_be(aad + baselen, file_offset);
+
+	PG_TRY();
+	{
+		pfem_hmac_raw(priv, key, key_len, aad, aad_len,
+					  data, data_len, tag);
+	}
+	PG_FINALLY();
+	{
+		pfree(aad);
+	}
+	PG_END_TRY();
+}
+
+/*
+ * StringInfo wrapper around pfem_cipher_crypt_raw.  Used by the
+ * record-stream flow which builds variable-length output.
+ */
 static void
 pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 				  bool encrypting,
@@ -512,11 +637,24 @@ pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 				  const unsigned char *data, int data_len,
 				  StringInfo dst)
 {
+	enlargeStringInfo(dst, data_len);
+	pfem_cipher_crypt_raw(priv, encrypting, key, iv, data, data_len,
+						  (unsigned char *) dst->data + dst->len);
+	dst->len += data_len;
+	dst->data[dst->len] = '\0';
+}
+
+static void
+pfem_cipher_crypt_raw(const ProviderFileEncryptionState *priv,
+					  bool encrypting,
+					  const unsigned char *key,
+					  const unsigned char iv[PFEM_IV_SLOT_LEN],
+					  const unsigned char *data, int data_len,
+					  unsigned char *out)
+{
 	EVP_CIPHER_CTX *ctx;
 	int			outlen;
 	int			finallen;
-
-	enlargeStringInfo(dst, data_len);
 
 	ctx = EVP_CIPHER_CTX_new();
 	if (ctx == NULL)
@@ -533,9 +671,7 @@ pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 							  encrypting ? 1 : 0) != 1)
 			pfem_openssl_error("EVP_CipherInit_ex (key/iv)");
 
-		if (EVP_CipherUpdate(ctx,
-							 (unsigned char *) dst->data + dst->len, &outlen,
-							 data, data_len) != 1)
+		if (EVP_CipherUpdate(ctx, out, &outlen, data, data_len) != 1)
 			pfem_openssl_error("EVP_CipherUpdate");
 		if (outlen != data_len)
 			ereport(ERROR,
@@ -543,11 +679,8 @@ pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 					 errmsg("%s: OpenSSL cipher \"%s\" produced %d bytes for %d input bytes",
 							PFEM_MODULE_NAME, pfem_cipher, outlen, data_len),
 					 errhint("Use a provider cipher in CTR, CFB, OFB, or stream mode.")));
-		dst->len += outlen;
 
-		if (EVP_CipherFinal_ex(ctx,
-							   (unsigned char *) dst->data + dst->len,
-							   &finallen) != 1)
+		if (EVP_CipherFinal_ex(ctx, out + outlen, &finallen) != 1)
 			pfem_openssl_error("EVP_CipherFinal_ex");
 		if (finallen != 0)
 			ereport(ERROR,
@@ -555,8 +688,6 @@ pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 					 errmsg("%s: OpenSSL cipher \"%s\" produced unexpected final output",
 							PFEM_MODULE_NAME, pfem_cipher),
 					 errhint("Use a provider cipher in CTR, CFB, OFB, or stream mode.")));
-
-		dst->data[dst->len] = '\0';
 	}
 	PG_FINALLY();
 	{
@@ -565,6 +696,11 @@ pfem_cipher_crypt(const ProviderFileEncryptionState *priv,
 	PG_END_TRY();
 }
 
+/*
+ * ============================================================
+ *	  Record-stream encryption (BufFile, reorderbuffer spill)
+ * ============================================================
+ */
 static void
 pfem_encrypt(const FileEncryptionModuleState *state,
 			 const char *path, uint64 file_offset,
@@ -735,4 +871,264 @@ pfem_decrypt(const FileEncryptionModuleState *state,
 	PG_END_TRY();
 
 	dst->data[dst->len] = '\0';
+}
+
+/*
+ * ============================================================
+ *	  Per-relation page encryption
+ * ============================================================
+ */
+static void
+pfem_generate_object_key(FileEncryptionModuleState *state,
+						 const RelFileLocator *locator,
+						 StringInfo dst)
+{
+	ProviderFileEncryptionState *priv = pfem_require_state(state);
+	unsigned char data_key[PFEM_KEY_LEN];
+	unsigned char mac_key[PFEM_KEY_LEN];
+	unsigned char key_material[PFEM_KEY_MATERIAL_LEN];
+	unsigned char wrap_iv[PFEM_IV_SLOT_LEN] = {0};
+	unsigned char wrap_tag[PFEM_TAG_LEN];
+	unsigned char aad[4];
+	uint32		format = PFEM_FORMAT_MAGIC;
+	int			wrapped_keys_start;
+
+	if (!pg_strong_random(data_key, sizeof(data_key)) ||
+		!pg_strong_random(mac_key, sizeof(mac_key)) ||
+		!pg_strong_random(wrap_iv, priv->iv_len))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("%s: could not generate object key material",
+						PFEM_MODULE_NAME)));
+
+	memcpy(key_material, data_key, PFEM_KEY_LEN);
+	memcpy(key_material + PFEM_KEY_LEN, mac_key, PFEM_KEY_LEN);
+	pfem_store32_be(aad, locator->relNumber);
+
+	enlargeStringInfo(dst, PFEM_OBJ_WRAP_SIZE);
+
+	PG_TRY();
+	{
+		memcpy(dst->data + dst->len, wrap_iv, PFEM_IV_SLOT_LEN);
+		dst->len += PFEM_IV_SLOT_LEN;
+
+		wrapped_keys_start = dst->len;
+		pfem_cipher_crypt(priv, true, priv->kek, wrap_iv,
+						  key_material, PFEM_KEY_MATERIAL_LEN, dst);
+		Assert(dst->len == wrapped_keys_start + PFEM_KEY_MATERIAL_LEN);
+
+		pfem_hmac_raw(priv, priv->kek, PFEM_KEY_LEN, aad, sizeof(aad),
+					  (const unsigned char *) dst->data + wrapped_keys_start,
+					  PFEM_KEY_MATERIAL_LEN, wrap_tag);
+
+		memcpy(dst->data + dst->len, wrap_tag, PFEM_TAG_LEN);
+		dst->len += PFEM_TAG_LEN;
+		memcpy(dst->data + dst->len, &format, sizeof(format));
+		dst->len += sizeof(format);
+
+		Assert(dst->len == PFEM_OBJ_WRAP_SIZE);
+		dst->data[dst->len] = '\0';
+	}
+	PG_FINALLY();
+	{
+		explicit_bzero(data_key, sizeof(data_key));
+		explicit_bzero(mac_key, sizeof(mac_key));
+		explicit_bzero(key_material, sizeof(key_material));
+		explicit_bzero(wrap_iv, sizeof(wrap_iv));
+		explicit_bzero(wrap_tag, sizeof(wrap_tag));
+	}
+	PG_END_TRY();
+}
+
+static void *
+pfem_object_open(FileEncryptionModuleState *state,
+				 const RelFileLocator *locator,
+				 const char *wrapped, Size wrapped_len)
+{
+	ProviderFileEncryptionState *priv = pfem_require_state(state);
+	PFEObjectState *obj;
+	const unsigned char *wrap_iv;
+	const unsigned char *wrapped_keys;
+	const unsigned char *wrap_tag;
+	unsigned char expected_tag[PFEM_TAG_LEN];
+	unsigned char key_material[PFEM_KEY_MATERIAL_LEN];
+	unsigned char aad[4];
+	uint32		format;
+
+	if (wrapped_len != PFEM_OBJ_WRAP_SIZE)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("%s: wrapped object key has unexpected length %zu (want %zu)",
+						PFEM_MODULE_NAME, wrapped_len, (Size) PFEM_OBJ_WRAP_SIZE)));
+
+	wrap_iv = (const unsigned char *) wrapped;
+	wrapped_keys = wrap_iv + PFEM_IV_SLOT_LEN;
+	wrap_tag = wrapped_keys + PFEM_KEY_MATERIAL_LEN;
+	memcpy(&format, wrap_tag + PFEM_TAG_LEN, sizeof(format));
+
+	if (format != PFEM_FORMAT_MAGIC)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("%s: wrapped object key has unrecognized format 0x%08x",
+						PFEM_MODULE_NAME, format)));
+
+	pfem_store32_be(aad, locator->relNumber);
+
+	obj = MemoryContextAllocZero(TopMemoryContext, sizeof(PFEObjectState));
+
+	PG_TRY();
+	{
+		pfem_hmac_raw(priv, priv->kek, PFEM_KEY_LEN, aad, sizeof(aad),
+					  wrapped_keys, PFEM_KEY_MATERIAL_LEN, expected_tag);
+		if (timingsafe_bcmp(expected_tag, wrap_tag, PFEM_TAG_LEN) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("%s: object key authentication failed",
+							PFEM_MODULE_NAME)));
+
+		pfem_cipher_crypt_raw(priv, false, priv->kek, wrap_iv,
+							  wrapped_keys, PFEM_KEY_MATERIAL_LEN,
+							  key_material);
+		memcpy(obj->data_key, key_material, PFEM_KEY_LEN);
+		memcpy(obj->mac_key, key_material + PFEM_KEY_LEN, PFEM_KEY_LEN);
+	}
+	PG_CATCH();
+	{
+		explicit_bzero(obj->data_key, sizeof(obj->data_key));
+		explicit_bzero(obj->mac_key, sizeof(obj->mac_key));
+		explicit_bzero(expected_tag, sizeof(expected_tag));
+		explicit_bzero(key_material, sizeof(key_material));
+		pfree(obj);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+
+	explicit_bzero(expected_tag, sizeof(expected_tag));
+	explicit_bzero(key_material, sizeof(key_material));
+
+	return obj;
+}
+
+static void
+pfem_object_close(FileEncryptionModuleState *state, void *object_state)
+{
+	PFEObjectState *obj = object_state;
+
+	if (obj == NULL)
+		return;
+	explicit_bzero(obj->data_key, sizeof(obj->data_key));
+	explicit_bzero(obj->mac_key, sizeof(obj->mac_key));
+	pfree(obj);
+}
+
+/*
+ * Page layout (BLCKSZ bytes):
+ *
+ *	  dst[0 .. BLCKSZ - 56)              ciphertext (body)
+ *	  dst[BLCKSZ - 56 .. BLCKSZ - 40)    page IV (16B)
+ *	  dst[BLCKSZ - 40 .. BLCKSZ -  8)    HMAC tag (32B)
+ *	  dst[BLCKSZ -  8 .. BLCKSZ -  4)    format magic (4B)
+ *	  dst[BLCKSZ -  4 .. BLCKSZ)         padding (4B)
+ */
+static void
+pfem_encrypt_page(FileEncryptionModuleState *state,
+				  void *object_state,
+				  ForkNumber fork, BlockNumber blocknum,
+				  const char *src, char *dst)
+{
+	ProviderFileEncryptionState *priv = pfem_require_state(state);
+	PFEObjectState *obj = object_state;
+	unsigned char data_iv[PFEM_IV_SLOT_LEN] = {0};
+	unsigned char data_tag[PFEM_TAG_LEN];
+	unsigned char aad[8];
+	uint32		format = PFEM_FORMAT_MAGIC;
+	int			body_len = BLCKSZ - PFEM_PAGE_OVERHEAD_SIZE;
+
+	Assert(obj != NULL);
+
+	if (!pg_strong_random(data_iv, priv->iv_len))
+		ereport(ERROR,
+				(errcode(ERRCODE_INTERNAL_ERROR),
+				 errmsg("%s: could not generate page IV", PFEM_MODULE_NAME)));
+
+	pfem_store32_be(aad, (uint32) fork);
+	pfem_store32_be(aad + 4, blocknum);
+
+	PG_TRY();
+	{
+		pfem_cipher_crypt_raw(priv, true, obj->data_key, data_iv,
+							  (const unsigned char *) src, body_len,
+							  (unsigned char *) dst);
+
+		pfem_hmac_raw(priv, obj->mac_key, PFEM_KEY_LEN, aad, sizeof(aad),
+					  (const unsigned char *) dst, body_len, data_tag);
+
+		memcpy(dst + body_len, data_iv, PFEM_IV_SLOT_LEN);
+		memcpy(dst + body_len + PFEM_IV_SLOT_LEN, data_tag, PFEM_TAG_LEN);
+		memcpy(dst + body_len + PFEM_IV_SLOT_LEN + PFEM_TAG_LEN,
+			   &format, sizeof(format));
+		if (PFEM_PAGE_PAD_SIZE > 0)
+			memset(dst + body_len + PFEM_IV_SLOT_LEN + PFEM_TAG_LEN + sizeof(format),
+				   0, PFEM_PAGE_PAD_SIZE);
+	}
+	PG_FINALLY();
+	{
+		explicit_bzero(data_iv, sizeof(data_iv));
+		explicit_bzero(data_tag, sizeof(data_tag));
+	}
+	PG_END_TRY();
+}
+
+static void
+pfem_decrypt_page(FileEncryptionModuleState *state,
+				  void *object_state,
+				  ForkNumber fork, BlockNumber blocknum,
+				  const char *src, char *dst)
+{
+	ProviderFileEncryptionState *priv = pfem_require_state(state);
+	PFEObjectState *obj = object_state;
+	const unsigned char *data_iv;
+	const unsigned char *data_tag;
+	unsigned char expected_tag[PFEM_TAG_LEN];
+	unsigned char aad[8];
+	uint32		format;
+	int			body_len = BLCKSZ - PFEM_PAGE_OVERHEAD_SIZE;
+
+	Assert(obj != NULL);
+
+	data_iv = (const unsigned char *) src + body_len;
+	data_tag = data_iv + PFEM_IV_SLOT_LEN;
+	memcpy(&format, data_tag + PFEM_TAG_LEN, sizeof(format));
+
+	if (format != PFEM_FORMAT_MAGIC)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("%s: encrypted page has unrecognized format 0x%08x",
+						PFEM_MODULE_NAME, format)));
+
+	pfem_store32_be(aad, (uint32) fork);
+	pfem_store32_be(aad + 4, blocknum);
+
+	PG_TRY();
+	{
+		pfem_hmac_raw(priv, obj->mac_key, PFEM_KEY_LEN, aad, sizeof(aad),
+					  (const unsigned char *) src, body_len, expected_tag);
+		if (timingsafe_bcmp(expected_tag, data_tag, PFEM_TAG_LEN) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("%s: page authentication failed",
+							PFEM_MODULE_NAME)));
+
+		pfem_cipher_crypt_raw(priv, false, obj->data_key, data_iv,
+							  (const unsigned char *) src, body_len,
+							  (unsigned char *) dst);
+
+		/* Zero the plaintext trailer so pd_checksum verifies. */
+		memset(dst + body_len, 0, PFEM_PAGE_OVERHEAD_SIZE);
+	}
+	PG_FINALLY();
+	{
+		explicit_bzero(expected_tag, sizeof(expected_tag));
+	}
+	PG_END_TRY();
 }
