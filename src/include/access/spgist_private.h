@@ -448,7 +448,7 @@ typedef SpGistDeadTupleData *SpGistDeadTuple;
 
 /* Page capacity after allowing for fixed header and special space */
 #define SPGIST_PAGE_CAPACITY  \
-	MAXALIGN_DOWN(BLCKSZ - \
+	MAXALIGN_DOWN(BLCKSZ - GetPageReservedSize() - \
 				  SizeOfPageHeaderData - \
 				  MAXALIGN(sizeof(SpGistPageOpaqueData)))
 

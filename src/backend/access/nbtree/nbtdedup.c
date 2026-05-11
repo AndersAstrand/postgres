@@ -825,7 +825,7 @@ _bt_singleval_fillfactor(Page page, BTDedupState state, Size newitemsz)
 	int			reduction;
 
 	/* This calculation needs to match nbtsplitloc.c */
-	leftfree = PageGetPageSize(page) - SizeOfPageHeaderData -
+	leftfree = PageGetUsableSize(page) - SizeOfPageHeaderData -
 		MAXALIGN(sizeof(BTPageOpaqueData));
 	/* Subtract size of new high key (includes pivot heap TID space) */
 	leftfree -= newitemsz + MAXALIGN(sizeof(ItemPointerData));

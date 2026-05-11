@@ -636,7 +636,8 @@ gistInitBuffering(GISTBuildState *buildstate)
 	int			levelStep;
 
 	/* Calc space of index page which is available for index tuples */
-	pageFreeSpace = BLCKSZ - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
+	pageFreeSpace = BLCKSZ - GetPageReservedSize() - SizeOfPageHeaderData
+		- sizeof(GISTPageOpaqueData)
 		- sizeof(ItemIdData)
 		- buildstate->freespace;
 
@@ -794,7 +795,8 @@ calculatePagesPerBuffer(GISTBuildState *buildstate, int levelStep)
 	Size		pageFreeSpace;
 
 	/* Calc space of index page which is available for index tuples */
-	pageFreeSpace = BLCKSZ - SizeOfPageHeaderData - sizeof(GISTPageOpaqueData)
+	pageFreeSpace = BLCKSZ - GetPageReservedSize() - SizeOfPageHeaderData
+		- sizeof(GISTPageOpaqueData)
 		- sizeof(ItemIdData)
 		- buildstate->freespace;
 
