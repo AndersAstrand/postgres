@@ -291,6 +291,14 @@ PageGetContents(Page page)
  */
 
 /*
+ * Number of bytes reserved at the tail of every relation page for a file
+ * encryption module's per-page metadata.  Cluster-wide and immutable; set
+ * at initdb time, stored in pg_control, and exposed here for use in the
+ * page-layout helpers below.  Defined in xlog.c.
+ */
+extern uint32 GetPageReservedSize(void);
+
+/*
  * PageGetPageSize
  *		Returns the page size of a page.
  *
@@ -302,6 +310,21 @@ static inline Size
 PageGetPageSize(const PageData *page)
 {
 	return (Size) (((const PageHeaderData *) page)->pd_pagesize_version & (uint16) 0xFF00);
+}
+
+/*
+ * PageGetUsableSize
+ *		Returns the usable page size, i.e. the page size minus the trailing
+ *		bytes reserved by the cluster's file encryption module (if any).
+ *
+ * All page-layout arithmetic that needs to know "where do tuples and the
+ * special area stop" should use this rather than PageGetPageSize.  When no
+ * file encryption module is configured, this equals PageGetPageSize.
+ */
+static inline Size
+PageGetUsableSize(const PageData *page)
+{
+	return PageGetPageSize(page) - GetPageReservedSize();
 }
 
 /*
@@ -341,7 +364,7 @@ PageSetPageSizeAndVersion(Page page, Size size, uint8 version)
 static inline uint16
 PageGetSpecialSize(const PageData *page)
 {
-	return (PageGetPageSize(page) - ((const PageHeaderData *) page)->pd_special);
+	return (PageGetUsableSize(page) - ((const PageHeaderData *) page)->pd_special);
 }
 
 /*
@@ -353,7 +376,7 @@ static inline void
 PageValidateSpecialPointer(const PageData *page)
 {
 	Assert(page);
-	Assert(((const PageHeaderData *) page)->pd_special <= BLCKSZ);
+	Assert(((const PageHeaderData *) page)->pd_special <= PageGetUsableSize(page));
 	Assert(((const PageHeaderData *) page)->pd_special >= SizeOfPageHeaderData);
 }
 
