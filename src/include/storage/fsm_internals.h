@@ -47,6 +47,14 @@ typedef FSMPageData *FSMPage;
 /*
  * Number of non-leaf and leaf nodes, and nodes in total, on an FSM page.
  * These definitions are internal to fsmpage.c.
+ *
+ * Intentionally BLCKSZ-based even when the cluster reserves bytes at the
+ * tail of every page for file encryption.  FSM pages are exempt from
+ * encryption (md.c doesn't route them through encrypt_page_cb / decrypt_
+ * page_cb), so fp_nodes can use the entire page including what would
+ * otherwise be the encryption trailer.  Keeping NodesPerPage constant
+ * also keeps FSM_TREE_DEPTH (in freespace.c) a compile-time constant,
+ * which it needs to be for FSM_ROOT_ADDRESS's static initializer.
  */
 #define NodesPerPage (BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - \
 					  offsetof(FSMPageData, fp_nodes))
