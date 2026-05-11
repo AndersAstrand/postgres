@@ -2071,7 +2071,7 @@ heapam_relation_toast_am(Relation rel)
 #define HEAP_OVERHEAD_BYTES_PER_TUPLE \
 	(MAXALIGN(SizeofHeapTupleHeader) + sizeof(ItemIdData))
 #define HEAP_USABLE_BYTES_PER_PAGE \
-	(BLCKSZ - SizeOfPageHeaderData)
+	(BLCKSZ - GetPageReservedSize() - SizeOfPageHeaderData)
 
 static void
 heapam_estimate_rel_size(Relation rel, int32 *attr_widths,
