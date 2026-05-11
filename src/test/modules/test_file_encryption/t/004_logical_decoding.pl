@@ -11,10 +11,11 @@ use Test::More;
 # easily span multiple segments, exercising the per-segment spill file
 # handling on both the write and read paths.
 my $node = PostgreSQL::Test::Cluster->new('primary');
-$node->init(allows_streaming => 'logical', extra => ['--wal-segsize=1']);
+$node->init(allows_streaming => 'logical',
+			extra => ['--wal-segsize=1',
+					  '--file-encryption-library=test_file_encryption']);
 $node->append_conf(
 	'postgresql.conf', qq(
-file_encryption_library = 'test_file_encryption'
 logical_decoding_work_mem = '64kB'
 test_file_encryption.log_summary = on
 ));

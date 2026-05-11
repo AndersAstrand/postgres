@@ -22,10 +22,18 @@
 
 
 /* Version identifier for this pg_control format */
-#define PG_CONTROL_VERSION	1902
+#define PG_CONTROL_VERSION	1903
 
 /* Nonce key length, see below */
 #define MOCK_AUTH_NONCE_LEN		32
+
+/*
+ * Maximum bytes a file encryption module may reserve at the tail of every
+ * relation page.  Plenty for an IV + auth tag + key version, with room for
+ * future per-page metadata.  Kept aligned to MAXIMUM_ALIGNOF so PageInit's
+ * arithmetic remains aligned.
+ */
+#define MAX_PAGE_RESERVED_SIZE	256
 
 /*
  * Body of CheckPoint XLOG records.  This is declared here because we keep
@@ -230,6 +238,23 @@ typedef struct ControlFileData
 
 	/* Are data pages protected by checksums? Zero if no checksum version */
 	uint32		data_checksum_version;
+
+	/*
+	 * Number of bytes reserved at the tail of every relation page, used by a
+	 * file encryption module for per-page metadata (IV, auth tag, ...).  Set
+	 * at initdb time and immutable afterwards.  Zero when no module is
+	 * configured; pages are byte-identical to upstream in that case.
+	 */
+	uint32		page_reserved_size;
+
+	/*
+	 * Name of the file encryption library this cluster was initialized with
+	 * (passed to initdb via --file-encryption-library).  Empty string when
+	 * the cluster is not encrypted.  Backend startup reads this to know
+	 * which module to dlopen; frontend tools (pg_checksums, pg_basebackup,
+	 * ...) read it for the same reason without needing postgresql.conf.
+	 */
+	char		file_encryption_library[NAMEDATALEN];
 
 	/*
 	 * True if the default signedness of char is "signed" on a platform where

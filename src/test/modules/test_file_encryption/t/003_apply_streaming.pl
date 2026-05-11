@@ -22,10 +22,9 @@ debug_logical_replication_streaming = immediate
 $node_publisher->start;
 
 my $node_subscriber = PostgreSQL::Test::Cluster->new('subscriber');
-$node_subscriber->init;
+$node_subscriber->init(extra => ['--file-encryption-library=test_file_encryption']);
 $node_subscriber->append_conf(
 	'postgresql.conf', qq(
-file_encryption_library = 'test_file_encryption'
 test_file_encryption.log_summary = on
 log_min_messages = debug1
 ));

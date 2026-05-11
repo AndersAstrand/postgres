@@ -770,6 +770,14 @@ ProcessSingleRelationByOid(Oid relationId, BufferAccessStrategy strategy)
 
 	for (ForkNumber fnum = 0; fnum <= MAX_FORKNUM; fnum++)
 	{
+		/*
+		 * KEY_FORKNUM stores the wrapped per-relation data-encryption key,
+		 * not a Page-formatted block.  It's exempt from page encryption
+		 * (md.c bypasses it) and has no checksum field, so skip it.
+		 */
+		if (fnum == KEY_FORKNUM)
+			continue;
+
 		if (smgrexists(rel->rd_smgr, fnum))
 		{
 			if (!ProcessSingleRelationFork(rel, fnum, strategy))

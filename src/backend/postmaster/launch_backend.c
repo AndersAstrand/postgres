@@ -677,7 +677,7 @@ SubPostmasterMain(int argc, char *argv[])
 	 * non-EXEC_BACKEND behavior.
 	 */
 	process_shared_preload_libraries();
-	process_file_encryption_library();
+	process_file_encryption_library(NULL);
 
 	/* Restore basic shared memory pointers */
 	if (UsedShmemSegAddr != NULL)

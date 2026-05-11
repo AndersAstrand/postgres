@@ -940,7 +940,7 @@ PostmasterMain(int argc, char *argv[])
 	 * Load the file encryption module, if configured, so that its _PG_init
 	 * runs at postmaster start (matching shared_preload_libraries' timing).
 	 */
-	process_file_encryption_library();
+	process_file_encryption_library(NULL);
 
 	/*
 	 * Initialize SSL library, if specified.

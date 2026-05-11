@@ -4186,7 +4186,7 @@ PostgresSingleUserMain(int argc, char *argv[],
 	 * process any libraries that should be preloaded at postmaster start
 	 */
 	process_shared_preload_libraries();
-	process_file_encryption_library();
+	process_file_encryption_library(NULL);
 
 	/* Initialize MaxBackends */
 	InitializeMaxBackends();

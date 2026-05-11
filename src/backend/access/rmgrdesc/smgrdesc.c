@@ -38,6 +38,13 @@ smgr_desc(StringInfo buf, XLogReaderState *record)
 						 relpathperm(xlrec->rlocator, MAIN_FORKNUM).str,
 						 xlrec->blkno, xlrec->flags);
 	}
+	else if (info == XLOG_SMGR_KEY_FORK_CREATE)
+	{
+		xl_smgr_key_fork_create *xlrec = (xl_smgr_key_fork_create *) rec;
+
+		appendStringInfoString(buf,
+							   relpathperm(xlrec->rlocator, KEY_FORKNUM).str);
+	}
 }
 
 const char *
@@ -52,6 +59,9 @@ smgr_identify(uint8 info)
 			break;
 		case XLOG_SMGR_TRUNCATE:
 			id = "TRUNCATE";
+			break;
+		case XLOG_SMGR_KEY_FORK_CREATE:
+			id = "KEY_FORK_CREATE";
 			break;
 	}
 

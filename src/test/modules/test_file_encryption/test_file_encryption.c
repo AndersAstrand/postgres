@@ -17,9 +17,9 @@
 
 #include "postgres.h"
 
+#include "common/file_encryption_module.h"
 #include "fmgr.h"
 #include "port.h"
-#include "storage/file_encryption.h"
 #include "utils/guc.h"
 
 PG_MODULE_MAGIC;
@@ -108,8 +108,15 @@ xor_transform(const char *path, uint64 file_offset,
 	}
 }
 
-void
-_PG_init(void)
+/*
+ * Module entry point.  This module does no real cryptography, so it
+ * ignores 'config' entirely; the per-module GUCs below carry whatever
+ * runtime knobs the test scripts twiddle.
+ */
+bool
+_PG_file_encryption_module_init(const char *config,
+								const FileEncryptionCallbacks **callbacks_out,
+								char **errmsg)
 {
 	DefineCustomBoolVariable("test_file_encryption.log_summary",
 							 "Log callback activity when a backend exits.",
@@ -131,12 +138,9 @@ _PG_init(void)
 							 NULL, NULL, NULL);
 
 	MarkGUCPrefixReserved("test_file_encryption");
-}
 
-const FileEncryptionCallbacks *
-_PG_file_encryption_module_init(void)
-{
-	return &test_file_encryption_callbacks;
+	*callbacks_out = &test_file_encryption_callbacks;
+	return true;
 }
 
 static void

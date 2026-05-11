@@ -13,10 +13,10 @@ use PostgreSQL::Test::Utils;
 use Test::More;
 
 my $node = PostgreSQL::Test::Cluster->new('primary');
-$node->init(allows_streaming => 'logical');
+$node->init(allows_streaming => 'logical',
+			extra => ['--file-encryption-library=test_file_encryption']);
 $node->append_conf(
 	'postgresql.conf', qq(
-file_encryption_library = 'test_file_encryption'
 logical_decoding_work_mem = '64kB'
 ));
 $node->start;

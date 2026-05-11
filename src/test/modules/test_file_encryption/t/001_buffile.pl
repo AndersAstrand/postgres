@@ -14,10 +14,9 @@ use PostgreSQL::Test::Utils;
 use Test::More;
 
 my $node = PostgreSQL::Test::Cluster->new('primary');
-$node->init;
+$node->init(extra => ['--file-encryption-library=test_file_encryption']);
 $node->append_conf(
 	'postgresql.conf', q(
-file_encryption_library = 'test_file_encryption'
 test_file_encryption.log_summary = on
 work_mem = '64kB'
 hash_mem_multiplier = 1.0

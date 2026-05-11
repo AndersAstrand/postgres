@@ -87,6 +87,7 @@
 #include "replication/walsender.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/ipc.h"
 #include "storage/large_object.h"
 #include "storage/latch.h"
@@ -722,7 +723,8 @@ static void ValidateXLOGDirectoryStructure(void);
 static void CleanupBackupHistory(void);
 static void UpdateMinRecoveryPoint(XLogRecPtr lsn, bool force);
 static bool PerformRecoveryXLogAction(void);
-static void InitControlFile(uint64 sysidentifier, uint32 data_checksum_version);
+static void InitControlFile(uint64 sysidentifier, uint32 data_checksum_version,
+							const char *file_encryption_library);
 static void WriteControlFile(void);
 static void ReadControlFile(void);
 static void UpdateControlFile(void);
@@ -4252,7 +4254,8 @@ CleanupBackupHistory(void)
  */
 
 static void
-InitControlFile(uint64 sysidentifier, uint32 data_checksum_version)
+InitControlFile(uint64 sysidentifier, uint32 data_checksum_version,
+				const char *file_encryption_library)
 {
 	char		mock_auth_nonce[MOCK_AUTH_NONCE_LEN];
 
@@ -4284,6 +4287,28 @@ InitControlFile(uint64 sysidentifier, uint32 data_checksum_version)
 	ControlFile->wal_log_hints = wal_log_hints;
 	ControlFile->track_commit_timestamp = track_commit_timestamp;
 	ControlFile->data_checksum_version = data_checksum_version;
+
+	/*
+	 * Stamp the encryption library name into pg_control so frontend tools
+	 * (which can't read postgresql.conf reliably across versions, but can
+	 * always read pg_control) know which module to dlopen.  The page
+	 * reservation size comes from the module's declared page_overhead_size:
+	 * we asked the loader to dlopen the module before BootStrapXLOG ran,
+	 * so FileEncryptionPageReservedSize() is now authoritative.  Empty
+	 * library / zero size for unencrypted clusters.
+	 */
+	if (file_encryption_library != NULL && file_encryption_library[0] != '\0')
+	{
+		strlcpy(ControlFile->file_encryption_library,
+				file_encryption_library,
+				sizeof(ControlFile->file_encryption_library));
+		ControlFile->page_reserved_size = FileEncryptionPageReservedSize();
+	}
+	else
+	{
+		ControlFile->file_encryption_library[0] = '\0';
+		ControlFile->page_reserved_size = 0;
+	}
 
 	/*
 	 * Set the data_checksum_version value into XLogCtl, which is where all
@@ -4996,6 +5021,29 @@ GetDefaultCharSignedness(void)
 }
 
 /*
+ * Number of bytes reserved at the tail of every relation page for a file
+ * encryption module's per-page metadata.  Set at initdb time and immutable
+ * afterwards; zero when no encryption is configured.  Safe to call after
+ * LocalProcessControlFile() has run.
+ */
+uint32
+GetPageReservedSize(void)
+{
+	return ControlFile->page_reserved_size;
+}
+
+/*
+ * Name of the file encryption library that was configured at initdb time.
+ * Empty string when the cluster is unencrypted.  Safe to call after
+ * LocalProcessControlFile() has run.
+ */
+const char *
+GetFileEncryptionLibrary(void)
+{
+	return ControlFile->file_encryption_library;
+}
+
+/*
  * Returns a fake LSN for unlogged relations.
  *
  * Each call generates an LSN that is greater than any previous value
@@ -5452,7 +5500,8 @@ XLOGShmemAttach(void *arg)
  * and the initial XLOG segment.
  */
 void
-BootStrapXLOG(uint32 data_checksum_version)
+BootStrapXLOG(uint32 data_checksum_version,
+			  const char *file_encryption_library)
 {
 	CheckPoint	checkPoint;
 	PGAlignedXLogBlock buffer;
@@ -5594,7 +5643,8 @@ BootStrapXLOG(uint32 data_checksum_version)
 	openLogFile = -1;
 
 	/* Now create pg_control */
-	InitControlFile(sysidentifier, data_checksum_version);
+	InitControlFile(sysidentifier, data_checksum_version,
+					file_encryption_library);
 	ControlFile->time = checkPoint.time;
 	ControlFile->checkPoint = checkPoint.redo;
 	ControlFile->checkPointCopy = checkPoint;
