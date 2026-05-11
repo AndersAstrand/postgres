@@ -86,7 +86,7 @@ typedef struct RevmapContents
 } RevmapContents;
 
 #define REVMAP_CONTENT_SIZE \
-	(BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - \
+	(BLCKSZ - GetPageReservedSize() - MAXALIGN(SizeOfPageHeaderData) - \
 	 offsetof(RevmapContents, rm_tids) - \
 	 MAXALIGN(sizeof(BrinSpecialSpace)))
 /* max num of items in the array */
