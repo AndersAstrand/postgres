@@ -39,7 +39,8 @@
 int			gin_pending_list_limit = 0;
 
 #define GIN_PAGE_FREESIZE \
-	( (Size) BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - MAXALIGN(sizeof(GinPageOpaqueData)) )
+	( (Size) BLCKSZ - GetPageReservedSize() - \
+	  MAXALIGN(SizeOfPageHeaderData) - MAXALIGN(sizeof(GinPageOpaqueData)) )
 
 typedef struct KeyArray
 {
