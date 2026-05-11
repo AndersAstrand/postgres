@@ -34,10 +34,10 @@ static const FileEncryptionCallbacks *LoadedFileEncryptionCallbacks = NULL;
 
 /*
  * Per-process state.  Initialized eagerly from process_file_encryption_library
- * (which all top-level startup paths call) and re-initialized after fork()
- * when MyProcPid differs from the value stored at allocation time — fork()
- * inherits the pointer but on_exit_reset() (called early in every backend)
- * clears the before_shmem_exit registration, so we have to register again.
+ * (which all top-level startup paths call) and re-initialized after fork().
+ * Forked children inherit the postmaster's pointer, but they must not reuse
+ * it: crash recovery can run the postmaster's shutdown callback and clear the
+ * module private_data before later backends are forked.
  */
 static FileEncryptionModuleState *file_encryption_module_state = NULL;
 static int	file_encryption_init_pid = 0;
@@ -402,19 +402,11 @@ ensure_per_process_init(void)
 	bool		state_inherited;
 
 	/*
-	 * Already initialized for this process?  fork()ed children inherit our
-	 * file_encryption_module_state pointer (and the module's per-process
-	 * private_data via COW), but on_exit_reset() in the child has already
-	 * cleared the inherited before_shmem_exit list — so we still need to
-	 * register the shutdown callback in the child.  Detect the
-	 * fork-but-not-yet-registered case by comparing MyProcPid to the pid
-	 * recorded when the state was first allocated.
+	 * Already initialized for this process?
 	 */
 	if (file_encryption_module_state != NULL &&
 		file_encryption_init_pid == MyProcPid)
 		return;
-
-	state_inherited = (file_encryption_module_state != NULL);
 
 	/*
 	 * Should already have run from process_file_encryption_library at
@@ -423,32 +415,33 @@ ensure_per_process_init(void)
 	if (LoadedFileEncryptionCallbacks == NULL)
 		load_and_validate_module();
 
-	if (!state_inherited)
+	state_inherited = (file_encryption_module_state != NULL);
+	if (state_inherited)
+		file_encryption_module_state = NULL;
+
+	file_encryption_module_state =
+		MemoryContextAllocZero(TopMemoryContext,
+							   sizeof(FileEncryptionModuleState));
+	file_encryption_module_state->sversion = PG_VERSION_NUM;
+
+	if (LoadedFileEncryptionCallbacks->startup_cb != NULL)
 	{
-		file_encryption_module_state =
-			MemoryContextAllocZero(TopMemoryContext,
-								   sizeof(FileEncryptionModuleState));
-		file_encryption_module_state->sversion = PG_VERSION_NUM;
+		MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 
-		if (LoadedFileEncryptionCallbacks->startup_cb != NULL)
+		PG_TRY();
 		{
-			MemoryContext oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-
-			PG_TRY();
-			{
-				LoadedFileEncryptionCallbacks->startup_cb(file_encryption_module_state);
-			}
-			PG_CATCH();
-			{
-				MemoryContextSwitchTo(oldcontext);
-				pfree(file_encryption_module_state);
-				file_encryption_module_state = NULL;
-				PG_RE_THROW();
-			}
-			PG_END_TRY();
-
-			MemoryContextSwitchTo(oldcontext);
+			LoadedFileEncryptionCallbacks->startup_cb(file_encryption_module_state);
 		}
+		PG_CATCH();
+		{
+			MemoryContextSwitchTo(oldcontext);
+			pfree(file_encryption_module_state);
+			file_encryption_module_state = NULL;
+			PG_RE_THROW();
+		}
+		PG_END_TRY();
+
+		MemoryContextSwitchTo(oldcontext);
 	}
 
 	file_encryption_init_pid = MyProcPid;
@@ -464,4 +457,5 @@ file_encryption_shutdown_cb(int code, Datum arg)
 	if (LoadedFileEncryptionCallbacks != NULL &&
 		LoadedFileEncryptionCallbacks->shutdown_cb != NULL)
 		LoadedFileEncryptionCallbacks->shutdown_cb(file_encryption_module_state);
+	file_encryption_init_pid = 0;
 }

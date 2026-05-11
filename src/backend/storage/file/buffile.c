@@ -77,11 +77,12 @@
  * physical offset without an offset map.
  *
  * BUFFILE_ENC_OVERHEAD bounds the room available for the 8-byte header plus
- * any per-record overhead the encryption module wants to add (e.g. an IV
- * and/or auth tag).  Modules that need more than (OVERHEAD - HEADER) bytes
- * of overhead per BLCKSZ plaintext cannot be used for BufFile.
+ * any per-record overhead the encryption module wants to add (e.g. IVs,
+ * auth tags, or wrapped data keys).  Modules that need more than
+ * (OVERHEAD - HEADER) bytes of overhead per BLCKSZ plaintext cannot be used
+ * for BufFile.
  */
-#define BUFFILE_ENC_OVERHEAD			64
+#define BUFFILE_ENC_OVERHEAD			256
 #define BUFFILE_ENC_HEADER_SIZE			8
 #define BUFFILE_PHYSICAL_BLOCK_SIZE		(BLCKSZ + BUFFILE_ENC_OVERHEAD)
 #define BUFFILE_MAX_CIPHERTEXT			(BUFFILE_PHYSICAL_BLOCK_SIZE - BUFFILE_ENC_HEADER_SIZE)
@@ -526,6 +527,12 @@ BufFileLoadEncryptedBlock(BufFile *file, bool for_write)
 	}
 	else if (intra >= file->nbytes)
 	{
+		/*
+		 * Preserve the caller's logical position at EOF.  If we leave the
+		 * cursor at block_start, a later EOF probe would reload this block
+		 * from the beginning and expose its tuples again.
+		 */
+		file->curOffset = logical;
 		file->nbytes = 0;
 		file->pos = 0;
 	}

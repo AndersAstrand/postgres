@@ -1,10 +1,10 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
-# End-to-end test of basic_file_encryption: configure a random AES-256 key,
-# trigger reorderbuffer spilling, and verify that all changes round-trip
-# through the encrypt/decrypt callbacks.  Also asserts that decryption fails
-# loudly when the key changes between the encrypt and decrypt sessions
-# (catches accidental key rotation against existing files).
+# End-to-end test of basic_file_encryption: configure a random AES-256
+# key-encryption key, trigger reorderbuffer spilling, and verify that all
+# changes round-trip through the encrypt/decrypt callbacks.  Also asserts
+# that decryption fails loudly when the key changes between the encrypt and
+# decrypt sessions (catches accidental key rotation against existing files).
 
 use strict;
 use warnings FATAL => 'all';
@@ -13,7 +13,7 @@ use PostgreSQL::Test::Cluster;
 use PostgreSQL::Test::Utils;
 use Test::More;
 
-# Generate a random 32-byte hex key.
+# Generate a random 32-byte hex key-encryption key.
 sub random_key
 {
 	my @hex;

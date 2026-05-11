@@ -56,9 +56,19 @@ SUBDIRS = \
 		vacuumlo
 
 ifeq ($(with_ssl),openssl)
-SUBDIRS += basic_file_encryption pgcrypto sslinfo
+SUBDIRS += \
+		basic_file_encryption \
+		gost_file_encryption \
+		pgcrypto	\
+		sm4_file_encryption \
+		sslinfo
 else
-ALWAYS_SUBDIRS += basic_file_encryption pgcrypto sslinfo
+ALWAYS_SUBDIRS += \
+		basic_file_encryption \
+		gost_file_encryption \
+		pgcrypto	\
+		sm4_file_encryption \
+		sslinfo
 endif
 
 ifneq ($(with_uuid),no)

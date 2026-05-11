@@ -1,7 +1,7 @@
 # Copyright (c) 2026, PostgreSQL Global Development Group
 
 # End-to-end test of basic_file_encryption page encryption: configure a
-# random AES-256 key and a 32-byte page-reserved trailer, populate a
+# random AES-256 key and a 96-byte page-reserved trailer, populate a
 # heap+btree, verify round-trip across restart, that the on-disk bytes
 # of the heap and index forks are not the plaintext, and that the FSM
 # and VM forks are bypass (still plaintext-on-disk).  Also verify that
@@ -32,10 +32,15 @@ my $node = PostgreSQL::Test::Cluster->new('primary');
 # to be in place before bootstrap runs (i.e. as -c GUCs to initdb itself,
 # not via append_conf afterwards).  Otherwise the bootstrap-created pages
 # would be plaintext on disk and the postmaster would fail to decrypt them.
-$node->init(extra => ['--file-encryption-page-reserved-size=32',
+$node->init(extra => ['--file-encryption-page-reserved-size=96',
 					  '-c', 'file_encryption_library=basic_file_encryption',
 					  '-c', "basic_file_encryption.key=$key",
 					  '-c', 'io_method=sync']);
+$node->append_conf('postgresql.conf', qq[
+file_encryption_library = 'basic_file_encryption'
+basic_file_encryption.key = '$key'
+io_method = 'sync'
+]);
 $node->start;
 
 # pg_controldata reports the reserved size and module-load succeeds
