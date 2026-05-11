@@ -35,6 +35,7 @@
 #include "storage/aio.h"
 #include "storage/bufmgr.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/md.h"
 #include "storage/relfilelocator.h"
 #include "storage/smgr.h"
@@ -172,6 +173,42 @@ const PgAioHandleCallbacks aio_md_readv_cb = {
 	.report = md_readv_report,
 };
 
+/*
+ * Per-backend workspace for page encryption.  Sized to
+ * MAX_IO_COMBINE_LIMIT * BLCKSZ bytes and pre-allocated in mdinit() when a
+ * page-encryption module is configured (AIO completion callbacks run in a
+ * critical section and can't allocate, so we have to do it eagerly).
+ * Stays NULL when no page-encryption module is loaded.
+ */
+static char *md_enc_workspace = NULL;
+
+/*
+ * Whether this fork's pages are routed through the file-encryption module.
+ * FSM and VM forks carry only metadata (free-space estimates, all-visible
+ * bits); leaving them as plaintext keeps fsmpage.c / visibilitymap.c free
+ * of crypto plumbing while encrypting everything that holds user data.
+ * The cluster-wide page_reserved_size still applies to FSM/VM pages so
+ * their on-disk layout stays uniform with the rest of the cluster.
+ */
+static inline bool
+md_fork_is_encrypted(ForkNumber forknum)
+{
+	if (!FileEncryptionPagesEnabled())
+		return false;
+	return forknum == MAIN_FORKNUM || forknum == INIT_FORKNUM;
+}
+
+static inline bool
+md_block_is_zero(const char *block)
+{
+	const uint64 *p = (const uint64 *) block;
+
+	for (Size i = 0; i < BLCKSZ / sizeof(uint64); i++)
+		if (p[i] != 0)
+			return false;
+	return true;
+}
+
 
 static inline int
 _mdfd_open_flags(void)
@@ -193,6 +230,37 @@ mdinit(void)
 	MdCxt = AllocSetContextCreate(TopMemoryContext,
 								  "MdSmgr",
 								  ALLOCSET_DEFAULT_SIZES);
+
+	/*
+	 * If a page-encryption module is already loaded, allocate the
+	 * encryption workspace.  In bootstrap mode the module hasn't been
+	 * loaded yet at this point, and md_init_enc_workspace() will be
+	 * called from process_file_encryption_library() once it has.
+	 */
+	md_init_enc_workspace();
+}
+
+/*
+ * Allocate the per-backend encryption workspace if a page-encryption
+ * module is configured, and force the file-encryption per-process init
+ * to run.  Both must happen from outside any critical section, since AIO
+ * completion callbacks can't allocate.  Idempotent.
+ */
+void
+md_init_enc_workspace(void)
+{
+	/*
+	 * Even when this fork doesn't carry encrypted pages, the spill-file /
+	 * BufFile encryption paths can still hit a critical section first;
+	 * calling FileEncryptionEnsureInit unconditionally keeps them safe.
+	 */
+	FileEncryptionEnsureInit();
+
+	if (FileEncryptionPagesEnabled() && md_enc_workspace == NULL)
+		md_enc_workspace = MemoryContextAllocAligned(TopMemoryContext,
+													 (Size) MAX_IO_COMBINE_LIMIT * BLCKSZ,
+													 PG_IO_ALIGN_SIZE,
+													 0);
 }
 
 /*
@@ -519,6 +587,20 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 	seekpos = (pgoff_t) BLCKSZ * (blocknum % ((BlockNumber) RELSEG_SIZE));
 
 	Assert(seekpos < (pgoff_t) BLCKSZ * RELSEG_SIZE);
+
+	/*
+	 * Encrypt into the per-backend workspace, then write the workspace.
+	 * The buffer pool's plaintext page must not be mutated.
+	 */
+	if (md_fork_is_encrypted(forknum))
+	{
+		char	   *workspace = md_enc_workspace;
+
+		Assert(workspace != NULL);
+
+		FileEncryptionEncryptPage(reln, forknum, blocknum, buffer, workspace);
+		buffer = workspace;
+	}
 
 	if ((nbytes = FileWrite(v->mdfd_vfd, buffer, BLCKSZ, seekpos, WAIT_EVENT_DATA_FILE_EXTEND)) != BLCKSZ)
 	{
@@ -984,6 +1066,31 @@ mdreadv(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 			iovcnt = compute_remaining_iovec(iov, iov, iovcnt, nbytes);
 		}
 
+		/*
+		 * Decrypt each block in place, when this fork's pages are routed
+		 * through the encryption module.  All-zero pages on disk (e.g. from
+		 * mdzeroextend) are passed through unchanged so PageIsNew can
+		 * recognise them.
+		 */
+		if (md_fork_is_encrypted(forknum))
+		{
+			char	   *workspace = md_enc_workspace;
+
+			Assert(workspace != NULL);
+
+			for (BlockNumber b = 0; b < nblocks_this_segment; b++)
+			{
+				char	   *blk = (char *) buffers[b];
+
+				if (md_block_is_zero(blk))
+					continue;
+
+				memcpy(workspace, blk, BLCKSZ);
+				FileEncryptionDecryptPage(reln, forknum, blocknum + b,
+										  workspace, blk);
+			}
+		}
+
 		nblocks -= nblocks_this_segment;
 		buffers += nblocks_this_segment;
 		blocknum += nblocks_this_segment;
@@ -1026,6 +1133,15 @@ mdstartreadv(PgAioHandle *ioh,
 	iovcnt = buffers_to_iovec(iov, buffers, nblocks_this_segment);
 
 	Assert(iovcnt <= nblocks_this_segment);
+
+	/*
+	 * Open the per-relation encryption state before the I/O is dispatched.
+	 * The AIO completion callback may run in a critical section where it
+	 * can't tolerate the palloc/smgrread that FileEncryptionOpenObject
+	 * would otherwise do on first call.
+	 */
+	if (md_fork_is_encrypted(forknum))
+		FileEncryptionOpenObject(reln);
 
 	if (!(io_direct_flags & IO_DIRECT_DATA))
 		pgaio_io_set_flag(ioh, PGAIO_HF_BUFFERED);
@@ -1102,7 +1218,36 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
 		if (nblocks_this_segment != nblocks)
 			elog(ERROR, "write crosses segment boundary");
 
-		iovcnt = buffers_to_iovec(iov, (void **) buffers, nblocks_this_segment);
+		/*
+		 * If this fork is encrypted, build a separate ciphertext copy in the
+		 * per-backend workspace and point a single iovec at the contiguous
+		 * workspace bytes.  The buffer pool's plaintext pages must not be
+		 * mutated, and the workspace is one contiguous block, so we don't
+		 * call buffers_to_iovec at all in this path.
+		 */
+		if (md_fork_is_encrypted(forknum))
+		{
+			char	   *workspace = md_enc_workspace;
+
+			Assert(workspace != NULL);
+
+			for (BlockNumber b = 0; b < nblocks_this_segment; b++)
+			{
+				char	   *slot = workspace + (Size) b * BLCKSZ;
+
+				FileEncryptionEncryptPage(reln, forknum, blocknum + b,
+										  buffers[b], slot);
+			}
+
+			iov[0].iov_base = workspace;
+			iov[0].iov_len = (Size) nblocks_this_segment * BLCKSZ;
+			iovcnt = 1;
+		}
+		else
+		{
+			iovcnt = buffers_to_iovec(iov, (void **) buffers, nblocks_this_segment);
+		}
+
 		size_this_segment = nblocks_this_segment * BLCKSZ;
 		transferred_this_segment = 0;
 
@@ -2041,6 +2186,59 @@ md_readv_complete(PgAioHandle *ioh, PgAioResult prior_result, uint8 cb_data)
 		/* partial reads should be retried at upper level */
 		result.status = PGAIO_RS_PARTIAL;
 		result.id = PGAIO_HCB_MD_READV;
+	}
+
+	/*
+	 * Decrypt successfully-read blocks in place.  Mirrors the post-read
+	 * loop in mdreadv() for the synchronous path.  Only blocks that
+	 * actually came back from disk are decrypted; partial reads leave the
+	 * unread tail untouched (the upper level will retry).  All-zero
+	 * ciphertext is passed through unchanged so PageIsNew can recognise
+	 * fresh pages produced by mdzeroextend().
+	 *
+	 * buffers_to_iovec merges contiguous buffer-pool pages into a single
+	 * iovec entry, so we walk each iovec in BLCKSZ steps rather than
+	 * assuming one iovec per block.
+	 */
+	if (md_fork_is_encrypted(td->smgr.forkNum) && result.result > 0)
+	{
+		struct iovec *iov;
+		char	   *workspace = md_enc_workspace;
+		uint32		blocks_done = 0;
+		SMgrRelation reln;
+
+		Assert(workspace != NULL);
+
+		/*
+		 * Resolve the SMgrRelation so we can reach its cached encryption
+		 * state.  smgropen is a hash lookup against an entry the issuer of
+		 * this AIO already created (mdstartreadv eagerly opened the
+		 * encryption object), so this allocates nothing.
+		 */
+		reln = smgropen(td->smgr.rlocator, INVALID_PROC_NUMBER);
+
+		(void) pgaio_io_get_iovec(ioh, &iov);
+
+		for (struct iovec *cur = iov; blocks_done < result.result; cur++)
+		{
+			Assert(cur->iov_len % BLCKSZ == 0);
+			for (Size off = 0; off < cur->iov_len; off += BLCKSZ)
+			{
+				char	   *blk = (char *) cur->iov_base + off;
+
+				if (blocks_done >= result.result)
+					break;
+
+				if (!md_block_is_zero(blk))
+				{
+					memcpy(workspace, blk, BLCKSZ);
+					FileEncryptionDecryptPage(reln, td->smgr.forkNum,
+											  td->smgr.blockNum + blocks_done,
+											  workspace, blk);
+				}
+				blocks_done++;
+			}
+		}
 	}
 
 	return result;

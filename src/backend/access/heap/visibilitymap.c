@@ -115,6 +115,12 @@
  * Size of the bitmap on each visibility map page, in bytes. There's no
  * extra headers, so the whole page minus the standard page header is
  * used for the bitmap.
+ *
+ * Intentionally BLCKSZ-based even when the cluster reserves bytes at
+ * the tail of every page for file encryption: VM pages are exempt from
+ * encryption (md.c doesn't route them through encrypt_page_cb /
+ * decrypt_page_cb), so the bitmap can use the entire page including
+ * what would otherwise be the encryption trailer.
  */
 #define MAPSIZE (BLCKSZ - MAXALIGN(SizeOfPageHeaderData))
 
