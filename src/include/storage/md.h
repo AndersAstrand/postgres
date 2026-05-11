@@ -24,6 +24,8 @@ extern PGDLLIMPORT const PgAioHandleCallbacks aio_md_readv_cb;
 
 /* md storage manager functionality */
 extern void mdinit(void);
+extern void md_init_enc_workspace(void);
+extern bool md_fork_is_encrypted(ForkNumber forknum);
 extern void mdopen(SMgrRelation reln);
 extern void mdclose(SMgrRelation reln, ForkNumber forknum);
 extern void mdcreate(SMgrRelation reln, ForkNumber forknum, bool isRedo);

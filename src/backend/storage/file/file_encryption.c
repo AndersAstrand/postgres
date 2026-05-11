@@ -20,6 +20,7 @@
 #include "storage/checksum.h"
 #include "storage/file_encryption.h"
 #include "storage/ipc.h"
+#include "storage/md.h"
 #include "storage/smgr.h"
 #include "utils/memutils.h"
 
@@ -186,6 +187,9 @@ FileEncryptionDecrypt(const char *path, uint64 file_offset,
  * case, where BaseInit() runs before process_file_encryption_library(),
  * and we'd otherwise try to dlopen the module and run its _PG_init too
  * early (PGC_POSTMASTER GUCs can't be defined after startup is complete).
+ * The bootstrap process_file_encryption_library() call will reach back
+ * via md_init_enc_workspace() to do the eager init once the module IS
+ * loaded.
  */
 void
 FileEncryptionEnsureInit(void)
@@ -492,9 +496,16 @@ process_file_encryption_library(const char *libname)
 
 	/*
 	 * Eagerly run the per-process startup callback now, while we're still
-	 * outside any critical section.
+	 * outside any critical section.  AIO completion callbacks invoke
+	 * encrypt/decrypt from within a critical section and can't tolerate
+	 * the lazy palloc that ensure_per_process_init() would otherwise do
+	 * on first use.  For the same reason, ask md.c to allocate its
+	 * page-encryption workspace now: in bootstrap mode, mdinit() ran
+	 * before this function and saw FileEncryptionPagesEnabled() == false,
+	 * so the workspace is still NULL.
 	 */
 	ensure_per_process_init();
+	md_init_enc_workspace();
 }
 
 static void
