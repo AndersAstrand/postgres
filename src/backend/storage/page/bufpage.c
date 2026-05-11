@@ -42,19 +42,26 @@ void
 PageInit(Page page, Size pageSize, Size specialSize)
 {
 	PageHeader	p = (PageHeader) page;
+	Size		usableSize;
 
 	specialSize = MAXALIGN(specialSize);
 
 	Assert(pageSize == BLCKSZ);
-	Assert(pageSize > specialSize + SizeOfPageHeaderData);
+	usableSize = pageSize - GetPageReservedSize();
+	Assert(usableSize > specialSize + SizeOfPageHeaderData);
 
-	/* Make sure all fields of page are zero, as well as unused space */
+	/*
+	 * Zero the entire page including any encryption trailer.  The trailer
+	 * is owned by the smgr/encryption layer and must remain zero in the
+	 * plaintext view so that pd_checksum (which still covers the full page)
+	 * matches between writer and reader.
+	 */
 	MemSet(p, 0, pageSize);
 
 	p->pd_flags = 0;
 	p->pd_lower = SizeOfPageHeaderData;
-	p->pd_upper = pageSize - specialSize;
-	p->pd_special = pageSize - specialSize;
+	p->pd_upper = usableSize - specialSize;
+	p->pd_special = usableSize - specialSize;
 	PageSetPageSizeAndVersion(page, pageSize, PG_PAGE_LAYOUT_VERSION);
 	/* p->pd_prune_xid = InvalidTransactionId;		done by above MemSet */
 }
@@ -137,7 +144,7 @@ PageIsVerified(PageData *page, BlockNumber blkno, int flags, bool *checksum_fail
 		if ((p->pd_flags & ~PD_VALID_FLAG_BITS) == 0 &&
 			p->pd_lower <= p->pd_upper &&
 			p->pd_upper <= p->pd_special &&
-			p->pd_special <= BLCKSZ &&
+			p->pd_special <= BLCKSZ - GetPageReservedSize() &&
 			p->pd_special == MAXALIGN(p->pd_special))
 			header_sane = true;
 
@@ -220,7 +227,7 @@ PageAddItemExtended(Page page,
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ)
+		phdr->pd_special > BLCKSZ - GetPageReservedSize())
 		ereport(PANIC,
 				(errcode(ERRCODE_DATA_CORRUPTED),
 				 errmsg("corrupted page pointers: lower = %u, upper = %u, special = %u",
@@ -732,7 +739,7 @@ PageRepairFragmentation(Page page)
 	if (pd_lower < SizeOfPageHeaderData ||
 		pd_lower > pd_upper ||
 		pd_upper > pd_special ||
-		pd_special > BLCKSZ ||
+		pd_special > BLCKSZ - GetPageReservedSize() ||
 		pd_special != MAXALIGN(pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -1075,7 +1082,7 @@ PageIndexTupleDelete(Page page, OffsetNumber offnum)
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special > BLCKSZ - GetPageReservedSize() ||
 		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -1210,7 +1217,7 @@ PageIndexMultiDelete(Page page, OffsetNumber *itemnos, int nitems)
 	if (pd_lower < SizeOfPageHeaderData ||
 		pd_lower > pd_upper ||
 		pd_upper > pd_special ||
-		pd_special > BLCKSZ ||
+		pd_special > BLCKSZ - GetPageReservedSize() ||
 		pd_special != MAXALIGN(pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -1316,7 +1323,7 @@ PageIndexTupleDeleteNoCompact(Page page, OffsetNumber offnum)
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special > BLCKSZ - GetPageReservedSize() ||
 		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
@@ -1428,7 +1435,7 @@ PageIndexTupleOverwrite(Page page, OffsetNumber offnum,
 	if (phdr->pd_lower < SizeOfPageHeaderData ||
 		phdr->pd_lower > phdr->pd_upper ||
 		phdr->pd_upper > phdr->pd_special ||
-		phdr->pd_special > BLCKSZ ||
+		phdr->pd_special > BLCKSZ - GetPageReservedSize() ||
 		phdr->pd_special != MAXALIGN(phdr->pd_special))
 		ereport(ERROR,
 				(errcode(ERRCODE_DATA_CORRUPTED),
