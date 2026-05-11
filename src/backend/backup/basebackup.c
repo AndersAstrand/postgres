@@ -1316,8 +1316,16 @@ sendDir(bbsink *sink, const char *path, int basepathlen, bool sizeonly,
 													&relfilenumber,
 													&relForkNum, &segno);
 
-		/* Exclude all forks for unlogged tables except the init fork */
-		if (isRelationFile && relForkNum != INIT_FORKNUM)
+		/*
+		 * Exclude all forks for unlogged tables except the init fork and the
+		 * key fork.  The key fork carries the relation's wrapped DEK, which
+		 * survives reinit and must be present on the restored cluster for
+		 * the relation's pages to be readable -- including ones written by
+		 * code paths that don't go through the init fork copy (the relation
+		 * itself is empty on restart, but the DEK must still match).
+		 */
+		if (isRelationFile && relForkNum != INIT_FORKNUM &&
+			relForkNum != KEY_FORKNUM)
 		{
 			char		initForkFile[MAXPGPATH];
 
