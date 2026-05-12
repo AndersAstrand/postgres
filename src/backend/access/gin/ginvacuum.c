@@ -551,7 +551,7 @@ ginVacuumEntryPage(GinVacuumState *gvs, Buffer buffer, BlockNumber *roots, uint3
 
 				if (nitems > 0)
 				{
-					plist = ginCompressPostingList(items, nitems, GinMaxItemSize, NULL);
+					plist = ginCompressPostingList(items, nitems, GinMaxItemSizeForCluster(), NULL);
 					plistsize = SizeOfGinPostingList(plist);
 				}
 				else

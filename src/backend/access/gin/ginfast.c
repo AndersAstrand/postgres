@@ -39,7 +39,8 @@
 int			gin_pending_list_limit = 0;
 
 #define GIN_PAGE_FREESIZE \
-	( (Size) BLCKSZ - MAXALIGN(SizeOfPageHeaderData) - MAXALIGN(sizeof(GinPageOpaqueData)) )
+	( (Size) BLCKSZ - GetPageReservedSize() - \
+	  MAXALIGN(SizeOfPageHeaderData) - MAXALIGN(sizeof(GinPageOpaqueData)) )
 
 typedef struct KeyArray
 {
@@ -183,7 +184,7 @@ makeSublist(Relation index, IndexTuple *tuples, int32 ntuples,
 
 		tupsize = MAXALIGN(IndexTupleSize(tuples[i])) + sizeof(ItemIdData);
 
-		if (size + tupsize > GinListPageSize)
+		if (size + tupsize > GinListPageSizeForCluster())
 		{
 			/* won't fit, force a new page and reprocess */
 			i--;
@@ -250,7 +251,7 @@ ginHeapTupleFastInsert(GinState *ginstate, GinTupleCollector *collector)
 	 * ready to modify the page.
 	 */
 
-	if (collector->sumsize + collector->ntuples * sizeof(ItemIdData) > GinListPageSize)
+	if (collector->sumsize + collector->ntuples * sizeof(ItemIdData) > GinListPageSizeForCluster())
 	{
 		/*
 		 * Total size is greater than one page => make sublist

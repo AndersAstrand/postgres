@@ -474,6 +474,17 @@ extern void gistadjustmembers(Oid opfamilyoid,
 #define GiSTPageSize   \
 	( BLCKSZ - SizeOfPageHeaderData - MAXALIGN(sizeof(GISTPageOpaqueData)) )
 
+/*
+ * Cluster-aware variant: when a file_encryption_library has reserved bytes
+ * at the tail of every page, the available per-page tuple space shrinks
+ * accordingly.  Use this at the runtime fit-check sites.
+ */
+static inline Size
+GiSTPageSizeForCluster(void)
+{
+	return GiSTPageSize - GetPageReservedSize();
+}
+
 #define GIST_MIN_FILLFACTOR			10
 #define GIST_DEFAULT_FILLFACTOR		90
 

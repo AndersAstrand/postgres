@@ -157,7 +157,7 @@ _bt_findsplitloc(Relation rel,
 
 	/* Total free space available on a btree page, after fixed overhead */
 	leftspace = rightspace =
-		PageGetPageSize(origpage) - SizeOfPageHeaderData -
+		PageGetUsableSize(origpage) - SizeOfPageHeaderData -
 		MAXALIGN(sizeof(BTPageOpaqueData));
 
 	/* The right page will have the same high key as the old page */

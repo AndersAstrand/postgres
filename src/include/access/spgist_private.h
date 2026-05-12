@@ -453,6 +453,19 @@ typedef SpGistDeadTupleData *SpGistDeadTuple;
 				  MAXALIGN(sizeof(SpGistPageOpaqueData)))
 
 /*
+ * Cluster-aware variant: when a file_encryption_library has reserved bytes
+ * at the tail of every page, the actual page capacity is correspondingly
+ * smaller.  Use this at runtime fit-check / split-decision sites.
+ */
+static inline Size
+SpGistPageCapacityForCluster(void)
+{
+	return MAXALIGN_DOWN(BLCKSZ - GetPageReservedSize() -
+						 SizeOfPageHeaderData -
+						 MAXALIGN(sizeof(SpGistPageOpaqueData)));
+}
+
+/*
  * Compute free space on page, assuming that up to n placeholders can be
  * recycled if present (n should be the number of tuples to be inserted)
  */

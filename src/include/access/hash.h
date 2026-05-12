@@ -285,7 +285,7 @@ typedef struct HashOptions
  * Maximum size of a hash index item (it's okay to have only one per page)
  */
 #define HashMaxItemSize(page) \
-	MAXALIGN_DOWN(PageGetPageSize(page) - \
+	MAXALIGN_DOWN(PageGetUsableSize(page) - \
 				  SizeOfPageHeaderData - \
 				  sizeof(ItemIdData) - \
 				  MAXALIGN(sizeof(HashPageOpaqueData)))

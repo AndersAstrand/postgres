@@ -38,9 +38,9 @@
  * the given heap block number.
  */
 #define HEAPBLK_TO_REVMAP_BLK(pagesPerRange, heapBlk) \
-	((heapBlk / pagesPerRange) / REVMAP_PAGE_MAXITEMS)
+	((heapBlk / pagesPerRange) / RevmapPageMaxItemsForCluster())
 #define HEAPBLK_TO_REVMAP_INDEX(pagesPerRange, heapBlk) \
-	((heapBlk / pagesPerRange) % REVMAP_PAGE_MAXITEMS)
+	((heapBlk / pagesPerRange) % RevmapPageMaxItemsForCluster())
 
 
 struct BrinRevmap

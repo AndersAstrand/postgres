@@ -85,7 +85,7 @@ gistfitpage(IndexTuple *itvec, int len)
 		size += IndexTupleSize(itvec[i]) + sizeof(ItemIdData);
 
 	/* TODO: Consider fillfactor */
-	return (size <= GiSTPageSize);
+	return (size <= GiSTPageSizeForCluster());
 }
 
 /*
