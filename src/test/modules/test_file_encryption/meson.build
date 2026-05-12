@@ -16,3 +16,15 @@ test_file_encryption = shared_module('test_file_encryption',
 )
 test_install_libs += test_file_encryption
 
+tests += {
+  'name': 'test_file_encryption',
+  'sd': meson.current_source_dir(),
+  'bd': meson.current_build_dir(),
+  'tap': {
+    'tests': [
+      't/001_buffile.pl',
+      't/002_buffile_corruption.pl',
+      't/003_apply_streaming.pl',
+    ],
+  },
+}

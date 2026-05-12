@@ -11,6 +11,7 @@ MODULES = test_file_encryption
 PGFILEDESC = "test_file_encryption - test file encryption module"
 
 NO_INSTALLCHECK = 1
+TAP_TESTS = 1
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
