@@ -67,6 +67,7 @@
 
 #include "common/file_utils.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/lwlock.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -676,6 +677,7 @@ SubPostmasterMain(int argc, char *argv[])
 	 * non-EXEC_BACKEND behavior.
 	 */
 	process_shared_preload_libraries();
+	process_file_encryption_library(NULL);
 
 	/* Restore basic shared memory pointers */
 	if (UsedShmemSegAddr != NULL)

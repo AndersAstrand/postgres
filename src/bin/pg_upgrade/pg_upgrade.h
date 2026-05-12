@@ -257,6 +257,7 @@ typedef struct
 	bool		date_is_int;
 	bool		float8_pass_by_value;
 	uint32		data_checksum_version;
+	uint32		page_reserved_size;
 	bool		default_char_signedness;
 } ControlData;
 

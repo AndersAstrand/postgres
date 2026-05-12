@@ -35,6 +35,7 @@ const char *const forkNames[] = {
 	[FSM_FORKNUM] = "fsm",
 	[VISIBILITYMAP_FORKNUM] = "vm",
 	[INIT_FORKNUM] = "init",
+	[KEY_FORKNUM] = "key",
 };
 
 StaticAssertDecl(lengthof(forkNames) == (MAX_FORKNUM + 1),
@@ -60,7 +61,7 @@ forkname_to_number(const char *forkName)
 			(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 			 errmsg("invalid fork name"),
 			 errhint("Valid fork names are \"main\", \"fsm\", "
-					 "\"vm\", and \"init\".")));
+					 "\"vm\", \"init\", and \"key\".")));
 #endif
 
 	return InvalidForkNumber;

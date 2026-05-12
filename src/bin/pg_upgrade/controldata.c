@@ -505,6 +505,16 @@ get_control_data(ClusterInfo *cluster)
 			cluster->controldata.data_checksum_version = str2uint(p);
 			got_data_checksum_version = true;
 		}
+		else if ((p = strstr(bufin, "File encryption page-reserved size:")) != NULL)
+		{
+			p = strchr(p, ':');
+
+			if (p == NULL || strlen(p) <= 1)
+				pg_fatal("%d: controldata retrieval problem", __LINE__);
+
+			p++;				/* remove ':' char */
+			cluster->controldata.page_reserved_size = str2uint(p);
+		}
 		else if ((p = strstr(bufin, "Default char data signedness:")) != NULL)
 		{
 			p = strchr(p, ':');
@@ -757,6 +767,16 @@ check_control_data(ControlData *oldctrl,
 		pg_fatal("old cluster uses data checksums but the new one does not");
 	else if (oldctrl->data_checksum_version != newctrl->data_checksum_version)
 		pg_fatal("old and new cluster pg_controldata checksum versions do not match");
+
+	/*
+	 * Encryption page-reserved sizes have to match exactly: pages on disk in
+	 * the old cluster carry their tail metadata at a fixed offset that the
+	 * new cluster's smgr layer must understand.  Cross-encryption upgrades
+	 * require dump+restore.
+	 */
+	if (oldctrl->page_reserved_size != newctrl->page_reserved_size)
+		pg_fatal("old and new cluster file-encryption page-reserved sizes do not match (%u vs %u)",
+				 oldctrl->page_reserved_size, newctrl->page_reserved_size);
 }
 
 
