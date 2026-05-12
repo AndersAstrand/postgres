@@ -24,6 +24,7 @@ tests += {
     'tests': [
       't/001_buffile.pl',
       't/003_apply_streaming.pl',
+      't/004_logical_decoding.pl',
     ],
   },
 }
