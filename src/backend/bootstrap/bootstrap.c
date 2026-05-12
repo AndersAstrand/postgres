@@ -418,7 +418,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	 * declared page_overhead_size.  This is the source of truth for the
 	 * cluster's reserved size; we never let the operator force a
 	 * different value at initdb time.  After this call returns
-	 * FileEncryptionPagesEnabled() answers from the loaded module's
+	 * FileEncryptionPageReservedSize() answers from the loaded module's
 	 * page_overhead_size, and BootStrapXLOG copies that into pg_control.
 	 */
 	process_file_encryption_library(bootstrap_file_encryption_library);

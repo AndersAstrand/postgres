@@ -1098,6 +1098,21 @@ smgr_aio_reopen(PgAioHandle *ioh)
 		case PGAIO_OP_READV:
 			od->read.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);
 			Assert(off == od->read.offset);
+
+			/*
+			 * Pre-open the per-relation file-encryption state before the IO
+			 * worker enters the critical section in
+			 * pgaio_io_perform_synchronously().  The completion callback
+			 * (md_readv_complete) decrypts pages from inside that critical
+			 * section and cannot palloc; by populating
+			 * SMgrRelation.encryption_object_state here -- outside the
+			 * critical section -- we ensure the decrypt path is reduced to a
+			 * cache-hot lookup.  The backend that issued the IO does the
+			 * equivalent pre-open in mdstartreadv(); this branch covers io
+			 * workers, which have their own SMgrRelation hash.
+			 */
+			if (md_fork_is_encrypted(sd->smgr.forkNum))
+				FileEncryptionOpenObject(reln);
 			break;
 		case PGAIO_OP_WRITEV:
 			od->write.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);
