@@ -14,6 +14,12 @@ pg_checksums = executable('pg_checksums',
   pg_checksums_sources,
   include_directories: [timezone_inc],
   dependencies: [frontend_code],
+  # dlopen'd file_encryption modules resolve libpgcommon/libpgport symbols
+  # (palloc, pstrdup, pg_strong_random, ...) against pg_checksums itself.
+  # Force the static archives to contribute all their symbols, and export
+  # them in the dynamic table so dlopen lookups succeed.
+  link_whole: [common_static, pgport_static],
+  export_dynamic: true,
   kwargs: default_bin_args,
 )
 bin_targets += pg_checksums
@@ -26,6 +32,7 @@ tests += {
     'tests': [
       't/001_basic.pl',
       't/002_actions.pl',
+      't/003_encrypted.pl',
     ],
   },
 }
