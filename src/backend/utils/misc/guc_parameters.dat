@@ -1092,6 +1092,14 @@
   options => 'file_copy_method_options',
 },
 
+{ name => 'file_encryption_config', type => 'string', context => 'PGC_POSTMASTER', group => 'RESOURCES_DISK',
+  short_desc => 'Module-defined configuration passed verbatim to the file encryption module at load time.',
+  long_desc => 'The format is defined entirely by the module named in file_encryption_library; the server passes the string through without inspection. Treat this value as a secret: it typically contains key material or a path to fetch it.',
+  flags => 'GUC_SUPERUSER_ONLY | GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE',
+  variable => 'file_encryption_config',
+  boot_val => '""',
+},
+
 { name => 'file_extend_method', type => 'enum', context => 'PGC_SIGHUP', group => 'RESOURCES_DISK',
   short_desc => 'Selects the method used for extending data files.',
   variable => 'file_extend_method',
