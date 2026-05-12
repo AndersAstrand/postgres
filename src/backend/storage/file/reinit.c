@@ -14,20 +14,30 @@
 
 #include "postgres.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#include "catalog/pg_tablespace_d.h"
 #include "common/relpath.h"
 #include "postmaster/startup.h"
 #include "storage/copydir.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/reinit.h"
+#include "storage/relfilelocator.h"
+#include "storage/smgr.h"
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
 
-static void ResetUnloggedRelationsInTablespaceDir(const char *tsdirname,
+static void ResetUnloggedRelationsInTablespaceDir(Oid spcOid,
+												  const char *tsdirname,
 												  int op);
-static void ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname,
+static void ResetUnloggedRelationsInDbspaceDir(Oid spcOid, Oid dbOid,
+											   const char *dbspacedirname,
 											   int op);
+static void reencrypt_init_segment(RelFileLocator rlocator, unsigned segno,
+								   const char *srcpath, const char *dstpath);
 
 typedef struct
 {
@@ -72,7 +82,7 @@ ResetUnloggedRelations(int op)
 	/*
 	 * First process unlogged files in pg_default ($PGDATA/base)
 	 */
-	ResetUnloggedRelationsInTablespaceDir("base", op);
+	ResetUnloggedRelationsInTablespaceDir(DEFAULTTABLESPACE_OID, "base", op);
 
 	/*
 	 * Cycle through directories for all non-default tablespaces.
@@ -81,13 +91,24 @@ ResetUnloggedRelations(int op)
 
 	while ((spc_de = ReadDir(spc_dir, PG_TBLSPC_DIR)) != NULL)
 	{
+		Oid			spcOid;
+		char	   *endp;
+
 		if (strcmp(spc_de->d_name, ".") == 0 ||
 			strcmp(spc_de->d_name, "..") == 0)
 			continue;
 
+		/*
+		 * Each entry under pg_tblspc is a symlink whose name is the
+		 * tablespace OID.  Skip anything that doesn't parse as one.
+		 */
+		spcOid = strtoul(spc_de->d_name, &endp, 10);
+		if (*endp != '\0')
+			continue;
+
 		snprintf(temp_path, sizeof(temp_path), "%s/%s/%s",
 				 PG_TBLSPC_DIR, spc_de->d_name, TABLESPACE_VERSION_DIRECTORY);
-		ResetUnloggedRelationsInTablespaceDir(temp_path, op);
+		ResetUnloggedRelationsInTablespaceDir(spcOid, temp_path, op);
 	}
 
 	FreeDir(spc_dir);
@@ -103,7 +124,8 @@ ResetUnloggedRelations(int op)
  * Process one tablespace directory for ResetUnloggedRelations
  */
 static void
-ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
+ResetUnloggedRelationsInTablespaceDir(Oid spcOid, const char *tsdirname,
+									  int op)
 {
 	DIR		   *ts_dir;
 	struct dirent *de;
@@ -130,6 +152,9 @@ ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
 
 	while ((de = ReadDir(ts_dir, tsdirname)) != NULL)
 	{
+		Oid			dbOid;
+		char	   *endp;
+
 		/*
 		 * We're only interested in the per-database directories, which have
 		 * numeric names.  Note that this code will also (properly) ignore "."
@@ -137,6 +162,8 @@ ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
 		 */
 		if (strspn(de->d_name, "0123456789") != strlen(de->d_name))
 			continue;
+		dbOid = strtoul(de->d_name, &endp, 10);
+		Assert(*endp == '\0');
 
 		snprintf(dbspace_path, sizeof(dbspace_path), "%s/%s",
 				 tsdirname, de->d_name);
@@ -148,7 +175,7 @@ ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
 			ereport_startup_progress("resetting unlogged relations (cleanup), elapsed time: %ld.%02d s, current path: %s",
 									 dbspace_path);
 
-		ResetUnloggedRelationsInDbspaceDir(dbspace_path, op);
+		ResetUnloggedRelationsInDbspaceDir(spcOid, dbOid, dbspace_path, op);
 	}
 
 	FreeDir(ts_dir);
@@ -158,7 +185,8 @@ ResetUnloggedRelationsInTablespaceDir(const char *tsdirname, int op)
  * Process one per-dbspace directory for ResetUnloggedRelations
  */
 static void
-ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
+ResetUnloggedRelationsInDbspaceDir(Oid spcOid, Oid dbOid,
+								   const char *dbspacedirname, int op)
 {
 	DIR		   *dbspace_dir;
 	struct dirent *de;
@@ -243,8 +271,14 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 													 &forkNum, &segno))
 				continue;
 
-			/* We never remove the init fork. */
-			if (forkNum == INIT_FORKNUM)
+			/*
+			 * We never remove the init fork.  We also keep the key fork:
+			 * its wrapped DEK belongs to the relation as a unit (the data
+			 * we're about to wipe was encrypted under it; new data after
+			 * reset re-encrypts under the same DEK).  Re-creating it would
+			 * require module-side wrap, which we don't do during reinit.
+			 */
+			if (forkNum == INIT_FORKNUM || forkNum == KEY_FORKNUM)
 				continue;
 
 			/*
@@ -310,9 +344,28 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 				snprintf(dstpath, sizeof(dstpath), "%s/%u.%u",
 						 dbspacedirname, relNumber, segno);
 
-			/* OK, we're ready to perform the actual copy. */
-			elog(DEBUG2, "copying %s to %s", srcpath, dstpath);
-			copy_file(srcpath, dstpath);
+			/*
+			 * If page encryption is configured, the INIT-fork ciphertext
+			 * was produced under a (fork=INIT_FORKNUM, blocknum) binding
+			 * context and a raw byte copy into the MAIN fork would not
+			 * decrypt later (the read path supplies fork=MAIN_FORKNUM as
+			 * binding context).  Decrypt INIT-side and re-encrypt
+			 * MAIN-side instead so the context matches at read time.
+			 */
+			if (FileEncryptionEnabled())
+			{
+				RelFileLocator rlocator = {.spcOid = spcOid,
+				.dbOid = dbOid,.relNumber = relNumber};
+
+				elog(DEBUG2, "re-encrypting %s into %s", srcpath, dstpath);
+				reencrypt_init_segment(rlocator, segno, srcpath, dstpath);
+			}
+			else
+			{
+				/* OK, we're ready to perform the actual copy. */
+				elog(DEBUG2, "copying %s to %s", srcpath, dstpath);
+				copy_file(srcpath, dstpath);
+			}
 		}
 
 		FreeDir(dbspace_dir);
@@ -364,6 +417,106 @@ ResetUnloggedRelationsInDbspaceDir(const char *dbspacedirname, int op)
 		 */
 		fsync_fname(dbspacedirname, true);
 	}
+}
+
+/*
+ * INIT-fork-to-MAIN-fork copy for an encrypted unlogged relation.
+ *
+ * Each INIT-fork page was encrypted with a binding context that included
+ * fork=INIT_FORKNUM; a raw byte copy into MAIN would not decrypt afterwards
+ * because the encryption layer supplies fork=MAIN_FORKNUM on read.  Decrypt
+ * each block of the INIT segment file and re-encrypt under the MAIN context
+ * using the relation's existing DEK (read from the KEY fork), producing a
+ * MAIN segment file that the running cluster can read normally.
+ *
+ * The plaintext never leaves this process's memory.  The DEK is unchanged.
+ */
+static void
+reencrypt_init_segment(RelFileLocator rlocator, unsigned segno,
+					   const char *srcpath, const char *dstpath)
+{
+	SMgrRelation reln;
+	int			src_fd;
+	int			dst_fd;
+	struct stat st;
+	BlockNumber nblocks;
+	BlockNumber block_in_seg;
+	PGIOAlignedBlock encrypted;
+	PGIOAlignedBlock plaintext;
+	PGIOAlignedBlock reencrypted;
+
+	/*
+	 * smgropen + FileEncryptionOpenObject load the relation's DEK by
+	 * reading the KEY fork.  Both palloc; we're outside any critical
+	 * section here.
+	 */
+	reln = smgropen(rlocator, INVALID_PROC_NUMBER);
+	FileEncryptionOpenObject(reln);
+
+	src_fd = OpenTransientFile(srcpath, O_RDONLY | PG_BINARY);
+	if (src_fd < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open file \"%s\": %m", srcpath)));
+
+	if (fstat(src_fd, &st) < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not stat file \"%s\": %m", srcpath)));
+	if (st.st_size % BLCKSZ != 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("INIT fork file \"%s\" has size %lld, not a multiple of BLCKSZ",
+						srcpath, (long long) st.st_size)));
+	nblocks = st.st_size / BLCKSZ;
+
+	dst_fd = OpenTransientFile(dstpath,
+							   O_WRONLY | O_CREAT | O_TRUNC | PG_BINARY);
+	if (dst_fd < 0)
+	{
+		CloseTransientFile(src_fd);
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not create file \"%s\": %m", dstpath)));
+	}
+
+	for (block_in_seg = 0; block_in_seg < nblocks; block_in_seg++)
+	{
+		BlockNumber blocknum = segno * RELSEG_SIZE + block_in_seg;
+		off_t		off = (off_t) block_in_seg * BLCKSZ;
+
+		if (pg_pread(src_fd, encrypted.data, BLCKSZ, off) != BLCKSZ)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not read block %u in file \"%s\": %m",
+							block_in_seg, srcpath)));
+
+		FileEncryptionDecryptPage(reln, INIT_FORKNUM, blocknum,
+								  encrypted.data, plaintext.data);
+		FileEncryptionEncryptPage(reln, MAIN_FORKNUM, blocknum,
+								  plaintext.data, reencrypted.data);
+
+		if (pg_pwrite(dst_fd, reencrypted.data, BLCKSZ, off) != BLCKSZ)
+			ereport(ERROR,
+					(errcode_for_file_access(),
+					 errmsg("could not write block %u in file \"%s\": %m",
+							block_in_seg, dstpath)));
+	}
+
+	if (pg_fsync(dst_fd) != 0)
+	{
+		CloseTransientFile(src_fd);
+		CloseTransientFile(dst_fd);
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not fsync file \"%s\": %m", dstpath)));
+	}
+
+	CloseTransientFile(src_fd);
+	if (CloseTransientFile(dst_fd) != 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m", dstpath)));
 }
 
 /*

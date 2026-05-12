@@ -405,8 +405,12 @@ calculate_toast_table_size(Oid toastrelid)
 
 	/* toast heap size, including FSM and VM size */
 	for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+	{
+		if (forkNum == KEY_FORKNUM)
+			continue;
 		size += calculate_relation_size(&(toastRel->rd_locator),
 										toastRel->rd_backend, forkNum);
+	}
 
 	/* toast index size, including FSM and VM size */
 	indexlist = RelationGetIndexList(toastRel);
@@ -419,8 +423,12 @@ calculate_toast_table_size(Oid toastrelid)
 		toastIdxRel = relation_open(lfirst_oid(lc),
 									AccessShareLock);
 		for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+		{
+			if (forkNum == KEY_FORKNUM)
+				continue;
 			size += calculate_relation_size(&(toastIdxRel->rd_locator),
 											toastIdxRel->rd_backend, forkNum);
+		}
 
 		relation_close(toastIdxRel, AccessShareLock);
 	}
@@ -445,11 +453,18 @@ calculate_table_size(Relation rel)
 	ForkNumber	forkNum;
 
 	/*
-	 * heap size, including FSM and VM
+	 * heap size, including FSM and VM.  The KEY fork is file-encryption
+	 * framework metadata, not user data, so leave it out of pg_table_size
+	 * and friends -- otherwise an empty encrypted table would report
+	 * BLCKSZ instead of 0 bytes.
 	 */
 	for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+	{
+		if (forkNum == KEY_FORKNUM)
+			continue;
 		size += calculate_relation_size(&(rel->rd_locator), rel->rd_backend,
 										forkNum);
+	}
 
 	/*
 	 * Size of toast relation
@@ -487,9 +502,13 @@ calculate_indexes_size(Relation rel)
 			idxRel = relation_open(idxOid, AccessShareLock);
 
 			for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+			{
+				if (forkNum == KEY_FORKNUM)
+					continue;
 				size += calculate_relation_size(&(idxRel->rd_locator),
 												idxRel->rd_backend,
 												forkNum);
+			}
 
 			relation_close(idxRel, AccessShareLock);
 		}

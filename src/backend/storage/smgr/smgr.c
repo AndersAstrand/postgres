@@ -291,6 +291,34 @@ smgropen(RelFileLocator rlocator, ProcNumber backend)
 }
 
 /*
+ * smgropen_existing() -- find an SMgrRelation that has previously been
+ *						  opened in this process.
+ *
+ * Returns NULL if no entry for (rlocator, backend) exists.  Unlike smgropen,
+ * never allocates: safe to call from contexts where a palloc would be
+ * fatal, e.g. AIO completion callbacks that run inside a critical section.
+ * The expectation is that the caller (typically an AIO completion callback)
+ * relies on an earlier code path to have populated the entry; a NULL return
+ * means that contract has been broken.
+ */
+SMgrRelation
+smgropen_existing(RelFileLocator rlocator, ProcNumber backend)
+{
+	RelFileLocatorBackend brlocator;
+	SMgrRelation reln;
+
+	if (SMgrRelationHash == NULL)
+		return NULL;
+
+	brlocator.locator = rlocator;
+	brlocator.backend = backend;
+	reln = (SMgrRelation) hash_search(SMgrRelationHash,
+									  &brlocator,
+									  HASH_FIND, NULL);
+	return reln;
+}
+
+/*
  * smgrpin() -- Prevent an SMgrRelation object from being destroyed at end of
  *				transaction
  */
@@ -1098,6 +1126,21 @@ smgr_aio_reopen(PgAioHandle *ioh)
 		case PGAIO_OP_READV:
 			od->read.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);
 			Assert(off == od->read.offset);
+
+			/*
+			 * Pre-open the per-relation file-encryption state before the IO
+			 * worker enters the critical section in
+			 * pgaio_io_perform_synchronously().  The completion callback
+			 * (md_readv_complete) decrypts pages from inside that critical
+			 * section and cannot palloc; by populating
+			 * SMgrRelation.encryption_object_state here -- outside the
+			 * critical section -- we ensure the decrypt path is reduced to a
+			 * cache-hot lookup.  The backend that issued the IO does the
+			 * equivalent pre-open in mdstartreadv(); this branch covers io
+			 * workers, which have their own SMgrRelation hash.
+			 */
+			if (md_fork_is_encrypted(sd->smgr.forkNum))
+				FileEncryptionOpenObject(reln);
 			break;
 		case PGAIO_OP_WRITEV:
 			od->write.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);

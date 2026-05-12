@@ -29,6 +29,7 @@
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "storage/bulk_write.h"
+#include "storage/file_encryption.h"
 #include "storage/freespace.h"
 #include "storage/proc.h"
 #include "storage/smgr.h"
@@ -154,6 +155,56 @@ RelationCreateStorage(RelFileLocator rlocator, char relpersistence,
 		log_smgrcreate(&srel->smgr_rlocator.locator, MAIN_FORKNUM);
 
 	/*
+	 * If page encryption is configured, give the relation a KEY fork holding
+	 * the wrapped per-relation data-encryption key.  This must happen at
+	 * relation-create time, while we still know that no encrypted page has
+	 * yet been written for this rlocator and the module can mint a fresh
+	 * DEK.  The fork is one BLCKSZ block long, page-formatted by
+	 * FileEncryptionGenerateObjectKey and exempt from md.c-level
+	 * encryption.
+	 *
+	 * Write the block directly and synchronously: encryption-aware writes
+	 * later in this transaction can call FileEncryptionOpenObject, which
+	 * goes through smgrread.  Going through the buffer manager would risk
+	 * recursive AIO from inside an in-flight smgr write, so we keep the
+	 * KEY fork strictly disk-resident.  smgrimmedsync makes the bytes
+	 * durable before the WAL record below is replayed on a standby.
+	 */
+	if (FileEncryptionEnabled())
+	{
+		PGIOAlignedBlock keyblock;
+
+		smgrcreate(srel, KEY_FORKNUM, false);
+		FileEncryptionGenerateObjectKey(&srel->smgr_rlocator.locator,
+										keyblock.data);
+		smgrextend(srel, KEY_FORKNUM, 0, keyblock.data, false);
+		smgrimmedsync(srel, KEY_FORKNUM);
+
+		/*
+		 * Always WAL-log the KEY fork on non-temp relations, even for
+		 * unlogged ones (where the MAIN fork's content is intentionally
+		 * unWAL'd).  The wrapped DEK has to survive crashes so that
+		 * unlogged-relation reinit can read the INIT fork's ciphertext on
+		 * recovery, and standby replicas need it to encrypt new writes
+		 * after promotion.  This mirrors how the INIT fork itself is
+		 * WAL-logged for unlogged relations by heapam_handler.c and
+		 * index.c.
+		 *
+		 * Use a dedicated record (XLOG_SMGR_KEY_FORK_CREATE) rather than
+		 * log_smgrcreate + log_newpage: its redo path writes the block
+		 * directly to disk via smgrwrite + smgrimmedsync, so a subsequent
+		 * encrypted write on the standby (typically an FPI for an INIT
+		 * fork the redo applies right after) can always read the wrapped
+		 * DEK back via smgrread.  A log_newpage replay would leave the
+		 * content in a dirty buffer that may not have reached disk yet,
+		 * which would make the next encrypted write fail with "bad magic".
+		 */
+		if (relpersistence != RELPERSISTENCE_TEMP)
+			log_smgr_key_fork_create(&srel->smgr_rlocator.locator,
+									 keyblock.data);
+	}
+
+	/*
 	 * Add the relation to the list of stuff to delete at abort, if we are
 	 * asked to do so.
 	 */
@@ -197,6 +248,26 @@ log_smgrcreate(const RelFileLocator *rlocator, ForkNumber forkNum)
 	XLogBeginInsert();
 	XLogRegisterData(&xlrec, sizeof(xlrec));
 	XLogInsert(RM_SMGR_ID, XLOG_SMGR_CREATE | XLR_SPECIAL_REL_UPDATE);
+}
+
+/*
+ * Emit XLOG_SMGR_KEY_FORK_CREATE for the relation's KEY_FORKNUM creation,
+ * carrying the BLCKSZ-sized page-formatted wrapped-DEK block inline.  The
+ * redo function reconstructs the file and writes the block synchronously
+ * without involving the buffer pool.
+ */
+void
+log_smgr_key_fork_create(const RelFileLocator *rlocator, const char *keyblock)
+{
+	xl_smgr_key_fork_create xlrec;
+
+	xlrec.rlocator = *rlocator;
+
+	XLogBeginInsert();
+	XLogRegisterData(&xlrec, sizeof(xlrec));
+	XLogRegisterData(keyblock, BLCKSZ);
+	XLogInsert(RM_SMGR_ID,
+			   XLOG_SMGR_KEY_FORK_CREATE | XLR_SPECIAL_REL_UPDATE);
 }
 
 /*
@@ -796,6 +867,20 @@ smgrDoPendingSyncs(bool isCommit, bool isParallelWorker)
 		{
 			for (fork = 0; fork <= MAX_FORKNUM; fork++)
 			{
+				/*
+				 * KEY fork is owned by the file-encryption framework, not
+				 * page-formatted, and already WAL-logged at create time via
+				 * log_newpage in RelationCreateStorage.  Exclude it from both
+				 * the size-accounting and (below) the log_newpage_range loop.
+				 * smgrdosyncall picks it up normally if the relation lands in
+				 * the fsync path.
+				 */
+				if (fork == KEY_FORKNUM)
+				{
+					nblocks[fork] = InvalidBlockNumber;
+					continue;
+				}
+
 				if (smgrexists(srel, fork))
 				{
 					BlockNumber n = smgrnblocks(srel, fork);
@@ -993,6 +1078,47 @@ smgr_redo(XLogReaderState *record)
 
 		reln = smgropen(xlrec->rlocator, INVALID_PROC_NUMBER);
 		smgrcreate(reln, xlrec->forkNum, true);
+	}
+	else if (info == XLOG_SMGR_KEY_FORK_CREATE)
+	{
+		xl_smgr_key_fork_create *xlrec;
+		PGIOAlignedBlock keyblock;
+		SMgrRelation reln;
+
+		xlrec = (xl_smgr_key_fork_create *) XLogRecGetData(record);
+
+		/*
+		 * The WAL record's payload may sit at any alignment, but the
+		 * smgr write path asserts PG_IO_ALIGN_SIZE alignment on the
+		 * caller's buffer.  Copy to a stack-resident PGIOAlignedBlock
+		 * which always satisfies that requirement.
+		 */
+		memcpy(keyblock.data, XLogRecGetData(record) + sizeof(*xlrec), BLCKSZ);
+
+		reln = smgropen(xlrec->rlocator, INVALID_PROC_NUMBER);
+		smgrcreate(reln, KEY_FORKNUM, true);
+
+		/*
+		 * Write the page-formatted KEY fork block straight to disk and
+		 * fsync it.  Going through the buffer manager would leave the
+		 * content in a dirty shared buffer; if the next redo step is an
+		 * encrypted-fork FPI whose application triggers a buffer
+		 * eviction, the resulting smgrwrite of the encrypted page would
+		 * call FileEncryptionOpenObject -> smgrread on the KEY fork and
+		 * see the all-zero on-disk remnant of mdzeroextend instead of
+		 * the wrapped DEK.
+		 */
+		/*
+		 * Extend on a fresh redo; overwrite if the fork already has block
+		 * 0 (e.g. recovery restarted after a previous crash had already
+		 * applied this record).  Either way smgrimmedsync below makes the
+		 * bytes durable before the next redo step runs.
+		 */
+		if (smgrnblocks(reln, KEY_FORKNUM) == 0)
+			smgrextend(reln, KEY_FORKNUM, 0, keyblock.data, false);
+		else
+			smgrwrite(reln, KEY_FORKNUM, 0, keyblock.data, false);
+		smgrimmedsync(reln, KEY_FORKNUM);
 	}
 	else if (info == XLOG_SMGR_TRUNCATE)
 	{
