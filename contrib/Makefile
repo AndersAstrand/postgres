@@ -59,11 +59,13 @@ ifeq ($(with_ssl),openssl)
 SUBDIRS += \
 		basic_file_encryption \
 		pgcrypto	\
+		sm4_file_encryption \
 		sslinfo
 else
 ALWAYS_SUBDIRS += \
 		basic_file_encryption \
 		pgcrypto	\
+		sm4_file_encryption \
 		sslinfo
 endif
 

@@ -62,6 +62,7 @@ subdir('pg_walinspect')
 subdir('postgres_fdw')
 subdir('seg')
 subdir('sepgsql')
+subdir('sm4_file_encryption')
 subdir('spi')
 subdir('sslinfo')
 # start-scripts doesn't contain build products
