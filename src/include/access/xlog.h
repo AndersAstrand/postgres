@@ -260,6 +260,7 @@ extern const char *get_checksum_state_string(uint32 state);
 extern void InitLocalDataChecksumState(void);
 extern void SetLocalDataChecksumState(uint32 data_checksum_version);
 extern bool GetDefaultCharSignedness(void);
+extern const char *GetFileEncryptionLibrary(void);
 extern XLogRecPtr GetFakeLSNForUnloggedRel(void);
 extern void BootStrapXLOG(uint32 data_checksum_version);
 extern void InitializeWalConsistencyChecking(void);

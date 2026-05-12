@@ -27,6 +27,7 @@
 #include "catalog/index.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
+#include "catalog/pg_control.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "common/link-canary.h"
@@ -37,6 +38,7 @@
 #include "storage/bufpage.h"
 #include "storage/checksum.h"
 #include "storage/fd.h"
+#include "storage/file_encryption.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
 #include "storage/shmem_internal.h"
@@ -242,6 +244,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	int			flag;
 	char	   *userDoption = NULL;
 	uint32		bootstrap_data_checksum_version = PG_DATA_CHECKSUM_OFF;
+	const char *bootstrap_file_encryption_library = NULL;
 	yyscan_t	scanner;
 
 	Assert(!IsUnderPostmaster);
@@ -258,7 +261,7 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	argv++;
 	argc--;
 
-	pg_getopt_start(&optctx, argc, argv, "B:c:d:D:Fkr:X:-:");
+	pg_getopt_start(&optctx, argc, argv, "B:c:d:D:FkL:r:X:-:");
 	while ((flag = pg_getopt_next(&optctx)) != -1)
 	{
 		switch (flag)
@@ -326,6 +329,9 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 				break;
 			case 'k':
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
+				break;
+			case 'L':
+				bootstrap_file_encryption_library = pstrdup(optctx.optarg);
 				break;
 			case 'r':
 				strlcpy(OutputFileName, optctx.optarg, MAXPGPATH);
@@ -405,6 +411,18 @@ BootstrapModeMain(int argc, char *argv[], bool check_only)
 	BaseInit();
 
 	bootstrap_signals();
+
+	/*
+	 * Load the file encryption module BEFORE BootStrapXLOG so that
+	 * InitControlFile can populate page_reserved_size from the module's
+	 * declared page_overhead_size.  This is the source of truth for the
+	 * cluster's reserved size; we never let the operator force a
+	 * different value at initdb time.  After this call returns
+	 * FileEncryptionPagesEnabled() answers from the loaded module's
+	 * page_overhead_size, and BootStrapXLOG copies that into pg_control.
+	 */
+	process_file_encryption_library(bootstrap_file_encryption_library);
+
 	BootStrapXLOG(bootstrap_data_checksum_version);
 
 	/*

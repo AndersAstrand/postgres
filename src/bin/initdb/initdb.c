@@ -68,6 +68,7 @@
 #include "catalog/pg_authid_d.h"
 #include "catalog/pg_class_d.h"
 #include "catalog/pg_collation_d.h"
+#include "catalog/pg_control.h"
 #include "catalog/pg_database_d.h"
 #include "common/file_perm.h"
 #include "common/file_utils.h"
@@ -165,6 +166,8 @@ static bool do_sync = true;
 static bool sync_only = false;
 static bool show_setting = false;
 static bool data_checksums = true;
+static char *file_encryption_library = NULL;
+static char *file_encryption_config = NULL;
 static char *xlog_dir = NULL;
 static int	wal_segment_size_mb = (DEFAULT_XLOG_SEG_SIZE) / (1024 * 1024);
 static DataDirSyncMethod sync_method = DATA_DIR_SYNC_METHOD_FSYNC;
@@ -1636,6 +1639,16 @@ bootstrap_template1(void)
 	appendPQExpBuffer(&cmd, " -X %d", wal_segment_size_mb * (1024 * 1024));
 	if (data_checksums)
 		appendPQExpBufferStr(&cmd, " -k");
+	/*
+	 * The library name goes to the bootstrap backend via -L (it lands in
+	 * pg_control there).  The corresponding config is forwarded to every
+	 * backend initdb spawns via extra_options, so we don't repeat it here.
+	 */
+	if (file_encryption_library != NULL && file_encryption_library[0] != '\0')
+	{
+		appendPQExpBufferStr(&cmd, " -L ");
+		appendShellString(&cmd, file_encryption_library);
+	}
 	if (debug)
 		appendPQExpBufferStr(&cmd, " -d 5");
 
@@ -2563,6 +2576,16 @@ usage(const char *progname)
 	printf(_("      --locale-provider={builtin|libc|icu}\n"
 			 "                            set default locale provider for new databases\n"));
 	printf(_("      --no-data-checksums   do not use data page checksums\n"));
+	printf(_("      --file-encryption-library=NAME\n"
+			 "                            name of the file encryption module to load.  The\n"
+			 "                            cluster's page_reserved_size is set from the\n"
+			 "                            module's declared per-page overhead.\n"));
+	printf(_("      --file-encryption-config=STRING\n"
+			 "                            module-defined configuration string, passed verbatim\n"
+			 "                            to the module's init function.  Written into the new\n"
+			 "                            cluster's postgresql.conf as file_encryption_config so\n"
+			 "                            later postmasters use the same value; pass\n"
+			 "                            --set file_encryption_config=... after it to override.\n"));
 	printf(_("      --pwfile=FILE         read password for the new superuser from file\n"));
 	printf(_("  -T, --text-search-config=CFG\n"
 			 "                            default text search configuration\n"));
@@ -3223,6 +3246,8 @@ main(int argc, char *argv[])
 		{"sync-method", required_argument, NULL, 19},
 		{"no-data-checksums", no_argument, NULL, 20},
 		{"no-sync-data-files", no_argument, NULL, 21},
+		{"file-encryption-library", required_argument, NULL, 22},
+		{"file-encryption-config", required_argument, NULL, 23},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3420,6 +3445,40 @@ main(int argc, char *argv[])
 			case 21:
 				sync_data_files = false;
 				break;
+			case 22:
+				file_encryption_library = pg_strdup(optarg);
+				break;
+			case 23:
+				file_encryption_config = pg_strdup(optarg);
+
+				/*
+				 * Default the new cluster's file_encryption_config GUC to
+				 * the same value we were handed.  This is what an operator
+				 * almost always wants: the same config initdb used should
+				 * apply to the running cluster.  Adding it here uses the
+				 * same channel as --set / -c, so an explicit later "--set
+				 * file_encryption_config=..." still wins via postgresql.conf
+				 * read order, and operators who source the value elsewhere
+				 * (env var, ALTER SYSTEM, include directive) can leave the
+				 * conf line untouched and let it be overridden at startup.
+				 */
+				add_stringlist_item(&extra_guc_names, "file_encryption_config");
+				add_stringlist_item(&extra_guc_values, optarg);
+
+				/*
+				 * Forward the config to backends initdb spawns via the
+				 * PGFILEENCRYPTIONCONFIG environment variable, which is
+				 * inherited across fork/exec.  We deliberately avoid
+				 * inlining the value into postgres's command line so the
+				 * operator-supplied configuration isn't trivially
+				 * observable via `ps` during initdb; file_encryption.c
+				 * consults the same env var when its GUC is unset (which
+				 * is the case in the bootstrap backend, before any
+				 * postgresql.conf exists).
+				 */
+				if (setenv("PGFILEENCRYPTIONCONFIG", optarg, 1) != 0)
+					pg_fatal("could not set environment variable: %m");
+				break;
 			default:
 				/* getopt_long already emitted a complaint */
 				pg_log_error_hint("Try \"%s --help\" for more information.", progname);
@@ -3522,6 +3581,10 @@ main(int argc, char *argv[])
 		printf(_("Data page checksums are enabled.\n"));
 	else
 		printf(_("Data page checksums are disabled.\n"));
+
+	if (file_encryption_library != NULL && file_encryption_library[0] != '\0')
+		printf(_("File encryption is enabled (module: %s).\n"),
+			   file_encryption_library);
 
 	if (pwprompt || pwfilename)
 		get_su_pwd();

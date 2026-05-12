@@ -68,6 +68,7 @@
 #include "miscadmin.h"
 #include "storage/aio.h"
 #include "storage/bufmgr.h"
+#include "storage/file_encryption.h"
 #include "storage/ipc.h"
 #include "storage/md.h"
 #include "storage/smgr.h"
@@ -273,6 +274,7 @@ smgropen(RelFileLocator rlocator, ProcNumber backend)
 		reln->smgr_targblock = InvalidBlockNumber;
 		for (int i = 0; i <= MAX_FORKNUM; ++i)
 			reln->smgr_cached_nblocks[i] = InvalidBlockNumber;
+		reln->encryption_object_state = NULL;
 		reln->smgr_which = 0;	/* we only have md.c at present */
 
 		/* it is not pinned yet */
@@ -327,6 +329,13 @@ smgrdestroy(SMgrRelation reln)
 	Assert(reln->pincount == 0);
 
 	HOLD_INTERRUPTS();
+
+	/*
+	 * Hand any per-relation file-encryption state back to the loaded module
+	 * before tearing down the SMgrRelation.  Idempotent — no-op if no state
+	 * was ever attached.
+	 */
+	FileEncryptionCloseObject(reln);
 
 	for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
 		smgrsw[reln->smgr_which].smgr_close(reln, forknum);
