@@ -29,6 +29,7 @@ tests += {
   'tap': {
     'tests': [
       't/001_synthetic.pl',
+      't/002_buffile.pl',
       't/004_relation_pages.pl',
       't/005_unlogged_and_backup.pl',
     ],
