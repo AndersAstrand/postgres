@@ -244,7 +244,7 @@ addItemPointersToLeafTuple(GinState *ginstate,
 
 	/* Compress the posting list, and try to a build tuple with room for it */
 	res = NULL;
-	compressedList = ginCompressPostingList(newItems, newNPosting, GinMaxItemSize, &nwritten);
+	compressedList = ginCompressPostingList(newItems, newNPosting, GinMaxItemSizeForCluster(), &nwritten);
 	if (nwritten == newNPosting)
 	{
 		res = GinFormTuple(ginstate, attnum, key, category,
@@ -306,7 +306,7 @@ buildFreshLeafTuple(GinState *ginstate,
 	int			nwritten;
 
 	/* try to build a posting list tuple with all the items */
-	compressedList = ginCompressPostingList(items, nitem, GinMaxItemSize, &nwritten);
+	compressedList = ginCompressPostingList(items, nitem, GinMaxItemSizeForCluster(), &nwritten);
 	if (nwritten == nitem)
 	{
 		res = GinFormTuple(ginstate, attnum, key, category,

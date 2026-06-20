@@ -1473,7 +1473,7 @@ gistSplit(Relation r,
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 				 errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
-						IndexTupleSize(itup[0]), GiSTPageSize,
+						IndexTupleSize(itup[0]), GiSTPageSizeForCluster(),
 						RelationGetRelationName(r))));
 
 	memset(v.spl_lisnull, true,

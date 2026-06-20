@@ -18,6 +18,7 @@
 #define BRIN_PAGE_H
 
 #include "storage/block.h"
+#include "storage/bufpage.h"
 #include "storage/itemptr.h"
 
 /*
@@ -92,5 +93,23 @@ typedef struct RevmapContents
 /* max num of items in the array */
 #define REVMAP_PAGE_MAXITEMS \
 	(REVMAP_CONTENT_SIZE / sizeof(ItemPointerData))
+
+/*
+ * Cluster-aware variants.  When a file_encryption_library has reserved bytes
+ * at the tail of every page, the available revmap area is correspondingly
+ * smaller.  Use these at runtime when computing the actual revmap layout
+ * (mapping a heap block to its revmap block/index, sizing the revmap).
+ */
+static inline Size
+RevmapContentSizeForCluster(void)
+{
+	return REVMAP_CONTENT_SIZE - GetPageReservedSize();
+}
+
+static inline Size
+RevmapPageMaxItemsForCluster(void)
+{
+	return RevmapContentSizeForCluster() / sizeof(ItemPointerData);
+}
 
 #endif							/* BRIN_PAGE_H */

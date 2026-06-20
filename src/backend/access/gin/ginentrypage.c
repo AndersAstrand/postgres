@@ -101,13 +101,13 @@ GinFormTuple(GinState *ginstate,
 
 	newsize = MAXALIGN(newsize);
 
-	if (newsize > GinMaxItemSize)
+	if (newsize > GinMaxItemSizeForCluster())
 	{
 		if (errorTooBig)
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 					 errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
-							(Size) newsize, (Size) GinMaxItemSize,
+							(Size) newsize, GinMaxItemSizeForCluster(),
 							RelationGetRelationName(ginstate->index))));
 		pfree(itup);
 		return NULL;

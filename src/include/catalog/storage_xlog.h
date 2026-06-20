@@ -27,8 +27,9 @@
  */
 
 /* XLOG gives us high 4 bits */
-#define XLOG_SMGR_CREATE	0x10
-#define XLOG_SMGR_TRUNCATE	0x20
+#define XLOG_SMGR_CREATE			0x10
+#define XLOG_SMGR_TRUNCATE			0x20
+#define XLOG_SMGR_KEY_FORK_CREATE	0x30
 
 typedef struct xl_smgr_create
 {
@@ -50,7 +51,23 @@ typedef struct xl_smgr_truncate
 	int			flags;
 } xl_smgr_truncate;
 
+/*
+ * XLOG_SMGR_KEY_FORK_CREATE: create the KEY fork and write its single block
+ * directly to disk, bypassing the buffer pool.  The wrapped-DEK contents
+ * follow the header in the WAL record and the redo writes them with
+ * smgrwrite + smgrimmedsync so a subsequent encrypted write on the standby
+ * can reliably read them back via smgrread, even when the redo loop hasn't
+ * yet had a chance to flush dirty buffers.
+ */
+typedef struct xl_smgr_key_fork_create
+{
+	RelFileLocator rlocator;
+	/* BLCKSZ bytes of page-formatted KEY fork data follow */
+} xl_smgr_key_fork_create;
+
 extern void log_smgrcreate(const RelFileLocator *rlocator, ForkNumber forkNum);
+extern void log_smgr_key_fork_create(const RelFileLocator *rlocator,
+									 const char *keyblock);
 
 extern void smgr_redo(XLogReaderState *record);
 extern void smgr_desc(StringInfo buf, XLogReaderState *record);

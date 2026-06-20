@@ -68,6 +68,7 @@
 #include "miscadmin.h"
 #include "storage/aio.h"
 #include "storage/bufmgr.h"
+#include "storage/file_encryption.h"
 #include "storage/ipc.h"
 #include "storage/md.h"
 #include "storage/smgr.h"
@@ -273,6 +274,7 @@ smgropen(RelFileLocator rlocator, ProcNumber backend)
 		reln->smgr_targblock = InvalidBlockNumber;
 		for (int i = 0; i <= MAX_FORKNUM; ++i)
 			reln->smgr_cached_nblocks[i] = InvalidBlockNumber;
+		reln->encryption_object_state = NULL;
 		reln->smgr_which = 0;	/* we only have md.c at present */
 
 		/* it is not pinned yet */
@@ -285,6 +287,34 @@ smgropen(RelFileLocator rlocator, ProcNumber backend)
 
 	RESUME_INTERRUPTS();
 
+	return reln;
+}
+
+/*
+ * smgropen_existing() -- find an SMgrRelation that has previously been
+ *						  opened in this process.
+ *
+ * Returns NULL if no entry for (rlocator, backend) exists.  Unlike smgropen,
+ * never allocates: safe to call from contexts where a palloc would be
+ * fatal, e.g. AIO completion callbacks that run inside a critical section.
+ * The expectation is that the caller (typically an AIO completion callback)
+ * relies on an earlier code path to have populated the entry; a NULL return
+ * means that contract has been broken.
+ */
+SMgrRelation
+smgropen_existing(RelFileLocator rlocator, ProcNumber backend)
+{
+	RelFileLocatorBackend brlocator;
+	SMgrRelation reln;
+
+	if (SMgrRelationHash == NULL)
+		return NULL;
+
+	brlocator.locator = rlocator;
+	brlocator.backend = backend;
+	reln = (SMgrRelation) hash_search(SMgrRelationHash,
+									  &brlocator,
+									  HASH_FIND, NULL);
 	return reln;
 }
 
@@ -327,6 +357,13 @@ smgrdestroy(SMgrRelation reln)
 	Assert(reln->pincount == 0);
 
 	HOLD_INTERRUPTS();
+
+	/*
+	 * Hand any per-relation file-encryption state back to the loaded module
+	 * before tearing down the SMgrRelation.  Idempotent — no-op if no state
+	 * was ever attached.
+	 */
+	FileEncryptionCloseObject(reln);
 
 	for (forknum = 0; forknum <= MAX_FORKNUM; forknum++)
 		smgrsw[reln->smgr_which].smgr_close(reln, forknum);
@@ -1089,6 +1126,21 @@ smgr_aio_reopen(PgAioHandle *ioh)
 		case PGAIO_OP_READV:
 			od->read.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);
 			Assert(off == od->read.offset);
+
+			/*
+			 * Pre-open the per-relation file-encryption state before the IO
+			 * worker enters the critical section in
+			 * pgaio_io_perform_synchronously().  The completion callback
+			 * (md_readv_complete) decrypts pages from inside that critical
+			 * section and cannot palloc; by populating
+			 * SMgrRelation.encryption_object_state here -- outside the
+			 * critical section -- we ensure the decrypt path is reduced to a
+			 * cache-hot lookup.  The backend that issued the IO does the
+			 * equivalent pre-open in mdstartreadv(); this branch covers io
+			 * workers, which have their own SMgrRelation hash.
+			 */
+			if (md_fork_is_encrypted(sd->smgr.forkNum))
+				FileEncryptionOpenObject(reln);
 			break;
 		case PGAIO_OP_WRITEV:
 			od->write.fd = smgrfd(reln, sd->smgr.forkNum, sd->smgr.blockNum, &off);

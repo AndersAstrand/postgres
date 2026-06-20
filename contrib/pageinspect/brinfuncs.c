@@ -429,7 +429,7 @@ brin_revmap_data(PG_FUNCTION_ARGS)
 	fctx = SRF_PERCALL_SETUP();
 	state = fctx->user_fctx;
 
-	if (state->idx < REVMAP_PAGE_MAXITEMS)
+	if (state->idx < RevmapPageMaxItemsForCluster())
 		SRF_RETURN_NEXT(fctx, PointerGetDatum(&state->tids[state->idx++]));
 
 	SRF_RETURN_DONE(fctx);

@@ -1124,7 +1124,7 @@ _bt_check_third_page(Relation rel, Relation heap, bool needheaptidspace,
 	itemsz = MAXALIGN(IndexTupleSize(newtup));
 
 	/* Double check item size against limit */
-	if (itemsz <= BTMaxItemSize)
+	if (itemsz <= BTMaxItemSizeForCluster())
 		return;
 
 	/*
@@ -1132,7 +1132,7 @@ _bt_check_third_page(Relation rel, Relation heap, bool needheaptidspace,
 	 * index uses version 2 or version 3, or that page is an internal page, in
 	 * which case a slightly higher limit applies.
 	 */
-	if (!needheaptidspace && itemsz <= BTMaxItemSizeNoHeapTid)
+	if (!needheaptidspace && itemsz <= BTMaxItemSizeNoHeapTidForCluster())
 		return;
 
 	/*
@@ -1149,7 +1149,7 @@ _bt_check_third_page(Relation rel, Relation heap, bool needheaptidspace,
 			 errmsg("index row size %zu exceeds btree version %u maximum %zu for index \"%s\"",
 					itemsz,
 					needheaptidspace ? BTREE_VERSION : BTREE_NOVAC_VERSION,
-					needheaptidspace ? BTMaxItemSize : BTMaxItemSizeNoHeapTid,
+					needheaptidspace ? BTMaxItemSizeForCluster() : BTMaxItemSizeNoHeapTidForCluster(),
 					RelationGetRelationName(rel)),
 			 errdetail("Index row references tuple (%u,%u) in relation \"%s\".",
 					   ItemPointerGetBlockNumber(BTreeTupleGetHeapTID(newtup)),

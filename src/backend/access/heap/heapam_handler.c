@@ -567,6 +567,16 @@ heapam_relation_copy_data(Relation rel, const RelFileLocator *newrlocator)
 	for (ForkNumber forkNum = MAIN_FORKNUM + 1;
 		 forkNum <= MAX_FORKNUM; forkNum++)
 	{
+		/*
+		 * KEY_FORKNUM was already created by RelationCreateStorage above
+		 * with a freshly minted destination DEK; do not copy the source's
+		 * wrapped DEK over it.  RelationCopyStorage transparently decrypts
+		 * under the source DEK on read and re-encrypts under the
+		 * destination DEK on write for the data forks.
+		 */
+		if (forkNum == KEY_FORKNUM)
+			continue;
+
 		if (smgrexists(RelationGetSmgr(rel), forkNum))
 		{
 			smgrcreate(dstrel, forkNum, false);
@@ -2071,7 +2081,7 @@ heapam_relation_toast_am(Relation rel)
 #define HEAP_OVERHEAD_BYTES_PER_TUPLE \
 	(MAXALIGN(SizeofHeapTupleHeader) + sizeof(ItemIdData))
 #define HEAP_USABLE_BYTES_PER_PAGE \
-	(BLCKSZ - SizeOfPageHeaderData)
+	(BLCKSZ - GetPageReservedSize() - SizeOfPageHeaderData)
 
 static void
 heapam_estimate_rel_size(Relation rel, int32 *attr_widths,

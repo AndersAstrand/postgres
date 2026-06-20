@@ -20,7 +20,17 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef WIN32
+#include "port/win32_port.h"	/* for dlclose */
+#else
+#include <dlfcn.h>
+#endif
+
+#include "catalog/pg_tablespace_d.h"
 #include "common/controldata_utils.h"
+#include "common/file_encryption_keyblock.h"
+#include "common/file_encryption_load.h"
+#include "common/file_encryption_module.h"
 #include "common/file_utils.h"
 #include "common/logging.h"
 #include "common/relpath.h"
@@ -45,6 +55,33 @@ static bool do_sync = true;
 static bool verbose = false;
 static bool showprogress = false;
 static DataDirSyncMethod sync_method = DATA_DIR_SYNC_METHOD_FSYNC;
+
+/*
+ * File encryption module state.  Populated in main() after ControlFile is
+ * read if the cluster was initdb'd with --file-encryption-library; NULL
+ * otherwise.  scan_file consults fe_callbacks to decide whether to
+ * decrypt blocks before checksum verification.
+ */
+static const FileEncryptionCallbacks *fe_callbacks = NULL;
+static FileEncryptionModuleState fe_module_state = {0};
+static void *fe_module_handle = NULL;
+
+/*
+ * One-entry-per-relation cache of unwrapped DEK state.  Built lazily on
+ * first MAIN/INIT block seen for each relation; freed at exit.  A simple
+ * linked list is sufficient -- pg_checksums walks files sequentially and
+ * we only revisit a relation across its segment boundary.
+ */
+typedef struct EncryptedRelEntry
+{
+	RelFileLocator locator;
+	void	   *object_state;
+	struct EncryptedRelEntry *next;
+} EncryptedRelEntry;
+
+static EncryptedRelEntry *encrypted_rels = NULL;
+
+static char *file_encryption_config = NULL;
 
 typedef enum
 {
@@ -76,6 +113,10 @@ usage(void)
 	printf(_("  -d, --disable            disable data checksums\n"));
 	printf(_("  -e, --enable             enable data checksums\n"));
 	printf(_("  -f, --filenode=FILENODE  check only relation with specified filenode\n"));
+	printf(_("      --file-encryption-config=STRING\n"
+			 "                           configuration blob for the encryption module\n"
+			 "                           named in the cluster's pg_control; may also be\n"
+			 "                           supplied via the PGFILEENCRYPTIONCONFIG env var\n"));
 	printf(_("  -N, --no-sync            do not wait for changes to be written safely to disk\n"));
 	printf(_("  -P, --progress           show progress information\n"));
 	printf(_("      --sync-method=METHOD set method for syncing files to disk\n"));
@@ -172,8 +213,143 @@ skipfile(const char *fn)
 	return false;
 }
 
+/*
+ * Resolve the per-relation object_state for an encrypted relation,
+ * loading + caching it on first lookup.  Reads the KEY fork from
+ * '<dirpath>/<relNumber>_key', validates its header, and hands the
+ * wrapped DEK to the module's object_open_cb.
+ */
+static void *
+get_encryption_object_state(RelFileLocator locator, const char *dirpath)
+{
+	EncryptedRelEntry *entry;
+	char		keypath[MAXPGPATH];
+	int			f;
+	PGIOAlignedBlock keybuf;
+	FEKeyBlockHeader hdr;
+	int			r;
+	char	   *module_errmsg = NULL;
+	void	   *obj_state;
+
+	for (entry = encrypted_rels; entry != NULL; entry = entry->next)
+	{
+		if (entry->locator.spcOid == locator.spcOid &&
+			entry->locator.dbOid == locator.dbOid &&
+			entry->locator.relNumber == locator.relNumber)
+			return entry->object_state;
+	}
+
+	snprintf(keypath, sizeof(keypath), "%s/%u_key", dirpath, locator.relNumber);
+	f = open(keypath, O_RDONLY | PG_BINARY, 0);
+	if (f < 0)
+		pg_fatal("could not open KEY fork \"%s\": %m", keypath);
+	r = read(f, keybuf.data, BLCKSZ);
+	if (r != BLCKSZ)
+	{
+		if (r < 0)
+			pg_fatal("could not read KEY fork \"%s\": %m", keypath);
+		pg_fatal("short read on KEY fork \"%s\": read %d of %d", keypath, r, BLCKSZ);
+	}
+	close(f);
+
+	memcpy(&hdr, keybuf.data + FE_KEY_BLOCK_HEADER_OFFSET, sizeof(hdr));
+	if (hdr.magic != FE_KEY_BLOCK_MAGIC)
+		pg_fatal("invalid KEY fork \"%s\": bad magic 0x%08x", keypath, hdr.magic);
+	if (hdr.version != FE_KEY_BLOCK_VERSION)
+		pg_fatal("unsupported KEY-fork version %u in \"%s\"", hdr.version, keypath);
+	if (hdr.wrapped_len == 0 || hdr.wrapped_len > FE_KEY_BLOCK_MAX_WRAPPED)
+		pg_fatal("invalid KEY fork \"%s\": wrapped_len %u out of range",
+				 keypath, hdr.wrapped_len);
+
+	obj_state = fe_callbacks->object_open_cb(&fe_module_state, &locator,
+											 keybuf.data + FE_KEY_BLOCK_PAYLOAD_OFFSET,
+											 hdr.wrapped_len, &module_errmsg);
+	if (obj_state == NULL)
+		pg_fatal("could not unwrap KEY for relation %u/%u/%u: %s",
+				 locator.spcOid, locator.dbOid, locator.relNumber,
+				 module_errmsg ? module_errmsg : "no detail");
+
+	entry = pg_malloc(sizeof(*entry));
+	entry->locator = locator;
+	entry->object_state = obj_state;
+	entry->next = encrypted_rels;
+	encrypted_rels = entry;
+	return obj_state;
+}
+
+/*
+ * Decrypt a single block in place using the loaded module.  Caller has
+ * already determined that the relation+fork is encrypted (i.e. fe_callbacks
+ * is non-NULL and the fork is MAIN or INIT).  All-zero blocks are passed
+ * through unchanged so PageIsNew() still recognises fresh-from-extend pages.
+ */
 static void
-scan_file(const char *fn, int segmentno)
+decrypt_block_in_place(PGIOAlignedBlock *buf, RelFileLocator locator,
+					   ForkNumber forknum, BlockNumber blocknum,
+					   const char *dirpath)
+{
+	void	   *obj_state;
+	PGIOAlignedBlock plaintext;
+	char	   *module_errmsg = NULL;
+
+	/* Pass through fresh pages without trying to decrypt zeros. */
+	{
+		const uint64 *p = (const uint64 *) buf->data;
+		bool		all_zero = true;
+
+		for (Size i = 0; i < BLCKSZ / sizeof(uint64); i++)
+			if (p[i] != 0)
+			{
+				all_zero = false;
+				break;
+			}
+		if (all_zero)
+			return;
+	}
+
+	obj_state = get_encryption_object_state(locator, dirpath);
+	if (!fe_callbacks->decrypt_page_cb(&fe_module_state, obj_state,
+									   forknum, blocknum,
+									   buf->data, plaintext.data,
+									   &module_errmsg))
+		pg_fatal("could not decrypt fork %d block %u of relation %u/%u/%u: %s",
+				 forknum, blocknum,
+				 locator.spcOid, locator.dbOid, locator.relNumber,
+				 module_errmsg ? module_errmsg : "no detail");
+
+	memcpy(buf->data, plaintext.data, BLCKSZ);
+}
+
+/*
+ * Re-encrypt a plaintext block in place after we've adjusted pd_checksum
+ * in --enable mode.  Mirrors decrypt_block_in_place: same gating, same
+ * cached object state, just the opposite direction.
+ */
+static void
+encrypt_block_in_place(PGIOAlignedBlock *buf, RelFileLocator locator,
+					   ForkNumber forknum, BlockNumber blocknum,
+					   const char *dirpath)
+{
+	void	   *obj_state;
+	PGIOAlignedBlock ciphertext;
+	char	   *module_errmsg = NULL;
+
+	obj_state = get_encryption_object_state(locator, dirpath);
+	if (!fe_callbacks->encrypt_page_cb(&fe_module_state, obj_state,
+									   forknum, blocknum,
+									   buf->data, ciphertext.data,
+									   &module_errmsg))
+		pg_fatal("could not encrypt fork %d block %u of relation %u/%u/%u: %s",
+				 forknum, blocknum,
+				 locator.spcOid, locator.dbOid, locator.relNumber,
+				 module_errmsg ? module_errmsg : "no detail");
+
+	memcpy(buf->data, ciphertext.data, BLCKSZ);
+}
+
+static void
+scan_file(const char *fn, int segmentno, RelFileLocator locator,
+		  ForkNumber forknum, const char *dirpath)
 {
 	PGIOAlignedBlock buf;
 	PageHeader	header = (PageHeader) buf.data;
@@ -181,9 +357,18 @@ scan_file(const char *fn, int segmentno)
 	BlockNumber blockno;
 	int			flags;
 	int64		blocks_written_in_file = 0;
+	bool		do_decrypt;
 
 	Assert(mode == PG_MODE_ENABLE ||
 		   mode == PG_MODE_CHECK);
+
+	/*
+	 * MAIN and INIT forks of relations in an encrypted cluster are routed
+	 * through the module on every read/write; FSM, VM, and KEY forks are
+	 * passed through plaintext per md_fork_is_encrypted() in the backend.
+	 */
+	do_decrypt = (fe_callbacks != NULL &&
+				  (forknum == MAIN_FORKNUM || forknum == INIT_FORKNUM));
 
 	flags = (mode == PG_MODE_ENABLE) ? O_RDWR : O_RDONLY;
 	f = open(fn, PG_BINARY | flags, 0);
@@ -196,6 +381,7 @@ scan_file(const char *fn, int segmentno)
 	for (blockno = 0;; blockno++)
 	{
 		uint16		csum;
+		BlockNumber abs_blocknum = blockno + (BlockNumber) segmentno * RELSEG_SIZE;
 		int			r = read(f, buf.data, BLCKSZ);
 
 		if (r == 0)
@@ -219,11 +405,14 @@ scan_file(const char *fn, int segmentno)
 		 */
 		current_size += r;
 
+		if (do_decrypt)
+			decrypt_block_in_place(&buf, locator, forknum, abs_blocknum, dirpath);
+
 		/* New pages have no checksum yet */
 		if (PageIsNew(buf.data))
 			continue;
 
-		csum = pg_checksum_page(buf.data, blockno + segmentno * RELSEG_SIZE);
+		csum = pg_checksum_page(buf.data, abs_blocknum);
 		if (mode == PG_MODE_CHECK)
 		{
 			if (csum != header->pd_checksum)
@@ -249,6 +438,15 @@ scan_file(const char *fn, int segmentno)
 
 			/* Set checksum in page header */
 			header->pd_checksum = csum;
+
+			/*
+			 * Re-encrypt before writing back if this fork was encrypted on
+			 * read.  Both directions use the same object state, so we
+			 * never have to worry about wrap/unwrap mismatches.
+			 */
+			if (do_decrypt)
+				encrypt_block_in_place(&buf, locator, forknum, abs_blocknum,
+									   dirpath);
 
 			/* Seek back to beginning of block */
 			if (lseek(f, -BLCKSZ, SEEK_CUR) < 0)
@@ -295,9 +493,18 @@ scan_file(const char *fn, int segmentno)
  * all the items which have checksums is computed and returned back
  * to the caller without operating on the files.  This is used to compile
  * the total size of the data directory for progress reports.
+ *
+ * spcOid / dbOid are the OIDs implied by the directory path (e.g. when
+ * scanning base/16384/, dbOid=16384 and spcOid=DEFAULTTABLESPACE_OID).
+ * spcOid=0 means the OID isn't known yet -- we're either at the top of
+ * pg_tblspc and the next-level subdir name is the tablespace OID, or
+ * we're at the version-dir level and the next-level subdir name is the
+ * database OID.  These are passed to scan_file so it can construct the
+ * RelFileLocator for encrypted relations.
  */
 static int64
-scan_directory(const char *basedir, const char *subdir, bool sizeonly)
+scan_directory(const char *basedir, const char *subdir, bool sizeonly,
+			   Oid spcOid, Oid dbOid)
 {
 	int64		dirsize = 0;
 	char		path[MAXPGPATH];
@@ -342,6 +549,8 @@ scan_directory(const char *basedir, const char *subdir, bool sizeonly)
 			char	   *forkpath,
 					   *segmentpath;
 			int			segmentno = 0;
+			ForkNumber	forknum = MAIN_FORKNUM;
+			RelFileLocator locator;
 
 			if (skipfile(de->d_name))
 				continue;
@@ -365,10 +574,39 @@ scan_directory(const char *basedir, const char *subdir, bool sizeonly)
 
 			forkpath = strchr(fnonly, '_');
 			if (forkpath != NULL)
+			{
 				*forkpath++ = '\0';
+				forknum = forkname_to_number(forkpath);
+				if (forknum == InvalidForkNumber)
+				{
+					/*
+					 * Unrecognised fork suffix.  Upstream pg_checksums has
+					 * never validated fork names and just feeds whatever it
+					 * finds to scan_file; preserve that tolerance when no
+					 * encryption module is loaded.  When one is loaded, the
+					 * fork number drives AAD selection and an out-of-bound
+					 * guess would just produce a confusing tag-mismatch
+					 * error on the first block -- skip the file instead.
+					 */
+					if (fe_callbacks != NULL)
+						continue;
+					forknum = MAIN_FORKNUM;
+				}
+			}
 
 			if (only_filenode && strcmp(only_filenode, fnonly) != 0)
 				/* filenode not to be included */
+				continue;
+
+			/*
+			 * In --enable mode the KEY fork's checksum was already set
+			 * at relation-create time via pg_checksum_page (see
+			 * FileEncryptionGenerateObjectKey); the backend's data-
+			 * checksum worker skips the KEY fork on enable, and so do we.
+			 * Checksum verification (--check) still runs for the KEY fork
+			 * normally.
+			 */
+			if (forknum == KEY_FORKNUM && mode == PG_MODE_ENABLE)
 				continue;
 
 			dirsize += st.st_size;
@@ -378,10 +616,32 @@ scan_directory(const char *basedir, const char *subdir, bool sizeonly)
 			 * the items in the data folder.
 			 */
 			if (!sizeonly)
-				scan_file(fn, segmentno);
+			{
+				locator.spcOid = spcOid;
+				locator.dbOid = dbOid;
+				locator.relNumber = (RelFileNumber) strtoul(fnonly, NULL, 10);
+				scan_file(fn, segmentno, locator, forknum, path);
+			}
 		}
 		else if (S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode))
 		{
+			Oid			sub_spc = spcOid;
+			Oid			sub_db = dbOid;
+			char	   *endp;
+
+			/*
+			 * Subdirectory names are OIDs at three levels: in base/<dboid>/
+			 * the d_name is the dbOid; at the top of pg_tblspc the d_name
+			 * is the tablespace OID; and inside a tablespace's
+			 * TABLESPACE_VERSION_DIRECTORY the d_name is again the dbOid.
+			 * dbOid==0 (unset) is the "next numeric subdir is the dbOid"
+			 * signal; spcOid==0 is the same signal at the top of pg_tblspc.
+			 */
+			if (spcOid == 0)
+				sub_spc = (Oid) strtoul(de->d_name, &endp, 10);
+			else if (dbOid == 0 && spcOid != GLOBALTABLESPACE_OID)
+				sub_db = (Oid) strtoul(de->d_name, &endp, 10);
+
 			/*
 			 * If going through the entries of pg_tblspc, we assume to operate
 			 * on tablespace locations where only TABLESPACE_VERSION_DIRECTORY
@@ -417,11 +677,12 @@ scan_directory(const char *basedir, const char *subdir, bool sizeonly)
 				/* Looks like a valid tablespace location */
 				dirsize += scan_directory(tblspc_path,
 										  TABLESPACE_VERSION_DIRECTORY,
-										  sizeonly);
+										  sizeonly, sub_spc, sub_db);
 			}
 			else
 			{
-				dirsize += scan_directory(path, de->d_name, sizeonly);
+				dirsize += scan_directory(path, de->d_name, sizeonly,
+										  sub_spc, sub_db);
 			}
 		}
 	}
@@ -442,6 +703,7 @@ main(int argc, char *argv[])
 		{"progress", no_argument, NULL, 'P'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"sync-method", required_argument, NULL, 1},
+		{"file-encryption-config", required_argument, NULL, 2},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -505,6 +767,9 @@ main(int argc, char *argv[])
 			case 1:
 				if (!parse_sync_method(optarg, &sync_method))
 					exit(1);
+				break;
+			case 2:
+				file_encryption_config = pg_strdup(optarg);
 				break;
 			default:
 				/* getopt_long already emitted a complaint */
@@ -597,6 +862,53 @@ main(int argc, char *argv[])
 		mode == PG_MODE_ENABLE)
 		pg_fatal("data checksums are already enabled in cluster");
 
+	/*
+	 * Load the file-encryption module, if the cluster was initialized with
+	 * one.  Module errors abort via pg_fatal; on success fe_callbacks is
+	 * non-NULL and scan_file routes MAIN/INIT blocks through it.
+	 */
+	if (ControlFile->file_encryption_library[0] != '\0')
+	{
+		char	   *load_errmsg = NULL;
+
+		if (file_encryption_config == NULL)
+		{
+			const char *env = getenv("PGFILEENCRYPTIONCONFIG");
+
+			if (env != NULL)
+				file_encryption_config = pg_strdup(env);
+		}
+		if (file_encryption_config == NULL || file_encryption_config[0] == '\0')
+		{
+			pg_log_error("cluster was initialized with file encryption but no configuration was supplied");
+			pg_log_error_hint("Use --file-encryption-config=STRING or set the PGFILEENCRYPTIONCONFIG environment variable.");
+			exit(1);
+		}
+
+		if (!load_file_encryption_module(argv[0],
+										 ControlFile->file_encryption_library,
+										 file_encryption_config,
+										 &fe_module_handle,
+										 &fe_callbacks,
+										 &load_errmsg))
+			pg_fatal("%s", load_errmsg ? load_errmsg : "could not load file encryption module");
+
+		fe_module_state.sversion = PG_VERSION_NUM;
+		if (fe_callbacks->startup_cb != NULL)
+		{
+			char	   *startup_errmsg = NULL;
+
+			if (!fe_callbacks->startup_cb(&fe_module_state, &startup_errmsg))
+				pg_fatal("%s",
+						 startup_errmsg ? startup_errmsg :
+						 "file encryption module startup callback failed");
+		}
+		if (fe_callbacks->page_overhead_size != ControlFile->page_reserved_size)
+			pg_fatal("module's page_overhead_size %zu does not match cluster's page_reserved_size %u",
+					 fe_callbacks->page_overhead_size,
+					 ControlFile->page_reserved_size);
+	}
+
 	/* Operate on all files if checking or enabling checksums */
 	if (mode == PG_MODE_CHECK || mode == PG_MODE_ENABLE)
 	{
@@ -607,14 +919,18 @@ main(int argc, char *argv[])
 		 */
 		if (showprogress)
 		{
-			total_size = scan_directory(DataDir, "global", true);
-			total_size += scan_directory(DataDir, "base", true);
-			total_size += scan_directory(DataDir, PG_TBLSPC_DIR, true);
+			total_size = scan_directory(DataDir, "global", true,
+										GLOBALTABLESPACE_OID, 0);
+			total_size += scan_directory(DataDir, "base", true,
+										 DEFAULTTABLESPACE_OID, 0);
+			total_size += scan_directory(DataDir, PG_TBLSPC_DIR, true, 0, 0);
 		}
 
-		(void) scan_directory(DataDir, "global", false);
-		(void) scan_directory(DataDir, "base", false);
-		(void) scan_directory(DataDir, PG_TBLSPC_DIR, false);
+		(void) scan_directory(DataDir, "global", false,
+							  GLOBALTABLESPACE_OID, 0);
+		(void) scan_directory(DataDir, "base", false,
+							  DEFAULTTABLESPACE_OID, 0);
+		(void) scan_directory(DataDir, PG_TBLSPC_DIR, false, 0, 0);
 
 		if (showprogress)
 			progress_report(true);
@@ -662,6 +978,32 @@ main(int argc, char *argv[])
 			printf(_("Checksums enabled in cluster\n"));
 		else
 			printf(_("Checksums disabled in cluster\n"));
+	}
+
+	/*
+	 * Release per-relation encryption state and the module's per-process
+	 * state in module-friendly order.
+	 */
+	if (fe_callbacks != NULL)
+	{
+		EncryptedRelEntry *entry,
+				   *next;
+
+		for (entry = encrypted_rels; entry != NULL; entry = next)
+		{
+			next = entry->next;
+			if (fe_callbacks->object_close_cb != NULL)
+				fe_callbacks->object_close_cb(&fe_module_state,
+											  entry->object_state);
+			pg_free(entry);
+		}
+		encrypted_rels = NULL;
+
+		if (fe_callbacks->shutdown_cb != NULL)
+			fe_callbacks->shutdown_cb(&fe_module_state);
+
+		if (fe_module_handle != NULL)
+			dlclose(fe_module_handle);
 	}
 
 	return 0;

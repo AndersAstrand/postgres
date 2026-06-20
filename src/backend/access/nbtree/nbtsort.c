@@ -832,7 +832,7 @@ _bt_buildadd(BTWriteState *wstate, BTPageState *state, IndexTuple itup,
 	 * make use of the reserved space.  This should never fail on internal
 	 * pages.
 	 */
-	if (unlikely(itupsz > BTMaxItemSize))
+	if (unlikely(itupsz > BTMaxItemSizeForCluster()))
 		_bt_check_third_page(wstate->index, wstate->heap, isleaf, npage,
 							 itup);
 
@@ -1306,7 +1306,7 @@ _bt_load(BTWriteState *wstate, BTSpool *btspool, BTSpool *btspool2)
 				 */
 				dstate->maxpostingsize = MAXALIGN_DOWN((BLCKSZ * 10 / 100)) -
 					sizeof(ItemIdData);
-				Assert(dstate->maxpostingsize <= BTMaxItemSize &&
+				Assert(dstate->maxpostingsize <= BTMaxItemSizeForCluster() &&
 					   dstate->maxpostingsize <= INDEX_SIZE_MASK);
 				dstate->htids = palloc(dstate->maxpostingsize);
 

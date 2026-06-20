@@ -17455,6 +17455,16 @@ index_copy_data(Relation rel, RelFileLocator newrlocator)
 	for (ForkNumber forkNum = MAIN_FORKNUM + 1;
 		 forkNum <= MAX_FORKNUM; forkNum++)
 	{
+		/*
+		 * KEY_FORKNUM was already created by RelationCreateStorage above
+		 * with a freshly minted destination DEK; do not copy the source's
+		 * wrapped DEK over it.  RelationCopyStorage transparently decrypts
+		 * under the source DEK on read and re-encrypts under the
+		 * destination DEK on write for the data forks.
+		 */
+		if (forkNum == KEY_FORKNUM)
+			continue;
+
 		if (smgrexists(RelationGetSmgr(rel), forkNum))
 		{
 			smgrcreate(dstrel, forkNum, false);

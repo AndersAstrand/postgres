@@ -173,6 +173,31 @@ typedef struct BTMetaPageData
 				   MAXALIGN(sizeof(BTPageOpaqueData))) / 3)
 
 /*
+ * Cluster-aware variants.  When a file_encryption_library has reserved bytes
+ * at the tail of every page (cluster-wide page_reserved_size > 0), the
+ * actual largest item that fits on a btree page is correspondingly smaller.
+ * Use these at the runtime "does this tuple fit?" sites (insert, dedup,
+ * sort, amcheck) so the rejection happens with a meaningful error rather
+ * than later as a "could not fit" failure.
+ */
+static inline Size
+BTMaxItemSizeForCluster(void)
+{
+	return MAXALIGN_DOWN((BLCKSZ - GetPageReservedSize() -
+						  MAXALIGN(SizeOfPageHeaderData + 3 * sizeof(ItemIdData)) -
+						  MAXALIGN(sizeof(BTPageOpaqueData))) / 3) -
+		MAXALIGN(sizeof(ItemPointerData));
+}
+
+static inline Size
+BTMaxItemSizeNoHeapTidForCluster(void)
+{
+	return MAXALIGN_DOWN((BLCKSZ - GetPageReservedSize() -
+						  MAXALIGN(SizeOfPageHeaderData + 3 * sizeof(ItemIdData)) -
+						  MAXALIGN(sizeof(BTPageOpaqueData))) / 3);
+}
+
+/*
  * MaxTIDsPerBTreePage is an upper bound on the number of heap TIDs tuples
  * that may be stored on a btree leaf page.  It is used to size the
  * per-page temporary buffers.

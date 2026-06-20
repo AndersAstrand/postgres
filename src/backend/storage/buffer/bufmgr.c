@@ -5498,6 +5498,18 @@ CreateAndCopyRelationData(RelFileLocator src_rlocator,
 	for (ForkNumber forkNum = MAIN_FORKNUM + 1;
 		 forkNum <= MAX_FORKNUM; forkNum++)
 	{
+		/*
+		 * KEY_FORKNUM is handled by RelationCreateStorage above: the
+		 * destination already has a freshly minted per-relation DEK,
+		 * distinct from the source's.  The buffer-manager-driven copy of
+		 * the MAIN (and INIT) forks below transparently decrypts under
+		 * the source's DEK on read and re-encrypts under the destination's
+		 * DEK on write, so we deliberately do not copy the source KEY
+		 * fork bytes into the destination.
+		 */
+		if (forkNum == KEY_FORKNUM)
+			continue;
+
 		if (smgrexists(src_rel, forkNum))
 		{
 			smgrcreate(dst_rel, forkNum, false);

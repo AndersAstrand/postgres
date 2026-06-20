@@ -86,7 +86,7 @@ _bt_dedup_pass(Relation rel, Buffer buf, IndexTuple newitem, Size newitemsz,
 	state = palloc_object(BTDedupStateData);
 	state->deduplicate = true;
 	state->nmaxitems = 0;
-	state->maxpostingsize = Min(BTMaxItemSize / 2, INDEX_SIZE_MASK);
+	state->maxpostingsize = Min(BTMaxItemSizeForCluster() / 2, INDEX_SIZE_MASK);
 	/* Metadata about base tuple of current pending posting list */
 	state->base = NULL;
 	state->baseoff = InvalidOffsetNumber;
@@ -570,7 +570,7 @@ _bt_dedup_finish_pending(Page newpage, BTDedupState state)
 		/* Use original, unchanged base tuple */
 		tuplesz = IndexTupleSize(state->base);
 		Assert(tuplesz == MAXALIGN(IndexTupleSize(state->base)));
-		Assert(tuplesz <= BTMaxItemSize);
+		Assert(tuplesz <= BTMaxItemSizeForCluster());
 		if (PageAddItem(newpage, state->base, tuplesz, tupoff, false, false) == InvalidOffsetNumber)
 			elog(ERROR, "deduplication failed to add tuple to page");
 
@@ -589,7 +589,7 @@ _bt_dedup_finish_pending(Page newpage, BTDedupState state)
 		state->intervals[state->nintervals].nitems = state->nitems;
 
 		Assert(tuplesz == MAXALIGN(IndexTupleSize(final)));
-		Assert(tuplesz <= BTMaxItemSize);
+		Assert(tuplesz <= BTMaxItemSizeForCluster());
 		if (PageAddItem(newpage, final, tuplesz, tupoff, false, false) == InvalidOffsetNumber)
 			elog(ERROR, "deduplication failed to add tuple to page");
 
@@ -825,7 +825,7 @@ _bt_singleval_fillfactor(Page page, BTDedupState state, Size newitemsz)
 	int			reduction;
 
 	/* This calculation needs to match nbtsplitloc.c */
-	leftfree = PageGetPageSize(page) - SizeOfPageHeaderData -
+	leftfree = PageGetUsableSize(page) - SizeOfPageHeaderData -
 		MAXALIGN(sizeof(BTPageOpaqueData));
 	/* Subtract size of new high key (includes pivot heap TID space) */
 	leftfree -= newitemsz + MAXALIGN(sizeof(ItemPointerData));

@@ -10,6 +10,7 @@
 #ifndef GINBLOCK_H
 #define GINBLOCK_H
 
+#include "access/itup.h"
 #include "access/transam.h"
 #include "storage/block.h"
 #include "storage/bufpage.h"
@@ -253,6 +254,21 @@ typedef signed char GinNullCategory;
 						MAXALIGN(sizeof(GinPageOpaqueData))) / 3)))
 
 /*
+ * Cluster-aware variant of GinMaxItemSize.  When a file_encryption_library
+ * reserves bytes at the tail of every page, the actual largest entry that
+ * fits is correspondingly smaller; use this at the runtime fit-check sites.
+ */
+static inline Size
+GinMaxItemSizeForCluster(void)
+{
+	Size		raw = MAXALIGN_DOWN((BLCKSZ - GetPageReservedSize() -
+									 MAXALIGN(SizeOfPageHeaderData + 3 * sizeof(ItemIdData)) -
+									 MAXALIGN(sizeof(GinPageOpaqueData))) / 3);
+
+	return Min((Size) INDEX_SIZE_MASK, raw);
+}
+
+/*
  * Access macros for non-leaf entry tuples
  */
 #define GinGetDownlink(itup)	GinItemPointerGetBlockNumber(&(itup)->t_tid)
@@ -309,12 +325,12 @@ typedef signed char GinNullCategory;
  */
 #define GinDataPageSetDataSize(page, size) \
 	{ \
-		Assert(size <= GinDataPageMaxDataSize); \
+		Assert(size <= GinDataPageMaxDataSizeForCluster()); \
 		((PageHeader) page)->pd_lower = (size) + MAXALIGN(SizeOfPageHeaderData) + MAXALIGN(sizeof(ItemPointerData)); \
 	}
 
 #define GinNonLeafDataPageGetFreeSpace(page)	\
-	(GinDataPageMaxDataSize - \
+	(GinDataPageMaxDataSizeForCluster() - \
 	 GinPageGetOpaque(page)->maxoff * sizeof(PostingItem))
 
 #define GinDataPageMaxDataSize	\
@@ -326,7 +342,26 @@ typedef signed char GinNullCategory;
  * List pages
  */
 #define GinListPageSize  \
-	( BLCKSZ - SizeOfPageHeaderData - MAXALIGN(sizeof(GinPageOpaqueData)) )
+	( BLCKSZ - SizeOfPageHeaderData - \
+	  MAXALIGN(sizeof(GinPageOpaqueData)) )
+
+/*
+ * Cluster-aware variants.  GinDataPageMaxDataSize and GinListPageSize give
+ * the BLCKSZ-derived upper bound; the *ForCluster() variants subtract any
+ * tail-reserved bytes the file_encryption_library has claimed.  Page-layout
+ * arithmetic that operates on real pages must use the cluster-aware form.
+ */
+static inline Size
+GinDataPageMaxDataSizeForCluster(void)
+{
+	return GinDataPageMaxDataSize - GetPageReservedSize();
+}
+
+static inline Size
+GinListPageSizeForCluster(void)
+{
+	return GinListPageSize - GetPageReservedSize();
+}
 
 /*
  * A compressed posting list.

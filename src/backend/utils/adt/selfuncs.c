@@ -9079,7 +9079,7 @@ brincostestimate(PlannerInfo *root, IndexPath *path, double loop_count,
 							   BRIN_DEFAULT_PAGES_PER_RANGE), 1.0);
 
 		statsData.pagesPerRange = BRIN_DEFAULT_PAGES_PER_RANGE;
-		statsData.revmapNumPages = (indexRanges / REVMAP_PAGE_MAXITEMS) + 1;
+		statsData.revmapNumPages = (indexRanges / RevmapPageMaxItemsForCluster()) + 1;
 	}
 
 	/*
